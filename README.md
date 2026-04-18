@@ -174,6 +174,16 @@ real hardware:
 
 Full methodology is written up in the forthcoming Xenia protocol paper.
 
+## Paper
+
+[`papers/xenia-paper.md`](papers/xenia-paper.md) — the academic
+exposition of the protocol, with design rationale, empirical
+evaluation (bandwidth, HoL-blocking, LZ4 measurements), and a
+design-space comparison against commercial and open-source
+alternatives. **Pre-alpha draft**, actively soliciting
+cryptographer and MSP-practitioner review. The paper is the
+exposition; [`SPEC.md`](SPEC.md) is the normative reference.
+
 ## Specification
 
 Reading [`SPEC.md`](SPEC.md) (**draft-01**) should be sufficient to

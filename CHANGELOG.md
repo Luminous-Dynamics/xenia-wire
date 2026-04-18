@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `papers/xenia-paper.md` — draft academic paper corresponding to
+  `0.1.0-alpha.1` + SPEC draft-01. 8 sections (~4,800 words):
+  abstract, introduction, related work, wire protocol recap +
+  rationale, empirical evaluation (bandwidth, HoL blocking,
+  LZ4-before-AEAD), design-space discussion, future work, call
+  for review. Pre-alpha — active review solicitation.
+- `papers/refs.bib` — BibTeX references (RFC 4303, RFC 9000,
+  RFC 9147, FIPS 203, Noise, Signal, RustCrypto, LZ4, scrcpy,
+  and comparison systems).
+- `papers/README.md` — conversion instructions for submission
+  (pandoc-based markdown → LaTeX → PDF pipeline).
+
 ### Security
 
 - **Sequence-wraparound guard** — `Session::seal` now returns the new

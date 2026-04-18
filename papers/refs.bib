@@ -1,0 +1,170 @@
+@misc{connectwise2024,
+  title = {{CVE-2024-1709: ScreenConnect Authentication Bypass}},
+  author = {{ConnectWise}},
+  year = {2024},
+  month = {February},
+  note = {Advisory published 2024-02-19; CVSS 10.0 (Critical).
+          Exploited within 24 hours of disclosure. Vendor postmortem
+          and patched-versions list available from ConnectWise.},
+  url = {https://www.connectwise.com/company/trust/security-bulletins/connectwise-screenconnect-23.9.8}
+}
+
+@techreport{microsoft_rdp,
+  title = {{[MS-RDPBCGR]: Remote Desktop Protocol: Basic Connectivity and Graphics Remoting}},
+  author = {{Microsoft Corporation}},
+  institution = {Microsoft Open Specifications},
+  year = {2024},
+  note = {Public protocol specification. Original RDP design by
+          Microsoft / PictureTel; continuously updated.},
+  url = {https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/}
+}
+
+@techreport{vnc1998,
+  title = {{The RFB Protocol}},
+  author = {Richardson, Tristan and Levine, John},
+  institution = {RealVNC},
+  year = {1998},
+  note = {Original VNC / RFB protocol specification. RFB 3.8 is the
+          commonly-implemented version.},
+  url = {https://github.com/rfbproto/rfbproto/blob/master/rfbproto.rst}
+}
+
+@misc{guacamole,
+  title = {{Apache Guacamole: Clientless Remote Desktop Gateway}},
+  author = {{Apache Software Foundation}},
+  year = {2024},
+  note = {Open-source HTML5-based remote-desktop gateway supporting
+          RDP, VNC, and SSH back-ends. AGPL-3.0.},
+  url = {https://guacamole.apache.org/}
+}
+
+@misc{rustdesk,
+  title = {{RustDesk: Open Source Remote Desktop Software}},
+  author = {{RustDesk Contributors}},
+  year = {2024},
+  note = {Cross-platform remote-desktop tool written in Rust.
+          AGPL-3.0 licensed.},
+  url = {https://github.com/rustdesk/rustdesk}
+}
+
+@misc{meshcentral,
+  title = {{MeshCentral: Full Computer Management Web Site}},
+  author = {Lange, Ylian Saint-Hilaire},
+  year = {2024},
+  note = {Open-source MSP remote-management server. Apache-2.0.},
+  url = {https://github.com/Ylianst/MeshCentral}
+}
+
+@misc{tactical,
+  title = {{Tactical RMM: A Remote Monitoring \& Management Tool for Windows, Linux, and macOS}},
+  author = {{AmidaWare LLC}},
+  year = {2024},
+  note = {Open-source RMM platform. MIT-licensed agent + server.},
+  url = {https://github.com/amidaware/tacticalrmm}
+}
+
+@misc{noise,
+  title = {{The Noise Protocol Framework}},
+  author = {Perrin, Trevor},
+  year = {2018},
+  note = {Rev 34, July 2018. Canonical reference for modern
+          AEAD-based cryptographic protocols.},
+  url = {http://www.noiseprotocol.org/noise.html}
+}
+
+@techreport{signal,
+  title = {{The Double Ratchet Algorithm}},
+  author = {Perrin, Trevor and Marlinspike, Moxie},
+  institution = {Open Whisper Systems},
+  year = {2016},
+  note = {Specification of the message-level ratchet used in Signal
+          and derivative protocols.},
+  url = {https://signal.org/docs/specifications/doubleratchet/}
+}
+
+@misc{symthaea_mesh,
+  title = {{Symthaea: Packet Crypto Primitives for Consciousness-First Mesh Networks}},
+  author = {Stoltz, Tristan},
+  organization = {Luminous Dynamics},
+  year = {2026},
+  note = {Internal specification of the packet-level AEAD primitives
+          from which Xenia's nonce layout descends. Forthcoming
+          publication.},
+  url = {https://github.com/Luminous-Dynamics/symthaea}
+}
+
+@techreport{rfc9000,
+  title = {{QUIC: A UDP-Based Multiplexed and Secure Transport}},
+  author = {Iyengar, J. and Thomson, M.},
+  institution = {IETF},
+  year = {2021},
+  number = {RFC 9000},
+  url = {https://www.rfc-editor.org/rfc/rfc9000}
+}
+
+@techreport{fips203,
+  title = {{Module-Lattice-based Key-Encapsulation Mechanism Standard}},
+  author = {{National Institute of Standards and Technology}},
+  institution = {NIST},
+  year = {2024},
+  number = {FIPS 203},
+  note = {Standardization of ML-KEM, the post-quantum KEM based on
+          Kyber.},
+  url = {https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.203.pdf}
+}
+
+@techreport{rfc4303,
+  title = {{IP Encapsulating Security Payload (ESP)}},
+  author = {Kent, S.},
+  institution = {IETF},
+  year = {2005},
+  number = {RFC 4303},
+  note = {Reference for 64-bit sliding window replay protection.},
+  url = {https://www.rfc-editor.org/rfc/rfc4303}
+}
+
+@techreport{rfc9147,
+  title = {{The Datagram Transport Layer Security (DTLS) Protocol Version 1.3}},
+  author = {Rescorla, E. and Tschofenig, H. and Modadugu, N.},
+  institution = {IETF},
+  year = {2022},
+  number = {RFC 9147},
+  url = {https://www.rfc-editor.org/rfc/rfc9147}
+}
+
+@techreport{rfc8439,
+  title = {{ChaCha20 and Poly1305 for IETF Protocols}},
+  author = {Nir, Y. and Langley, A.},
+  institution = {IETF},
+  year = {2018},
+  number = {RFC 8439},
+  url = {https://www.rfc-editor.org/rfc/rfc8439}
+}
+
+@misc{rustcrypto,
+  title = {{RustCrypto: Cryptographic Algorithms Written in Rust}},
+  author = {{RustCrypto Contributors}},
+  year = {2024},
+  note = {Umbrella organization for audited Rust cryptographic
+          implementations, including the chacha20poly1305 crate
+          used by xenia-wire.},
+  url = {https://github.com/RustCrypto}
+}
+
+@misc{lz4,
+  title = {{LZ4: Extremely Fast Compression Algorithm}},
+  author = {Collet, Yann},
+  year = {2011},
+  note = {Lossless compression algorithm. The lz4_flex Rust crate
+          implements the block format used by xenia-wire.},
+  url = {https://github.com/lz4/lz4}
+}
+
+@misc{scrcpy,
+  title = {{scrcpy: Display and Control of Android Devices Connected Via USB}},
+  author = {{Genymobile}},
+  year = {2024},
+  note = {v2.4 used for mobile encoding throughput measurements
+          in \S 5.5. HEVC Main profile via Tensor G3 hardware encoder.},
+  url = {https://github.com/Genymobile/scrcpy}
+}
