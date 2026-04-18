@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Xenia daemon viewer</title>
+<style>
+  :root {
+    --bg: #0b1020;
+    --panel: #151b33;
+    --accent: #7a5cff;
+    --accent-dim: #4c3aa3;
+    --ok: #4fd190;
+    --err: #ff6c7a;
+    --muted: #9aa4c7;
+    --fg: #e9ecf9;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: system-ui, -apple-system, "SF Pro Text", Inter, sans-serif; }
+  body { min-height: 100vh; display: flex; flex-direction: column; }
+
+  header { padding: 0.75em 1em; background: var(--panel); border-bottom: 1px solid #222847; }
+  header h1 { margin: 0; font-size: 1em; font-weight: 600; letter-spacing: 0.02em; }
+  header small { color: var(--muted); font-size: 0.78em; }
+
+  .controls { padding: 0.75em 1em; background: var(--panel); display: flex; flex-wrap: wrap; gap: 0.5em; align-items: center; border-bottom: 1px solid #222847; }
+  .controls label { color: var(--muted); font-size: 0.85em; }
+  .controls input[type="text"], .controls input[type="number"] {
+    background: #0d142b; color: var(--fg); border: 1px solid #2a3260; border-radius: 4px;
+    padding: 0.35em 0.55em; font-family: inherit; font-size: 0.92em;
+  }
+  .controls input[type="text"] { min-width: 18em; }
+  .controls input[type="number"] { width: 6em; }
+  .controls button {
+    background: var(--accent); color: white; border: none; border-radius: 4px;
+    padding: 0.45em 1em; font-weight: 600; cursor: pointer; font-size: 0.92em;
+  }
+  .controls button:hover { background: #8b6fff; }
+  .controls button:disabled { background: var(--accent-dim); cursor: not-allowed; opacity: 0.7; }
+  .controls button.danger { background: #943f4a; }
+  .controls button.danger:hover { background: #b54b58; }
+
+  .status { padding: 0.5em 1em; background: #12172e; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.82em; color: var(--muted); display: flex; flex-wrap: wrap; gap: 1.2em; border-bottom: 1px solid #222847; }
+  .status .kv b { color: var(--fg); font-weight: 600; }
+  .status .ok { color: var(--ok); }
+  .status .err { color: var(--err); }
+
+  main { flex: 1; display: flex; align-items: flex-start; justify-content: center; padding: 0.75em; }
+  canvas {
+    background: #000; display: block;
+    image-rendering: pixelated; image-rendering: crisp-edges;
+    max-width: 100%; height: auto;
+  }
+
+  footer { padding: 0.5em 1em; background: var(--panel); color: var(--muted); font-size: 0.78em; border-top: 1px solid #222847; }
+  footer a { color: var(--accent); text-decoration: none; }
+
+  @media (max-width: 700px) {
+    .controls input[type="text"] { min-width: 100%; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Xenia daemon viewer</h1>
+    <small>Connect to an <code>xenia-peer</code> daemon's WebSocket endpoint and render its frames in this tab. Pre-alpha.</small>
+  </header>
+
+  <div class="controls">
+    <label for="url">ws://</label>
+    <input type="text" id="url" value="ws://127.0.0.1:4747" autocomplete="off">
+    <button id="btn-connect">Connect</button>
+    <button id="btn-disconnect" class="danger" disabled>Disconnect</button>
+    <span style="flex: 1"></span>
+    <small style="color: var(--muted)">Daemon: <code>xenia-peer --transport ws --codec passthrough</code></small>
+  </div>
+
+  <div class="status" id="status">
+    <span class="kv">wire: <b id="s-wire">–</b></span>
+    <span class="kv">state: <b id="s-state">idle</b></span>
+    <span class="kv">frames: <b id="s-frames">0</b></span>
+    <span class="kv">last: <b id="s-last">–</b></span>
+    <span class="kv">fps: <b id="s-fps">–</b></span>
+    <span class="kv">err: <b id="s-err" class="err">–</b></span>
+  </div>
+
+  <main>
+    <canvas id="canvas" width="320" height="200"></canvas>
+  </main>
+
+  <footer>
+    <b>Xenia</b> — sealed RDP wire · pre-alpha · <a href="https://github.com/Luminous-Dynamics/xenia-wire">xenia-wire</a> / <a href="https://github.com/Luminous-Dynamics/xenia-peer">xenia-peer</a>
+  </footer>
+
+  <script type="module" src="./daemon.js"></script>
+</body>
+</html>

@@ -151,11 +151,22 @@
     <a class="btn" href="./viewer.html">open viewer →</a>
   </div>
 
+  <div class="card">
+    <h3>Daemon viewer</h3>
+    <p>
+      Connect to a live <code>xenia-peer</code> daemon over
+      WebSocket and render its sealed frames here. Phone-
+      browser-compatible. Pair with <code>xenia-peer --transport
+      ws --codec passthrough</code>.
+    </p>
+    <a class="btn" href="./daemon.html">connect to daemon →</a>
+  </div>
+
 </div>
 
 <h2>Quick install</h2>
 
-<pre>$ cargo add 'xenia-wire@0.1.0-alpha.3'</pre>
+<pre>$ cargo add 'xenia-wire@0.2.0-alpha.3'</pre>
 
 <p>
   Then a minimal seal/open roundtrip:

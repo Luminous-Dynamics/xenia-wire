@@ -123,6 +123,118 @@ pub fn wire_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
+// ─── Daemon-protocol browser viewer ───────────────────────────────────
+//
+// Shadow structs mirroring `xenia-peer-core`'s `RawFrame` +
+// `PixelFormat`. The peer-core crate lives in a different repository
+// (`Luminous-Dynamics/xenia-peer`), so we don't take a cross-repo path
+// dependency here — the wire format is the normative contract and the
+// shadow definitions track it via bincode v1's deterministic layout.
+// Field order MUST match the upstream crate byte-for-byte.
+
+/// Shadow of `xenia_peer_core::frame::PixelFormat`. `#[repr(u8)]` +
+/// bincode v1 encodes this as a single byte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[repr(u8)]
+#[allow(dead_code)]
+enum RawPixelFormat {
+    Rgba8 = 0,
+    Bgra8 = 1,
+    H264 = 16,
+    Vp9 = 17,
+    Passthrough = 32,
+}
+
+/// Shadow of `xenia_peer_core::frame::RawFrame`. Field order matches
+/// the upstream; any divergence will produce a bincode-deserialize
+/// error on the first frame.
+#[derive(Debug, serde::Deserialize)]
+#[allow(dead_code)] // fields are populated by bincode + read by open_daemon_frame_js
+struct RawFrameShadow {
+    frame_id: u64,
+    timestamp_ms: u64,
+    width: u32,
+    height: u32,
+    pixel_format: RawPixelFormat,
+    pixels: Vec<u8>,
+}
+
+/// Open a sealed envelope that the xenia-peer daemon emitted, and
+/// decode it as a passthrough-codec RGBA frame.
+///
+/// Returns a JS object `{ width, height, rgba, frame_id,
+/// timestamp_ms }`. The `rgba` field is a `Uint8Array` of length
+/// `width * height * 4`; caller wraps it in an `ImageData` and
+/// paints to a canvas.
+///
+/// Only `PixelFormat::Passthrough` frames are accepted in this
+/// release. H.264 frames would need WebCodecs integration, which
+/// is M4.1b.
+#[wasm_bindgen(js_name = openDaemonFrame)]
+pub fn open_daemon_frame_js(
+    session: &mut WasmSession,
+    envelope: &[u8],
+) -> Result<JsValue, JsError> {
+    // 1. AEAD-open the envelope to recover the inner wire-Frame
+    //    (whose payload is the bincode-encoded RawFrame).
+    let wire_frame = open_frame(envelope, &mut session.inner)
+        .map_err(|e| JsError::new(&format!("xenia-wire open_frame: {e}")))?;
+
+    // 2. Bincode-deserialize the RawFrame out of wire_frame.payload.
+    let raw: RawFrameShadow = bincode::deserialize(&wire_frame.payload)
+        .map_err(|e| JsError::new(&format!("RawFrame bincode decode: {e}")))?;
+
+    // 3. Dispatch on codec. Passthrough is the only path the browser
+    //    can handle today; H.264 would need WebCodecs.
+    if raw.pixel_format != RawPixelFormat::Passthrough {
+        return Err(JsError::new(&format!(
+            "xenia-viewer-web currently only supports --codec passthrough; daemon sent {:?}",
+            raw.pixel_format
+        )));
+    }
+
+    // 4. Parse the passthrough header (12 bytes: magic 'X', version 1,
+    //    pix_fmt, reserved, width LE u32, height LE u32), then take
+    //    the raw pixel bytes.
+    if raw.pixels.len() < 12 {
+        return Err(JsError::new("passthrough payload shorter than 12-byte header"));
+    }
+    if raw.pixels[0] != 0x58 {
+        return Err(JsError::new("passthrough bad magic"));
+    }
+    if raw.pixels[1] != 0x01 {
+        return Err(JsError::new("passthrough unsupported version"));
+    }
+    // Only RGBA (0) is wired in the browser path; BGRA would need a swizzle
+    // in JS which we skip for MVP.
+    if raw.pixels[2] != 0 {
+        return Err(JsError::new("passthrough: only RGBA pixel-format supported in browser"));
+    }
+    let width = u32::from_le_bytes([raw.pixels[4], raw.pixels[5], raw.pixels[6], raw.pixels[7]]);
+    let height = u32::from_le_bytes([raw.pixels[8], raw.pixels[9], raw.pixels[10], raw.pixels[11]]);
+    let body = &raw.pixels[12..];
+    let expected = (width as usize) * (height as usize) * 4;
+    if body.len() != expected {
+        return Err(JsError::new(&format!(
+            "passthrough body {} bytes, expected {} for {}x{}",
+            body.len(),
+            expected,
+            width,
+            height
+        )));
+    }
+
+    // 5. Build the JS return object.
+    let obj = js_sys::Object::new();
+    set_field(&obj, "frame_id", JsValue::from(raw.frame_id as f64))?;
+    set_field(&obj, "timestamp_ms", JsValue::from(raw.timestamp_ms as f64))?;
+    set_field(&obj, "width", JsValue::from(width as f64))?;
+    set_field(&obj, "height", JsValue::from(height as f64))?;
+    let rgba_arr = js_sys::Uint8Array::from(body);
+    set_field(&obj, "rgba", rgba_arr.into())?;
+    Ok(obj.into())
+}
+
 fn set_field(obj: &js_sys::Object, key: &str, value: JsValue) -> Result<(), JsError> {
     js_sys::Reflect::set(obj, &JsValue::from_str(key), &value)
         .map(|_| ())
