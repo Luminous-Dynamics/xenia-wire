@@ -1,0 +1,30 @@
+Vector 07: consent_request (draft-02, feature = consent)
+--------------------------------------------------------
+A ConsentRequest for ScreenAndInput scope, signed with a
+deterministic Ed25519 seed. An alternate-language
+implementation can reproduce every byte from the fixture
+seed + the fixed session parameters.
+
+Fixture parameters:
+source_id  = "XENIATST"
+epoch      = 0x42
+key        = fixture-key (shared with vectors 01-05)
+payload_type = 0x20 (CONSENT_REQUEST)
+
+Ed25519 signing seed: "xenia-consent-test-vector-seed!!" (32 bytes)
+
+ConsentRequest fields:
+request_id     = 7
+requester_pubkey = derived Ed25519 public key
+valid_until    = 1700000300
+scope          = ScreenAndInput (= 1)
+reason         = "xenia test vector"
+causal_binding = None (draft-02 MUST be None)
+
+.input.hex is the bincode-encoded ConsentRequest (including
+the 64-byte signature). .envelope.hex is the AEAD-sealed
+form sealed under the fixture key.
+
+To validate: decrypt envelope with fixture key + extracted
+nonce; bincode-deserialize; verify Ed25519 signature over
+bincode(core).

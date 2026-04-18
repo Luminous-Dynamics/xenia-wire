@@ -1,10 +1,10 @@
-# Xenia Wire Protocol — Specification draft-01
+# Xenia Wire Protocol — Specification draft-02
 
-> **Status**: draft-01. Corresponds to `xenia-wire 0.1.0-alpha.1`
-> (published 2026-04-18). Pre-alpha — the format is subject to
-> breaking change in subsequent drafts. Reviewers: please open an
-> issue for any ambiguity; the spec is the normative reference, not
-> the Rust source.
+> **Status**: draft-02. Corresponds to `xenia-wire 0.1.0-alpha.3`
+> (unreleased). Adds §12 Consent Ceremony. Pre-alpha — the format is
+> subject to breaking change in subsequent drafts. Reviewers: please
+> open an issue for any ambiguity; the spec is the normative reference,
+> not the Rust source.
 >
 > **Document conventions**: The key words MUST, MUST NOT, REQUIRED,
 > SHALL, SHALL NOT, SHOULD, SHOULD NOT, RECOMMENDED, MAY, and OPTIONAL
@@ -519,16 +519,224 @@ on the AEAD nonce namespace.
 
 - **TLS replacement** — no certificate chain, no ALPN, no
   hostname binding. Use TLS where TLS is appropriate.
-- **MSP workflow** — consent ceremony, attestation log,
-  session recording are reserved payload-type ranges (§4.2) to
-  be specified in future drafts (Week-5 deliverables of the
-  Track A plan).
+- **MSP workflow** — consent ceremony (draft-02, §12) is the
+  wire's contribution to the workflow; session recording and
+  attestation-chained action logs remain future work.
 - **General AEAD library** — the nonce layout is specific to
   replay-protected streams; don't use the envelope format for
   unrelated purposes.
 - **Transport framing** — the envelope is a single byte string.
   Delimiting it on the wire (length prefix, WebSocket binary
   frame, QUIC stream boundary) is the transport's job.
+
+## 12. Consent ceremony (draft-02)
+
+### 12.1 Purpose
+
+A remote-control session that lets a technician read screen content
+and inject input events must be authorized by the user whose machine
+is being accessed. The consent ceremony is Xenia's wire-level
+primitive for that authorization:
+
+1. A requester (technician) seals a signed `ConsentRequest` describing
+   what is being asked for and for how long.
+2. A responder (end-user) seals a signed `ConsentResponse` approving
+   or denying.
+3. Either party MAY seal a signed `ConsentRevocation` at any point
+   after approval, asymmetrically terminating the session.
+
+Each message carries an Ed25519 signature separate from the AEAD
+tag. The AEAD protects confidentiality and replay; the signature
+provides non-repudiation: the signed consent survives disclosure of
+the session key to a third-party auditor.
+
+### 12.2 Payload types
+
+Introduced by this draft:
+
+| Value | Symbol | Description |
+|-------|--------|-------------|
+| `0x20` | `CONSENT_REQUEST` | Requester → Responder |
+| `0x21` | `CONSENT_RESPONSE` | Responder → Requester |
+| `0x22` | `CONSENT_REVOCATION` | Either party → Counterparty |
+
+All three are sealed via the normal AEAD path (§3) and are subject
+to the replay window (§5) on their own `(source_id, pld_type)`
+keys — independent from application `FRAME` / `INPUT`.
+
+### 12.3 Message structure
+
+#### ConsentRequest
+
+Plaintext (before bincode encoding) is:
+
+```
+ConsentRequest {
+  core: ConsentRequestCore {
+    request_id: u64,                       // correlation id
+    requester_pubkey: [u8; 32],            // Ed25519 public key
+    valid_until: u64,                      // Unix epoch seconds
+    scope: ConsentScope,                   // enum, see §12.4
+    reason: String,                        // free-text justification
+    causal_binding: Option<CausalPredicate>, // MUST be None in draft-02
+  },
+  signature: [u8; 64],                     // Ed25519 over bincode(core)
+}
+```
+
+The signature covers `bincode::serialize(&core)` — NOT the sealed
+envelope. This lets a third-party auditor verify the consent using
+only the plaintext and the public key, without the session key.
+
+#### ConsentResponse
+
+```
+ConsentResponse {
+  core: ConsentResponseCore {
+    request_id: u64,                // matches the request being answered
+    responder_pubkey: [u8; 32],     // Ed25519 public key
+    approved: bool,
+    reason: String,                 // empty on approval; explanation on denial
+  },
+  signature: [u8; 64],
+}
+```
+
+#### ConsentRevocation
+
+```
+ConsentRevocation {
+  core: ConsentRevocationCore {
+    request_id: u64,                // references the approved request
+    revoker_pubkey: [u8; 32],       // either party's public key
+    issued_at: u64,                 // Unix epoch seconds
+    reason: String,
+  },
+  signature: [u8; 64],
+}
+```
+
+### 12.4 ConsentScope
+
+Scope is advisory — the wire does not enforce what the technician
+actually transmits. Application-level policy MUST match traffic
+against the active scope.
+
+| Value | Name | Meaning |
+|-------|------|---------|
+| `0` | `ScreenOnly` | View only; input SHOULD be ignored. |
+| `1` | `ScreenAndInput` | View + input events. |
+| `2` | `ScreenInputFiles` | View + input + file transfer. |
+| `3` | `Interactive` | View + input + files + shell. |
+
+Additional scope values MAY be defined in future drafts. Unknown
+scope values SHOULD be treated as the most restrictive interpretation
+the receiver understands.
+
+### 12.5 Reserved: causal_binding
+
+`ConsentRequest.causal_binding` MUST be `None` in draft-02. The
+field is reserved for a forthcoming Ricardian-contract extension
+that binds the consent to external causal state ("authority valid
+while ticket #1234 is In-Progress") evaluated at each frame against
+a decentralized truth-source. Receivers that do not understand the
+predicate MUST reject the request as malformed.
+
+### 12.6 Session state machine
+
+Every session SHALL track consent state:
+
+```
+  ┌─────────┐  observe Request   ┌──────────┐
+  │ Pending │ ─────────────────▶ │ Requested │
+  └─────────┘                    └──────────┘
+       │                              │
+       │                              │ observe Response{approved=true}
+       │                              ▼
+       │                         ┌──────────┐
+       │                         │ Approved │◀──┐
+       │                         └──────────┘   │
+       │                              │         │
+       │                              │         │ (Approved is stable
+       │                              │         │  until revocation)
+       │                              │         │
+       │                              │ observe Revocation
+       │                              ▼
+       │                         ┌──────────┐
+       │                         │ Revoked  │
+       │                         └──────────┘
+       │
+       │ observe Response{approved=false}
+       ▼
+  ┌────────┐
+  │ Denied │ (from Requested)
+  └────────┘
+```
+
+Driven by the caller (not the wire) after verifying each message.
+Transitions not shown (e.g., Response from Pending, Revocation
+from Pending) MUST be no-ops.
+
+### 12.7 FRAME gating
+
+When a session's consent state is `Requested`, `Denied`, or
+`Revoked`, the receiver MUST NOT accept, and the sender MUST NOT
+seal, payload types `0x10` / `0x11` / `0x12` (application `FRAME` /
+`INPUT` / `FRAME_LZ4`). Attempts return:
+
+- `ConsentRevoked` when state is `Revoked`.
+- `NoConsent` otherwise.
+
+When state is `Pending` or `Approved`, application payloads flow
+normally. `Pending` is the initial state for a session that never
+observed a consent ceremony — this preserves draft-01 behavior for
+callers using Xenia's wire with an out-of-band consent mechanism.
+
+### 12.8 Security properties
+
+- **Non-repudiation**: each consent decision is signed by a device
+  key independently of the AEAD session. An auditor with the signed
+  plaintext and the public key can verify consent without the AEAD
+  key — appropriate for post-session compliance review.
+- **Binding to session key is optional**: the consent signature
+  does NOT cover the AEAD session key or any nonce. A consent
+  signed in session A is (intentionally) reusable in session B with
+  the same participants. Callers who want session-binding SHOULD
+  include a session-specific nonce or fingerprint in the
+  `ConsentRequestCore.reason` field.
+- **No identity binding to humans**: the pubkey-to-human binding
+  is out of scope. An MSP attestation chain (key signing by the
+  employer) is a forthcoming extension.
+
+### 12.9 Threats considered in this draft
+
+- **Replayed ConsentRequest**: rejected by the replay window (§5) —
+  the request's envelope carries a monotonic sequence like any other
+  sealed message.
+- **Forged ConsentResponse**: rejected by signature verification.
+  The responder's public key is expected to match the key the
+  application trusts for this user.
+- **Bait-and-switch scope**: if the technician sends wider-scope
+  traffic than approved, the receiver MUST drop the traffic.
+  This is an application-level policy and not enforced by the wire.
+- **Revocation race**: between the revocation being sealed and the
+  counterparty observing it, the counterparty may still receive
+  frames. The window is bounded by transport RTT + AEAD-open time.
+  Applications that need harder termination SHOULD treat revocation
+  as asynchronous best-effort and rely on transport teardown for
+  hard termination.
+
+### 12.10 Threats explicitly out of scope (draft-02)
+
+- **Human-identity fraud**: a technician who controls an approved
+  device key can act as that technician. Device-key-to-human binding
+  is an organizational trust problem, not a wire problem.
+- **Coerced consent**: if the user is under duress, they can still
+  sign an approval. Wire-level consent does not detect coercion.
+- **Clock skew attacks**: `valid_until` and `issued_at` are wall-
+  clock dependent. Receivers SHOULD grant a bounded skew (±30s
+  recommended) and SHOULD reject consent messages outside the
+  sender's expected operating window.
 
 ---
 
@@ -565,7 +773,8 @@ from a non-Rust implementation.
 
 | Draft | Date | Crate version | Changes |
 |-------|------|---------------|---------|
-| draft-01 | 2026-04-18 | `0.1.0-alpha.1` | Initial publication. |
+| draft-01 | 2026-04-18 | `0.1.0-alpha.1` / `alpha.2` | Initial publication. |
+| draft-02 | 2026-04-18 | `0.1.0-alpha.3` (unreleased) | Adds §12 Consent Ceremony (payload types `0x20`/`0x21`/`0x22`). Requires Ed25519 signing. No breaking change to existing wire format — §1–§11 are unchanged. |
 
 ---
 

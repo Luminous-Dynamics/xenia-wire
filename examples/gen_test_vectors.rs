@@ -37,6 +37,8 @@ fn main() -> std::io::Result<()> {
     emit_05_nonce_structure(out_dir)?;
     #[cfg(feature = "lz4")]
     emit_06_lz4_frame(out_dir)?;
+    #[cfg(feature = "consent")]
+    emit_07_consent_request(out_dir)?;
 
     write_index(out_dir)?;
     println!("Wrote test vectors to {}", out_dir.display());
@@ -295,6 +297,84 @@ fn emit_06_lz4_frame(out: &Path) -> std::io::Result<()> {
     )
 }
 
+/// Vector 07: consent_request — deterministic consent ceremony fixture.
+///
+/// Uses a fixed Ed25519 signing key (derived from a fixture-label seed)
+/// so the signature is byte-reproducible. An implementation in another
+/// language can regenerate the same key from the seed and produce the
+/// same signature.
+#[cfg(feature = "consent")]
+fn emit_07_consent_request(out: &Path) -> std::io::Result<()> {
+    use ed25519_dalek::SigningKey;
+    use xenia_wire::consent::{ConsentRequest, ConsentRequestCore, ConsentScope};
+    use xenia_wire::PAYLOAD_TYPE_CONSENT_REQUEST;
+
+    // Ed25519 seed: 32 bytes derived from the fixture label.
+    let seed: [u8; 32] = *b"xenia-consent-test-vector-seed!!";
+    let sk = SigningKey::from_bytes(&seed);
+    let pk = sk.verifying_key().to_bytes();
+
+    let mut session = deterministic_session();
+
+    let core = ConsentRequestCore {
+        request_id: 7,
+        requester_pubkey: pk,
+        valid_until: 1_700_000_300,
+        scope: ConsentScope::ScreenAndInput,
+        reason: "xenia test vector".to_string(),
+        causal_binding: None,
+    };
+    let request = ConsentRequest::sign(core, &sk);
+
+    let plaintext = request.to_bin_via_trait();
+    let envelope = session
+        .seal(&plaintext, PAYLOAD_TYPE_CONSENT_REQUEST)
+        .expect("seal consent request");
+
+    write_hex(&out.join("07_consent_request.input.hex"), &plaintext)?;
+    write_hex(&out.join("07_consent_request.envelope.hex"), &envelope)?;
+    fs::write(
+        out.join("07_consent_request.txt"),
+        "Vector 07: consent_request (draft-02, feature = consent)\n\
+         --------------------------------------------------------\n\
+         A ConsentRequest for ScreenAndInput scope, signed with a\n\
+         deterministic Ed25519 seed. An alternate-language\n\
+         implementation can reproduce every byte from the fixture\n\
+         seed + the fixed session parameters.\n\n\
+         Fixture parameters:\n\
+           source_id  = \"XENIATST\"\n\
+           epoch      = 0x42\n\
+           key        = fixture-key (shared with vectors 01-05)\n\
+           payload_type = 0x20 (CONSENT_REQUEST)\n\n\
+         Ed25519 signing seed: \"xenia-consent-test-vector-seed!!\" (32 bytes)\n\n\
+         ConsentRequest fields:\n\
+           request_id     = 7\n\
+           requester_pubkey = derived Ed25519 public key\n\
+           valid_until    = 1700000300\n\
+           scope          = ScreenAndInput (= 1)\n\
+           reason         = \"xenia test vector\"\n\
+           causal_binding = None (draft-02 MUST be None)\n\n\
+         .input.hex is the bincode-encoded ConsentRequest (including\n\
+         the 64-byte signature). .envelope.hex is the AEAD-sealed\n\
+         form sealed under the fixture key.\n\n\
+         To validate: decrypt envelope with fixture key + extracted\n\
+         nonce; bincode-deserialize; verify Ed25519 signature over\n\
+         bincode(core).\n",
+    )
+}
+
+// Trait method used only by the generator example — we can't call
+// `ConsentRequest::to_bin()` directly because the `Sealable` trait
+// method name collides; this wrapper disambiguates.
+#[cfg(feature = "consent")]
+trait SealableExt: xenia_wire::Sealable {
+    fn to_bin_via_trait(&self) -> Vec<u8> {
+        self.to_bin().expect("sealable to_bin succeeds")
+    }
+}
+#[cfg(feature = "consent")]
+impl<T: xenia_wire::Sealable> SealableExt for T {}
+
 fn write_index(out: &Path) -> std::io::Result<()> {
     fs::write(
         out.join("README.md"),
@@ -324,7 +404,8 @@ fn write_index(out: &Path) -> std::io::Result<()> {
          | 03 | empty_payload | Zero-length plaintext. |\n\
          | 04 | long_payload | 256-byte payload covering every byte value. |\n\
          | 05 | nonce_structure | Three sequential seals demonstrating seq counter increment. |\n\
-         | 06 | lz4_frame | LZ4-before-AEAD (`--features lz4` only). |\n\n\
+         | 06 | lz4_frame | LZ4-before-AEAD (`--features lz4` only). |\n\
+         | 07 | consent_request | ConsentRequest signed with a deterministic Ed25519 seed (`--features consent` only, draft-02). |\n\n\
          ## Regenerating\n\n\
          ```console\n\
          $ cargo run --example gen_test_vectors --all-features\n\

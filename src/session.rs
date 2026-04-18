@@ -43,6 +43,9 @@ use zeroize::Zeroizing;
 use crate::replay_window::ReplayWindow;
 use crate::WireError;
 
+#[cfg(feature = "consent")]
+use crate::consent::ConsentEvent;
+
 /// Default grace period for the previous session key after a rekey.
 ///
 /// In-flight envelopes sealed under the old key continue to verify for
@@ -81,6 +84,10 @@ pub struct Session {
     replay_window: ReplayWindow,
     /// How long the previous key remains valid after rekey.
     rekey_grace: Duration,
+    /// Consent ceremony state (draft-02 §12). Only enforced when the
+    /// `consent` feature is compiled in.
+    #[cfg(feature = "consent")]
+    consent_state: crate::consent::ConsentState,
 }
 
 impl Session {
@@ -108,6 +115,8 @@ impl Session {
             epoch,
             replay_window: ReplayWindow::new(),
             rekey_grace: DEFAULT_REKEY_GRACE,
+            #[cfg(feature = "consent")]
+            consent_state: crate::consent::ConsentState::Pending,
         }
     }
 
@@ -189,6 +198,71 @@ impl Session {
         self.key_established_at
     }
 
+    /// Current consent ceremony state (SPEC draft-02 §12).
+    ///
+    /// Only available when the `consent` feature is enabled.
+    #[cfg(feature = "consent")]
+    pub fn consent_state(&self) -> crate::consent::ConsentState {
+        self.consent_state
+    }
+
+    /// Drive the consent state machine from an observed consent message.
+    ///
+    /// Callers invoke this AFTER successfully opening a consent envelope
+    /// (`PAYLOAD_TYPE_CONSENT_REQUEST` / `_RESPONSE` / `_REVOCATION`)
+    /// and verifying the signature. The session does not validate
+    /// signatures itself — that's an application-level policy decision
+    /// (which pubkeys are trusted, which expiry windows are acceptable,
+    /// etc.).
+    ///
+    /// Transitions (see [`crate::consent::ConsentState`]):
+    ///
+    /// - `Pending` + `Request` → `Requested`
+    /// - `Requested` + `Response{approved=true}` → `Approved`
+    /// - `Requested` + `Response{approved=false}` → `Denied`
+    /// - `Approved` + `Revocation` → `Revoked`
+    /// - Any other combination is a no-op (the caller's state machine
+    ///   is out of sync; rejecting here would leak sub-case detail).
+    ///
+    /// Returns the new state for observability.
+    #[cfg(feature = "consent")]
+    pub fn observe_consent(&mut self, event: ConsentEvent) -> crate::consent::ConsentState {
+        use crate::consent::ConsentState;
+        self.consent_state = match (self.consent_state, event) {
+            (ConsentState::Pending, ConsentEvent::Request) => ConsentState::Requested,
+            (ConsentState::Requested, ConsentEvent::ResponseApproved) => ConsentState::Approved,
+            (ConsentState::Requested, ConsentEvent::ResponseDenied) => ConsentState::Denied,
+            (ConsentState::Approved, ConsentEvent::Revocation) => ConsentState::Revoked,
+            (state, _) => state,
+        };
+        self.consent_state
+    }
+
+    /// Gate predicate: is the session allowed to seal/open a `FRAME`
+    /// payload right now?
+    ///
+    /// Enforcement is opt-in:
+    ///
+    /// - `Pending` (initial state, no ceremony observed): **allowed**.
+    ///   A caller who never starts a consent ceremony gets draft-01
+    ///   behavior — the `consent` feature is a capability, not a
+    ///   mandate. This preserves compatibility for application-level
+    ///   consent models that don't use Xenia's built-in ceremony.
+    /// - `Requested` (ceremony in progress, awaiting response):
+    ///   blocked. Once you commit to the ceremony, you finish it.
+    /// - `Approved`: allowed.
+    /// - `Denied` / `Revoked`: blocked.
+    #[cfg(feature = "consent")]
+    #[inline]
+    fn can_seal_frame(&self) -> Result<(), WireError> {
+        use crate::consent::ConsentState;
+        match self.consent_state {
+            ConsentState::Pending | ConsentState::Approved => Ok(()),
+            ConsentState::Revoked => Err(WireError::ConsentRevoked),
+            ConsentState::Requested | ConsentState::Denied => Err(WireError::NoConsent),
+        }
+    }
+
     /// Seal a binary plaintext under the current session key using
     /// ChaCha20-Poly1305.
     ///
@@ -202,6 +276,20 @@ impl Session {
     /// rejects the input (should not happen with a valid 32-byte key).
     pub fn seal(&mut self, plaintext: &[u8], payload_type: u8) -> Result<Vec<u8>, WireError> {
         use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, KeyInit, Nonce};
+
+        // Consent gate — only when the consent feature is compiled in.
+        // Applies only to the reference application payload types (FRAME,
+        // INPUT, FRAME_LZ4); consent-ceremony payloads (0x20..=0x22) and
+        // application-range payloads (0x30..=0xFF) flow ungated.
+        #[cfg(feature = "consent")]
+        if matches!(
+            payload_type,
+            crate::payload_types::PAYLOAD_TYPE_FRAME
+                | crate::payload_types::PAYLOAD_TYPE_INPUT
+                | crate::payload_types::PAYLOAD_TYPE_FRAME_LZ4
+        ) {
+            self.can_seal_frame()?;
+        }
 
         let key = self.session_key.as_ref().ok_or(WireError::NoSessionKey)?;
         let key_bytes: [u8; 32] = **key;
@@ -306,6 +394,20 @@ impl Session {
             .accept((source_id_u64, payload_type), seq)
         {
             return Err(WireError::OpenFailed);
+        }
+
+        // Consent gate on the open path — symmetric with seal. Only
+        // application-reference payload types are gated. The caller may
+        // still drive state transitions via `observe_consent` after
+        // opening consent-ceremony envelopes (0x20..=0x22).
+        #[cfg(feature = "consent")]
+        if matches!(
+            payload_type,
+            crate::payload_types::PAYLOAD_TYPE_FRAME
+                | crate::payload_types::PAYLOAD_TYPE_INPUT
+                | crate::payload_types::PAYLOAD_TYPE_FRAME_LZ4
+        ) {
+            self.can_seal_frame()?;
         }
 
         Ok(plaintext)

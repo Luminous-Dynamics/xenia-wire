@@ -35,6 +35,7 @@ All vectors share:
 | 04 | long_payload | 256-byte payload covering every byte value. |
 | 05 | nonce_structure | Three sequential seals demonstrating seq counter increment. |
 | 06 | lz4_frame | LZ4-before-AEAD (`--features lz4` only). |
+| 07 | consent_request | ConsentRequest signed with a deterministic Ed25519 seed (`--features consent` only, draft-02). |
 
 ## Regenerating
 

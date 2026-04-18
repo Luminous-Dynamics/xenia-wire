@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Week 4: wasm32 compatibility + browser demo.**
+  - `xenia-wire` now compiles cleanly on `wasm32-unknown-unknown`
+    across all three feature combinations (no default, default, all).
+    `getrandom`'s `"js"` feature and `web-time::Instant` resolve the
+    wasm32 std-time / entropy gaps. New CI job guards this.
+  - New `xenia-viewer-web/` subcrate — a minimal wasm-bindgen demo
+    that runs seal/open roundtrip entirely in the browser. Not
+    published to crates.io; hosted as a static site after `wasm-pack
+    build`. Preserves `xenia-wire`'s dep hygiene — the main crate
+    pulls no wasm-bindgen deps.
+
+- **Week 5: consent ceremony (SPEC draft-02 §12).**
+  - New `consent` feature adds the `consent` module with
+    `ConsentRequest` / `ConsentResponse` / `ConsentRevocation`
+    signed by Ed25519 via `ed25519-dalek`.
+  - Session-level state machine (`ConsentState`: Pending →
+    Requested → Approved → Revoked, plus Denied as a terminal).
+    `Session::observe_consent(ConsentEvent)` drives transitions;
+    caller verifies signatures.
+  - `FRAME` / `INPUT` / `FRAME_LZ4` seals/opens are gated on
+    consent state. Pending state (no ceremony observed) allows
+    application frames — opt-in enforcement, preserves draft-01
+    behavior for callers with external consent models.
+  - New `WireError::NoConsent` and `WireError::ConsentRevoked`
+    variants.
+  - Reserved payload types `0x20` / `0x21` / `0x22` are now
+    assigned by draft-02. `0x23` (AttestedAction) remains reserved.
+  - New test-vector `07_consent_request` exercising the full
+    Ed25519 sign → bincode → seal pipeline with a deterministic
+    fixture seed.
+  - 7 new integration tests covering the full ceremony,
+    denial, revocation race, unsolicited events, and tampered
+    messages.
+
+- **SPEC.md draft-02** — adds §12 Consent Ceremony. No breaking
+  changes to §1–§11. Draft version bumped in Appendix B.
+
 ## [0.1.0-alpha.2] — 2026-04-18
 
 ### Security

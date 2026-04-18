@@ -26,6 +26,10 @@ reference-frame = []
 # and the `PAYLOAD_TYPE_FRAME_LZ4` constant. See §LZ4-before-AEAD in SPEC.md
 # for why compression MUST precede sealing (ciphertext is pseudorandom).
 lz4 = ["dep:lz4_flex"]
+# Consent ceremony: ConsentRequest/Response/Revocation payloads + Ed25519
+# signing + session-level state machine (FRAME refused until consent;
+# revocation terminates). Corresponds to SPEC.md draft-02 §12.
+consent = ["dep:ed25519-dalek", "dep:serde-big-array"]
 
 [dependencies]
 chacha20poly1305 = "0.10"
@@ -35,6 +39,8 @@ serde = { version = "1", features = ["derive"] }
 thiserror = "1"
 rand = "0.8"
 lz4_flex = { version = "0.11", default-features = false, features = ["safe-encode", "safe-decode"], optional = true }
+ed25519-dalek = { version = "2", default-features = false, features = ["std", "zeroize", "rand_core"], optional = true }
+serde-big-array = { version = "0.5", optional = true }
 
 # wasm32 needs web-time for `Instant` (the std one panics on wasm32-unknown-unknown)
 # and getrandom's "js" feature to source entropy from crypto.getRandomValues.

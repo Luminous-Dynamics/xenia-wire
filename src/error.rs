@@ -55,6 +55,27 @@ pub enum WireError {
     /// disabled or failed to trigger rekey.
     #[error("xenia wire: sequence space exhausted — rekey required")]
     SequenceExhausted,
+
+    /// Seal or open of an application `FRAME` (or `FRAME_LZ4`) payload
+    /// was attempted on a session whose consent state is not `Approved`.
+    /// The peer must complete the consent ceremony — seal a
+    /// `ConsentRequest`, receive an approving `ConsentResponse` — before
+    /// application data can flow.
+    ///
+    /// Only surfaced when the `consent` feature is enabled. Sessions
+    /// compiled without the feature behave as draft-01 (no enforcement).
+    #[cfg(feature = "consent")]
+    #[error("xenia wire: consent ceremony not completed — FRAME refused")]
+    NoConsent,
+
+    /// Seal or open of an application `FRAME` (or `FRAME_LZ4`) payload
+    /// was attempted on a session that entered the `Revoked` terminal
+    /// state. The session is finished; the caller must tear it down
+    /// and — if appropriate — start a new one with a new consent
+    /// ceremony.
+    #[cfg(feature = "consent")]
+    #[error("xenia wire: consent revoked — session terminated")]
+    ConsentRevoked,
 }
 
 impl WireError {
