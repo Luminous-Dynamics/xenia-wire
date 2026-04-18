@@ -1,17 +1,17 @@
 # Open-issues plan (post-alpha.4)
 
-**Status**: design; not committed to execution until a fresh session picks it up.
+**Status**: Phase A **SHIPPED** as `0.1.0-alpha.5` on 2026-04-18 (commit `4a337a7`, tag `v0.1.0-alpha.5`). Phase B deferred — needs user sign-off on design questions enumerated in issues [#1](https://github.com/Luminous-Dynamics/xenia-wire/issues/1) and [#3](https://github.com/Luminous-Dynamics/xenia-wire/issues/3).
 **Scope**: all 4 GitHub issues left open after `xenia-wire 0.1.0-alpha.4`.
-**Last updated**: 2026-04-18 — plan draft 1 after the first external review.
+**Last updated**: 2026-04-18 — Phase A closeout.
 
-This document collapses issues #1–#4 into an executable plan. Each issue
-gets a concrete design (API shape, state transitions, file list, test
-plan). The four are batched into two releases by wire-format compatibility:
+This document collapsed issues #1–#4 into an executable plan. Each issue
+got a concrete design (API shape, state transitions, file list, test
+plan). The four were batched into two releases by wire-format compatibility:
 
-| Release | Wire change? | Issues | Est. effort |
-|---------|--------------|--------|-------------|
-| **`0.1.0-alpha.5`** (SPEC draft-02r2) | No | [#2](https://github.com/Luminous-Dynamics/xenia-wire/issues/2) split `Pending`, [#4](https://github.com/Luminous-Dynamics/xenia-wire/issues/4) configurable replay window | ~1.5 focused days |
-| **`0.2.0-alpha.1`** (SPEC draft-03) | Yes (breaking) | [#1](https://github.com/Luminous-Dynamics/xenia-wire/issues/1) `session_binding`, [#3](https://github.com/Luminous-Dynamics/xenia-wire/issues/3) duplicate/conflict transition table | ~2–3 focused days |
+| Release | Wire change? | Issues | Status |
+|---------|--------------|--------|--------|
+| **`0.1.0-alpha.5`** (SPEC draft-02r2) | No | [#2](https://github.com/Luminous-Dynamics/xenia-wire/issues/2) split `Pending`, [#4](https://github.com/Luminous-Dynamics/xenia-wire/issues/4) configurable replay window | ✅ **shipped 2026-04-18** |
+| **`0.2.0-alpha.1`** (SPEC draft-03) | Yes (breaking) | [#1](https://github.com/Luminous-Dynamics/xenia-wire/issues/1) `session_binding`, [#3](https://github.com/Luminous-Dynamics/xenia-wire/issues/3) duplicate/conflict transition table | ⏸️ deferred pending sign-off |
 
 The batching matters: draft-03 breaks the canonical bytes of signed
 `ConsentRequestCore`, so anyone consuming consent test vectors or
