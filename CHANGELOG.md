@@ -7,6 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0-alpha.3] — 2026-04-18
+
+Tracks **SPEC draft-03**. Round-3-reviewer-prompted hardening
+pass. No wire-format change, no API break. Receivers on
+0.2.0-alpha.2 and 0.2.0-alpha.3 interoperate at the wire level.
+
+### Security / Correctness
+
+- **Constant-time `verify_fingerprint_either_epoch`** (SPEC
+  §12.3.1 rekey interaction, now normative). The alpha.2
+  implementation derived the fingerprint against the current
+  session key, compared, and — on mismatch — derived against the
+  previous session key. One HKDF call on match, two on mismatch
+  — a timing distinguisher observable by an on-path attacker
+  that leaks which key-epoch the sender signed under. alpha.3
+  removes the distinguisher: when `prev_session_key` is present,
+  the verifier derives fingerprints against BOTH keys
+  unconditionally and ORs the constant-time compares with
+  bitwise `|` (not short-circuiting `||`). The extra HKDF call
+  is only paid during the rekey grace window.
+
+  The existing `verify_probes_prev_key_during_rekey_grace`
+  integration test covers functional correctness; the
+  constant-time property is a code-review assertion documented
+  in the updated `src/session.rs::verify_fingerprint_either_epoch`
+  and SPEC §12.3.1.
+
+### Documentation
+
+- **SPEC §12.3.1 rekey interaction**: now MANDATES the constant-
+  time both-key derivation. Adds a "design-evolution" note
+  surfacing the shift from an earlier "bind to initial key"
+  design to the shipped "bind to current key, both-key probe on
+  verify" design. Rationale captured: no wire-level
+  representation of "initial key"; preserving an initial key
+  fights zeroize; grace window bounds the probe cost
+  symmetrically with AEAD-verify.
+- **SPEC §12.6 `LegacyBypass`** — now documented bluntly as
+  intentional compatibility mode. A LegacyBypass session silently
+  discards valid, cryptographically authenticated consent
+  ceremonies **by design**. Security-sensitive deployments MUST
+  NOT use `LegacyBypass`; deployments that land on it by
+  accident are strictly less secure than deployments that opt
+  into ceremony mode.
+- **SPEC Appendix A** test-vector labeling: 07/08 now correctly
+  labeled as draft-03 (they were regenerated at the draft-03
+  canonical bytes in `0.2.0-alpha.1`; the "draft-02" caption
+  was stale).
+- **`plans/REVIEW_DELTA_DRAFT_03.md`** updated for round-3
+  reviewer: prominent "no other wire changes" reassurance near
+  the top; 2.2 BE-request_id defense rewritten as "domain-
+  separated deterministic encoding, not semantic meaning"; 2.3
+  timing side-channel marked RESOLVED (pointing at this
+  release) and narrowed to a reviewer-confirmation question;
+  2.6 narrowed from open-ended coherence check to a specific
+  "are there missing timing-channel sinks?" question. Adds a
+  one-line rekey-design-evolution callout.
+
+### Not changed
+
+- Wire format (envelope + signed canonical bodies) unchanged.
+- No API break.
+- No new dependencies.
+
 ## [0.2.0-alpha.2] — 2026-04-18
 
 Tracks **SPEC draft-03**. No wire-format change from 0.2.0-alpha.1;

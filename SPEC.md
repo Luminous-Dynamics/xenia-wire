@@ -886,10 +886,37 @@ The reference implementation ships such a loop in
 session key. On rekey the fingerprint for the same `request_id`
 changes. Consent messages signed under the old key remain
 verifiable ONLY during the previous-key grace window (§6.2), and
-ONLY against the receiver's prev-key-derived fingerprint. A
-receiver implementing fingerprint verification MUST therefore
-re-derive against both the current and previous keys when the
-AEAD tag verified under the previous key, or reject the message.
+ONLY against the receiver's prev-key-derived fingerprint.
+
+A receiver implementing fingerprint verification during the rekey
+grace window MUST derive fingerprints against **both** the current
+and the previous session keys unconditionally, and MUST combine
+the constant-time compares with a non-short-circuiting bitwise OR.
+Naïve "derive against current; if no match, derive against prev"
+logic creates a timing distinguisher observable by an on-path
+attacker: latency reveals which key-epoch the sender signed under,
+which is sensitive metadata about session state near rekey. The
+extra HKDF-SHA-256 call is cheap (microseconds on commodity
+hardware) and only paid during the grace window; outside grace
+there is only one key and only one derivation. The reference
+implementation's `Session::verify_fingerprint_either_epoch`
+realizes this requirement.
+
+> **Note on design evolution (draft-03).** An earlier draft of the
+> fingerprint design bound to the *initial* session key so the
+> fingerprint would be stable across rekeys. The shipped design
+> instead binds to the *current* key and handles rekey at the
+> verifier via both-key derivation. Rationale: (a) "initial key"
+> has no wire-level representation (a peer that joined mid-session
+> has no notion of "initial"), whereas "current + previous" is
+> already maintained by every receiver for AEAD verification;
+> (b) binding to the initial key would require callers to
+> preserve a key they are otherwise encouraged to zeroize;
+> (c) the rekey grace window is bounded (§6.2 default 5s), so the
+> cost of the verifier's both-key probe is bounded in exactly the
+> same way. This is a real change from the initial design
+> rationale; it is documented here so reviewers can distinguish
+> evolution from inconsistency.
 
 **Why MANDATORY, not OPTIONAL.** draft-02r1 documented loose
 binding as a known limitation. draft-03 closes it by making the
@@ -1015,6 +1042,20 @@ Every session SHALL track consent state, one of six variants. Two
   auto-promote a LegacyBypass session into `Requested` — that
   would let a malicious peer force a NoConsent block on a session
   that opted out of the ceremony.
+
+  **This is intentional compatibility behavior, not an emergent
+  property of the state machine.** A LegacyBypass session
+  silently discards valid, cryptographically authenticated
+  consent ceremonies by design. Security-sensitive deployments
+  MUST NOT use `LegacyBypass`; those deployments construct
+  sessions via `SessionBuilder::require_consent(true)` so they
+  start in `AwaitingRequest`. `LegacyBypass` exists to preserve
+  draft-02 "consent handled out-of-band" behavior for
+  backward-compatibility with deployments whose authorization
+  lives entirely above the wire (MSP pre-authorization,
+  deployment-level trust anchors, etc.). Deployments that land
+  on `LegacyBypass` by accident are strictly less secure than
+  deployments that opt into ceremony mode.
 - **`AwaitingRequest`** — the consent system IS in use; no
   `ConsentRequest` has been observed yet. Application payloads are
   blocked until a ceremony completes (interpretation (2) of the
@@ -1267,8 +1308,8 @@ an alternate implementation can reproduce every byte:
 | 04 | `long_payload` | 256 bytes covering every byte value. |
 | 05 | `nonce_structure` | Three sequential seals, seq counter increments. |
 | 06 | `lz4_frame` | LZ4-before-AEAD pipeline. |
-| 07 | `consent_request` | draft-02 ConsentRequest signed with deterministic Ed25519 seed. |
-| 08 | `consent_response` | draft-02 ConsentResponse approving vector 07. |
+| 07 | `consent_request` | draft-03 ConsentRequest signed with deterministic Ed25519 seed; includes the mandatory `session_fingerprint`. |
+| 08 | `consent_response` | draft-03 ConsentResponse approving vector 07; distinct responder seed; shares the same `session_fingerprint` as 07. |
 | 09 | `consent_revocation` | draft-03 ConsentRevocation signed by vector 08's responder; shares the session_fingerprint of 07 + 08. |
 | 10 | `revocation_before_approval` | draft-03 event-sequence fixture: `ConsentViolation::RevocationBeforeApproval` from `AwaitingRequest` AND from `Requested`. |
 | 11 | `contradictory_response` | draft-03 event-sequence fixture: `ConsentViolation::ContradictoryResponse` in both directions (prior=true→new=false and prior=false→new=true). |

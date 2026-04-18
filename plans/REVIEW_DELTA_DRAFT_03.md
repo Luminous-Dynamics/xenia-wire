@@ -1,6 +1,6 @@
 # Round-3 review — delta since draft-02r1
 
-**Target version**: `xenia-wire 0.2.0-alpha.2` / SPEC **draft-03**.
+**Target version**: `xenia-wire 0.2.0-alpha.3` / SPEC **draft-03**.
 **Assumed prior context**: you last reviewed **draft-02r1**
 (`xenia-wire 0.1.0-alpha.3` / `alpha.4`, April 2026), which flagged
 four open design items: session-binding (loose), split-Pending,
@@ -18,6 +18,12 @@ This document is the scoped follow-up. It is deliberately short:
 Section-number references (e.g., §12.3.1) are to SPEC.md at
 `v0.2.0-alpha.2`. Source-file references are to the reference
 implementation at the same tag.
+
+**No other wire changes.** §1–§11 (envelope layout, nonce
+construction, replay window, AEAD, payload type registry) are
+byte-for-byte identical to draft-02r1. All deltas live in the
+signed-body layer (§12), and — within the signed-body layer —
+the receive-side state machine and fingerprint verification.
 
 ---
 
@@ -89,6 +95,17 @@ a hazard.
   AEAD-verified under the previous key during the grace window
   now also passes the fingerprint check. §12.3.1 rekey
   interaction spells this out.
+
+  > **Design-evolution note (surfacing an earlier divergence).**
+  > An earlier internal plan bound the fingerprint to the
+  > *initial* session key so it would be stable across rekeys.
+  > The shipped design binds to the *current* key and handles
+  > rekey via the verifier's both-key probe. Rationale is
+  > captured in §12.3.1 (no wire-level representation of
+  > "initial"; preserving an initial key fights zeroization;
+  > the grace window bounds the probe cost the same way it
+  > bounds AEAD-verify). Flagged here so it reads as evolution
+  > rather than inconsistency.
 - **Timing-channel assumption (§12.8)** — new paragraph. Asserts
   the verify pipeline (bincode deserialize, Ed25519 verify,
   fingerprint compare) MUST NOT branch on secret-dependent bytes.
@@ -134,35 +151,48 @@ replay threat model, or should `pld_type` be mixed into `info`?
 **The question.** SPEC §12.3.1 specifies `request_id_be` — the u64
 in big-endian. Every other integer on the Xenia wire is
 little-endian (per bincode v1 default; nonce sequence bytes are
-explicitly LE per §3). The mixed convention is intentional — we
-wanted the `info` byte-order to differ from the ambient wire so
-that an implementation reaching for a "byte-encode this u64 the
-usual way" path would produce the wrong fingerprint and fail
-loudly rather than silently.
+explicitly LE per §3).
 
-**Specific ask.** Is this mistake-reduction smart, or is it a
-footgun that buys nothing because the endianness is already
-specified normatively either way?
+**Framing (rewritten for clarity).** The choice is intentionally
+domain-separated deterministic encoding — not a claim that
+big-endian is semantically meaningful for `request_id`. HKDF's
+`info` parameter needs fixed, unambiguous bytes; any normative
+byte order works. Picking BE here means a careless implementer
+who reuses the ambient LE encoding path produces an obviously
+wrong fingerprint and fails at the verify step, instead of
+silently producing a wrong-but-plausible output. The defensive
+effect is the whole reason; it's not a cryptographic property.
 
-### 2.3 Timing side-channel in `verify_fingerprint_either_epoch`
+**Specific ask.** Is this defensive asymmetry worth it, or
+does the interop cost of the mixed convention outweigh the
+mistake-reduction gain? We're open to normalizing to
+little-endian in a future breaking draft if the reviewer
+recommends it — but that's a future-draft decision, not a
+draft-03 one.
 
-**The question.** On the receive path, `verify_consent_*` derives
-the fingerprint against the **current** key, compares, and — only
-if that fails — derives again against the **previous** key.
-That's one HKDF call on match, two on mismatch. Relevant source:
-`src/session.rs::verify_fingerprint_either_epoch` (around line
-340-360 in the 0.2.0-alpha.2 tree).
+### 2.3 Timing side-channel in `verify_fingerprint_either_epoch` (RESOLVED in 0.2.0-alpha.3)
 
-An attacker observing verify-path timing could distinguish
-"accepted under current key" from "accepted under prev key" from
-"rejected". The latency delta is ~one HKDF-SHA-256 derivation
-(~a few microseconds on commodity hardware). Is this exploitable?
+**Original question.** The 0.2.0-alpha.2 implementation of
+`verify_fingerprint_either_epoch` derived the fingerprint against
+the current key, compared, and — on mismatch — derived against
+the previous key. That's one HKDF call on match, two on
+mismatch, which leaks which key-epoch signed the consent via
+verify-path latency.
 
-**Mitigation considered.** Always derive both fingerprints
-regardless of first-match outcome; compare each; OR the
-constant-time compare results. Constant-time verify path at the
-cost of one extra HKDF call per verify. Open to your opinion on
-whether this is worth the complexity.
+**Resolution (0.2.0-alpha.3).** The reference implementation now
+derives fingerprints against BOTH keys unconditionally whenever
+`prev_session_key` is present, and combines the constant-time
+compares with a non-short-circuiting bitwise OR (`bool` `|`, not
+`||`). The extra HKDF-SHA-256 call is only incurred during the
+grace window. SPEC §12.3.1 rekey interaction now states this as
+a normative MUST for receivers.
+
+**Ask becomes:** review confirmation that the fix is sufficient.
+If an attacker can still distinguish "grace window active" from
+"no grace" via the absence of the second derivation, that's a
+known protocol-visible state (the presence of a prev key is not
+secret), so we don't think further masking is needed. Please
+confirm this reasoning.
 
 ### 2.4 Transition-table completeness (§12.6.1)
 
@@ -198,17 +228,21 @@ just *that* they did. Currently a replayed (same-value)
 `ConsentResponse` would be indistinguishable from the original in
 a frozen transcript.
 
-### 2.6 General coherence of §12.8 security properties + §12.10 out-of-scope
+### 2.6 §12.8 timing-channel scope — any missing sinks?
 
-**The question.** §12.8 now enumerates: third-party-verifiable
-signed consent, TIGHT session binding, protocol-violation
-detection, no human-identity binding, and the timing-channel
-assumption. §12.10 lists the explicit out-of-scope items (coerced
-consent, human-identity fraud, clock-skew attacks).
+**The question.** §12.8 enumerates three operations on the verify
+path that MUST NOT branch on secret-dependent bytes: bincode
+deserialization of the signed body, Ed25519 signature verify, and
+the 32-byte constant-time fingerprint compare. Did we miss a
+fourth timing-observable? Two candidates we considered and
+rejected as not-a-sink: the Ed25519 `from_slice` signature-length
+check (the signature length is 64 bytes and public), and
+bincode's length-prefix parse for the `reason: String` field
+(the length byte is part of the attacker-controlled input
+rather than a secret).
 
-Is there a property draft-03 implicitly offers that §12.8 should
-claim explicitly? Or a threat draft-03 implicitly tolerates that
-§12.10 should flag? Open-ended reality-check question.
+**Specific ask.** Confirm the three-sink list is exhaustive, or
+point at a sink we missed.
 
 ---
 

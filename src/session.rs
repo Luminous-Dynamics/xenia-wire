@@ -305,32 +305,52 @@ impl Session {
         out
     }
 
-    /// Probe both the current and (if present) previous session
-    /// keys for a fingerprint match against `claimed` (SPEC
-    /// draft-03 §12.3.1 rekey interaction). Constant-time compare
-    /// on each candidate.
+    /// Probe the current and (if present) previous session keys for
+    /// a fingerprint match against `claimed` (SPEC draft-03 §12.3.1
+    /// rekey interaction).
     ///
-    /// Returns `true` iff either derivation matches. Returns
-    /// `false` if no key is installed.
+    /// When the previous session key is present (i.e. we are within
+    /// the rekey grace window), this function derives fingerprints
+    /// from BOTH keys unconditionally and combines the constant-
+    /// time compares with a non-short-circuiting bitwise OR (`|`
+    /// on `bool`, not `||`). This removes the timing distinguisher
+    /// that a naive "try current first, fall back to prev on
+    /// mismatch" implementation would leak — a remote observer of
+    /// verify-path latency otherwise learns which key-epoch the
+    /// counterparty signed the consent under, which is sensitive
+    /// metadata about session state near rekey.
+    ///
+    /// The extra HKDF-SHA-256 call is cheap (~microseconds on
+    /// commodity hardware) and only incurred while `prev_session_key`
+    /// is Some — i.e. during the grace window. Outside the grace
+    /// window there is only one key and only one derivation.
+    ///
+    /// Returns `true` iff either derivation matches. Returns `false`
+    /// if no key is installed.
     #[cfg(feature = "consent")]
     fn verify_fingerprint_either_epoch(
         &self,
         request_id: u64,
         claimed: &[u8; 32],
     ) -> bool {
-        if let Some(key) = self.session_key.as_ref() {
-            let fp = self.session_fingerprint_from_key(request_id, key);
-            if ct_eq_32(&fp, claimed) {
-                return true;
+        let current_match = match self.session_key.as_ref() {
+            Some(key) => {
+                let fp = self.session_fingerprint_from_key(request_id, key);
+                ct_eq_32(&fp, claimed)
             }
-        }
-        if let Some(prev) = self.prev_session_key.as_ref() {
-            let fp = self.session_fingerprint_from_key(request_id, prev);
-            if ct_eq_32(&fp, claimed) {
-                return true;
+            None => false,
+        };
+        let prev_match = match self.prev_session_key.as_ref() {
+            Some(prev) => {
+                let fp = self.session_fingerprint_from_key(request_id, prev);
+                ct_eq_32(&fp, claimed)
             }
-        }
-        false
+            None => false,
+        };
+        // Bitwise OR on `bool` — NOT short-circuiting `||`. The `|`
+        // variant forces both operands to be evaluated and combined
+        // without control-flow branches on the intermediate values.
+        current_match | prev_match
     }
 
     /// Sign a [`ConsentRequestCore`] after injecting the session
