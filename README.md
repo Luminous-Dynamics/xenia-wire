@@ -57,6 +57,17 @@ caller's), and no opinion about handshake. Those live at higher layers.
 - Not a general AEAD library — `xenia-wire` fixes a specific nonce layout
   suited to replay-protected streams.
 
+## Install
+
+Because `0.1.0-alpha.1` is a pre-release, add it with the `@` form —
+`cargo add --version ...` rejects pre-release specifiers:
+
+```console
+$ cargo add 'xenia-wire@0.1.0-alpha.1'
+```
+
+Once a stable `0.1.0` ships, `cargo add xenia-wire` will just work.
+
 ## Quick start
 
 ```rust
