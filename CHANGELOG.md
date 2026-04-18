@@ -7,19 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- `papers/xenia-paper.md` — draft academic paper corresponding to
-  `0.1.0-alpha.1` + SPEC draft-01. 8 sections (~4,800 words):
-  abstract, introduction, related work, wire protocol recap +
-  rationale, empirical evaluation (bandwidth, HoL blocking,
-  LZ4-before-AEAD), design-space discussion, future work, call
-  for review. Pre-alpha — active review solicitation.
-- `papers/refs.bib` — BibTeX references (RFC 4303, RFC 9000,
-  RFC 9147, FIPS 203, Noise, Signal, RustCrypto, LZ4, scrcpy,
-  and comparison systems).
-- `papers/README.md` — conversion instructions for submission
-  (pandoc-based markdown → LaTeX → PDF pipeline).
+## [0.1.0-alpha.2] — 2026-04-18
 
 ### Security
 
@@ -30,39 +18,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Callers who disabled or failed to trigger rekey previously ran a
   latent time-bomb (~4.5 years at 30 fps, ~40 hours at 30 kHz); now
   they get an actionable error forcing a rekey. Wire format unchanged.
+  Users of `0.1.0-alpha.1` SHOULD upgrade.
 
 ### Added
 
-- `SPEC.md` draft-01 — full wire-format specification corresponding
-  to `0.1.0-alpha.1`. 11 sections: introduction, wire format, nonce
-  construction, payload-type registry, replay-window semantics, key
-  lifecycle, LZ4-before-AEAD rule, handshake placeholder, error
-  taxonomy, security properties, non-goals. 3 appendices: test
-  vectors, version history, references.
-- `test-vectors/` — 6 deterministic hex fixtures for cross-
-  implementation validation (`hello_frame`, `input_pointer`,
-  `empty_payload`, `long_payload`, `nonce_structure`, `lz4_frame`).
-  Each fixture ships human-readable documentation + raw plaintext
-  + sealed envelope. `examples/gen_test_vectors.rs` regenerates
-  them deterministically.
+- `SPEC.md` draft-01 — full wire-format specification in 11 sections
+  (wire format, nonce, payload-type registry, replay window, key
+  lifecycle, LZ4-before-AEAD, handshake placeholder, error taxonomy,
+  security properties, non-goals) + 3 appendices. Normative reference
+  for cross-language implementations.
+- `test-vectors/` — 6 deterministic hex fixtures with human-readable
+  documentation. Every envelope byte is reproducible from the fixed
+  fixture parameters. `examples/gen_test_vectors.rs` regenerates them
+  deterministically.
+- `papers/xenia-paper.md` — draft academic paper corresponding to
+  `0.1.0-alpha.2` + SPEC draft-01. 8 sections (~4,800 words):
+  abstract, introduction, related work, wire protocol recap +
+  rationale, empirical evaluation (bandwidth, HoL blocking,
+  LZ4-before-AEAD), design-space discussion, future work, call
+  for review. Pre-alpha — active review solicitation.
+- `papers/refs.bib` — BibTeX references (RFC 4303, RFC 9000,
+  RFC 9147, FIPS 203, Noise, Signal, RustCrypto, LZ4, scrcpy,
+  and comparison systems).
+- `papers/README.md` — conversion instructions for submission
+  (pandoc-based markdown → LaTeX → PDF pipeline).
 - `tests/test_vector_validation.rs` — regression guard: 6 tests
   that open each fixture and compare against the published
-  plaintext. Any silent wire-format drift fails here.
+  plaintext.
 - `tests/smoke_fuzz.rs` — stable-toolchain smoke fuzzer. 310,000
-  random envelopes through `Session::open()` in ~0.3s; asserts
-  no panic, only controlled errors.
+  random envelopes through `Session::open()` in ~0.3s.
 - `fuzz/` — `cargo-fuzz` scaffold (nightly-only) with three
   targets: `fuzz_open`, `fuzz_open_frame`, `fuzz_replay_window`.
-- `tests/proptest_wire.rs` — 10 property tests covering
-  `ReplayWindow` (ordering, duplicates, multi-stream isolation,
-  advance-past-window, out-of-order within-window) and seal/open
-  (roundtrip, single-byte tamper detection, mismatched keys,
-  replay rejection, shuffled-order open). ~2,560 effective runs
-  by proptest defaults.
+- `tests/proptest_wire.rs` — 10 property tests (~2,560 effective
+  runs by proptest defaults).
 - `SECURITY.md` — responsible-disclosure policy for a pre-alpha
   crypto crate.
-- `CONTRIBUTING.md` — dual-license clause, dev workflow, property-
-  test expectation for wire-format changes.
+- `CONTRIBUTING.md` — dual-license clause, dev workflow,
+  property-test expectation for wire-format changes.
 
 ## [0.1.0-alpha.1] — 2026-04-18
 
@@ -112,5 +104,6 @@ is still to come (Week 2). Published early to enable design feedback.
 - `SPEC.md` is not yet published (target: Week 2).
 - Test-vector suite is not yet populated (target: Week 2).
 
-[Unreleased]: https://github.com/Luminous-Dynamics/xenia-wire/compare/v0.1.0-alpha.1...HEAD
+[Unreleased]: https://github.com/Luminous-Dynamics/xenia-wire/compare/v0.1.0-alpha.2...HEAD
+[0.1.0-alpha.2]: https://github.com/Luminous-Dynamics/xenia-wire/compare/v0.1.0-alpha.1...v0.1.0-alpha.2
 [0.1.0-alpha.1]: https://github.com/Luminous-Dynamics/xenia-wire/releases/tag/v0.1.0-alpha.1
