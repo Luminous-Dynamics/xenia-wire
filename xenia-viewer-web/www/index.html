@@ -1,0 +1,72 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>xenia-wire — browser demo</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 44em; margin: 2em auto; padding: 0 1em; line-height: 1.5; color: #222; }
+  h1 { margin-bottom: 0; }
+  .subtitle { color: #666; margin-top: 0.25em; }
+  .banner { background: #fff8dc; border: 1px solid #d4af37; padding: 0.75em 1em; border-radius: 4px; margin: 1em 0; }
+  pre { background: #f6f6f6; padding: 0.75em; border-radius: 4px; overflow-x: auto; font-size: 0.9em; }
+  code { background: #f6f6f6; padding: 0.1em 0.3em; border-radius: 3px; }
+  button { background: #2a4d69; color: #fff; border: 0; padding: 0.5em 1em; border-radius: 4px; cursor: pointer; font-size: 1em; }
+  button:hover { background: #3a6b94; }
+  button:disabled { background: #999; cursor: not-allowed; }
+  input[type="text"] { font-family: monospace; padding: 0.3em 0.5em; font-size: 1em; width: 100%; box-sizing: border-box; }
+  .row { margin: 0.75em 0; }
+  .ok { color: #2d7a3f; }
+  .err { color: #b03030; }
+  .meta { color: #666; font-size: 0.9em; }
+</style>
+
+<h1>xenia-wire — browser demo</h1>
+<p class="subtitle">
+  Pre-alpha PQC-sealed wire protocol, running in WebAssembly.
+</p>
+
+<div class="banner">
+  <strong>PRE-ALPHA — DO NOT USE IN PRODUCTION.</strong>
+  This page is a reference demo that the Xenia wire works in
+  a browser. It seals and opens a frame locally in WASM —
+  there is no network, no server, no real session.
+  See <a href="https://github.com/Luminous-Dynamics/xenia-wire">the repo</a> for
+  the crate, spec, and paper.
+</div>
+
+<h2>Demo</h2>
+
+<div class="row">
+  <label for="payload">Payload</label><br>
+  <input type="text" id="payload" value="hello, xenia — from the browser">
+</div>
+
+<div class="row">
+  <button id="run">Seal + open</button>
+</div>
+
+<div id="output"></div>
+
+<h2>What's happening</h2>
+
+<ol>
+  <li>JS calls <code>new WasmSession()</code> twice (sender + receiver).</li>
+  <li>Both sides install the same 32-byte fixture key via <code>installKey</code>.</li>
+  <li>Sender calls <code>sealFrame</code> with the payload above — ChaCha20-Poly1305 encrypts into an envelope.</li>
+  <li>Receiver calls <code>openFrame</code> on the envelope bytes — AEAD verifies, replay window advances, <code>Frame</code> deserializes.</li>
+  <li>A second <code>openFrame</code> on the same bytes is rejected by the replay window.</li>
+</ol>
+
+<p>
+  The entire roundtrip runs in WASM; open DevTools and look at
+  <code>console.log</code> for per-step diagnostics.
+</p>
+
+<h2>Source</h2>
+
+<ul>
+  <li><a href="https://github.com/Luminous-Dynamics/xenia-wire/blob/main/xenia-viewer-web/src/lib.rs">Viewer WASM wrapper</a> (30 lines, <code>wasm-bindgen</code>)</li>
+  <li><a href="https://github.com/Luminous-Dynamics/xenia-wire/blob/main/xenia-viewer-web/www/app.js">Browser-side JS</a> (~40 lines)</li>
+  <li><a href="https://github.com/Luminous-Dynamics/xenia-wire/blob/main/SPEC.md">SPEC.md draft-01</a> — the normative wire spec</li>
+  <li><a href="https://github.com/Luminous-Dynamics/xenia-wire/blob/main/papers/xenia-paper.md">Paper draft</a> — design rationale + empirical evaluation</li>
+</ul>
+
+<script type="module" src="./app.js"></script>

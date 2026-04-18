@@ -82,6 +82,22 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo doc --all-features --no-deps
 
+  wasm32:
+    name: WebAssembly (wasm32-unknown-unknown)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Build (no default features)
+        run: cargo build --target wasm32-unknown-unknown --no-default-features
+      - name: Build (default features)
+        run: cargo build --target wasm32-unknown-unknown
+      - name: Build (all features)
+        run: cargo build --target wasm32-unknown-unknown --all-features
+
   audit:
     name: Security Audit
     runs-on: ubuntu-latest

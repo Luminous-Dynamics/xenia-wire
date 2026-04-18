@@ -16,7 +16,9 @@
 //! - LZ4-before-AEAD variants [`seal_frame_lz4`] / [`open_frame_lz4`] are
 //!   gated behind the `lz4` feature.
 
-use crate::{payload_types, Sealable, Session, WireError};
+#[cfg(any(feature = "reference-frame", feature = "lz4"))]
+use crate::payload_types;
+use crate::{Sealable, Session, WireError};
 
 /// Seal any [`Sealable`] payload under the session key with the caller-chosen
 /// payload type byte.

@@ -27,7 +27,16 @@
 //!   application concerns. `Session` has no state machine; `install_key`
 //!   is idempotent and `seal` / `open` simply fail when no key is present.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+// `std::time::Instant` panics on `wasm32-unknown-unknown` because there is no
+// default time source. `web-time` provides a drop-in replacement that delegates
+// to `performance.now()` via wasm-bindgen. On native targets it re-exports
+// `std::time::Instant`, so the API surface is identical.
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
 
 use zeroize::Zeroizing;
 

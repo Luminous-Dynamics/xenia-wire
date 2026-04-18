@@ -15,7 +15,7 @@ categories = ["cryptography", "network-programming", "no-std::no-alloc"]
 exclude = ["test-vectors/*.generated", ".github/**", "CHANGELOG.md", "fuzz/**"]
 
 [workspace]
-exclude = ["fuzz"]
+exclude = ["fuzz", "xenia-viewer-web"]
 
 [features]
 default = ["reference-frame"]
@@ -35,6 +35,12 @@ serde = { version = "1", features = ["derive"] }
 thiserror = "1"
 rand = "0.8"
 lz4_flex = { version = "0.11", default-features = false, features = ["safe-encode", "safe-decode"], optional = true }
+
+# wasm32 needs web-time for `Instant` (the std one panics on wasm32-unknown-unknown)
+# and getrandom's "js" feature to source entropy from crypto.getRandomValues.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+web-time = "1"
 
 [dev-dependencies]
 criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
