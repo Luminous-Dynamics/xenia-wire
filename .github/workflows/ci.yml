@@ -59,7 +59,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test ${{ matrix.features }}
-      - run: cargo test --doc ${{ matrix.features }}
+      # Doctests in lib.rs exercise the reference-frame quick-start, so
+      # they only run when that feature is on. The --no-default-features
+      # matrix cell skips them.
+      - if: matrix.features != '--no-default-features'
+        run: cargo test --doc ${{ matrix.features }}
 
   msrv:
     name: MSRV (Rust 1.85)
@@ -113,4 +117,11 @@ jobs:
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
       - name: Run cargo audit
-        run: cargo audit --deny warnings
+        # RUSTSEC-2025-0141: bincode v1 flagged as unmaintained (v2 is out).
+        # We deliberately pin bincode v1 because SPEC §12.3 specifies
+        # bincode v1's default-little-endian fixint as the canonical
+        # encoding for consent-signature bodies. Migrating to v2 is a
+        # breaking wire-format change that has to go through a spec bump,
+        # not a silent dependency bump. Tracked as a v1.0-blocker
+        # decision, not a CI-blocking vulnerability.
+        run: cargo audit --deny warnings --ignore RUSTSEC-2025-0141
