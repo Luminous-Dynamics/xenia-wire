@@ -151,8 +151,12 @@ impl WasmConsentCeremony {
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
         let key: [u8; 32] = rand::random();
-        let mut tech = Session::new();
-        let mut user = Session::new();
+        // Opt into ceremony mode on both sides so the walkthrough
+        // actually exercises the AwaitingRequest → Requested → Approved
+        // transitions. `Session::new` defaults to `LegacyBypass`
+        // (sticky), which would make every `observe_consent` a no-op.
+        let mut tech = Session::builder().require_consent(true).build();
+        let mut user = Session::builder().require_consent(true).build();
         tech.install_key(key);
         user.install_key(key);
         Self {
@@ -381,7 +385,8 @@ fn scope_string(s: &ConsentScope) -> &'static str {
 
 fn consent_state_string(s: ConsentState) -> String {
     match s {
-        ConsentState::Pending => "Pending",
+        ConsentState::LegacyBypass => "LegacyBypass",
+        ConsentState::AwaitingRequest => "AwaitingRequest",
         ConsentState::Requested => "Requested",
         ConsentState::Approved => "Approved",
         ConsentState::Denied => "Denied",

@@ -107,8 +107,8 @@ pub use payload_types::{
     PAYLOAD_TYPE_CONSENT_RESPONSE, PAYLOAD_TYPE_CONSENT_REVOCATION, PAYLOAD_TYPE_FRAME,
     PAYLOAD_TYPE_FRAME_LZ4, PAYLOAD_TYPE_INPUT,
 };
-pub use replay_window::{ReplayWindow, WINDOW_BITS};
-pub use session::{Session, DEFAULT_REKEY_GRACE};
+pub use replay_window::{ReplayWindow, DEFAULT_WINDOW_BITS, MAX_WINDOW_BITS, WINDOW_BITS};
+pub use session::{Session, SessionBuilder, DEFAULT_REKEY_GRACE};
 
 pub use frame::Sealable;
 pub use wire::{open, seal};

@@ -22,8 +22,18 @@ use xenia_wire::{
 };
 
 fn paired_sessions(key: [u8; 32]) -> (Session, Session) {
-    let mut sender = Session::with_source_id([0x77; 8], 0xAB);
-    let mut receiver = Session::with_source_id([0x77; 8], 0xAB);
+    // Opt into ceremony mode on both sides — default (LegacyBypass) would
+    // let FRAMEs flow without a ceremony and swallow `Request` events as
+    // no-ops. Tests exercise the full state machine, so start in
+    // `AwaitingRequest`.
+    let mut sender = Session::builder()
+        .with_source_id([0x77; 8], 0xAB)
+        .require_consent(true)
+        .build();
+    let mut receiver = Session::builder()
+        .with_source_id([0x77; 8], 0xAB)
+        .require_consent(true)
+        .build();
     sender.install_key(key);
     receiver.install_key(key);
     (sender, receiver)
@@ -212,9 +222,9 @@ fn revocation_terminates_session_and_blocks_subsequent_frames() {
 fn unsolicited_events_are_no_ops() {
     // ResponseApproved without a preceding Request does nothing.
     let mut s = Session::new();
-    assert_eq!(s.consent_state(), ConsentState::Pending);
+    assert_eq!(s.consent_state(), ConsentState::LegacyBypass);
     s.observe_consent(ConsentEvent::ResponseApproved);
-    assert_eq!(s.consent_state(), ConsentState::Pending);
+    assert_eq!(s.consent_state(), ConsentState::LegacyBypass);
     // FRAME still allowed (we never started a ceremony).
     s.install_key([0x55; 32]);
     assert!(seal_frame(&sample_frame(), &mut s).is_ok());
@@ -225,7 +235,7 @@ fn revocation_only_after_approved() {
     // Revocation from Pending is a no-op — the ceremony never approved.
     let mut s = Session::new();
     s.observe_consent(ConsentEvent::Revocation);
-    assert_eq!(s.consent_state(), ConsentState::Pending);
+    assert_eq!(s.consent_state(), ConsentState::LegacyBypass);
 }
 
 #[test]

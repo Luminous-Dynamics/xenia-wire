@@ -28,7 +28,7 @@ function updateState() {
   // Revoke shown only when user is Approved.
   $("revoke-controls").style.display = userState === "Approved" ? "" : "none";
   // Request button disabled after first issue.
-  $("btn-request").disabled = techState !== "Pending";
+  $("btn-request").disabled = techState !== "AwaitingRequest";
 }
 
 function log(kind, text) {

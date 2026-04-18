@@ -7,6 +7,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.5] — 2026-04-18
+
+Tracks **SPEC draft-02r2**. No wire-format change from alpha.4 /
+draft-02r1 — both additions are receiver-local. Two interoperating
+peers on any mix of alpha.3 / alpha.4 / alpha.5 continue to open
+each other's envelopes (default configuration).
+
+### Added
+
+- **Split `Pending` consent state** ([SPEC §12.6 / §12.7];
+  [plan #2](plans/OPEN_ISSUES_PLAN.md)) — `ConsentState::Pending`
+  is replaced by two variants that disambiguate its dual meaning:
+  - `ConsentState::LegacyBypass` — consent handled out-of-band;
+    FRAME / INPUT / FRAME_LZ4 payloads flow unimpeded. This is
+    the default for `Session::new` / `Session::with_source_id`,
+    so existing call sites retain draft-02r1 behavior with no
+    code changes.
+  - `ConsentState::AwaitingRequest` — ceremony mode; FRAME is
+    blocked until a full `Request` → `Response{approved=true}`
+    cycle transitions the session to `Approved`. Opt in via
+    `Session::builder().require_consent(true).build()`.
+- **`SessionBuilder`** — a new builder type for opt-in session
+  configuration (`require_consent`, `with_source_id`,
+  `with_rekey_grace`, `with_replay_window_bits`). Construct via
+  `Session::builder()`; finalize via `.build()`.
+- **Configurable replay window size**
+  ([SPEC §5.1]; [plan #4](plans/OPEN_ISSUES_PLAN.md)) — the
+  per-stream replay window is now parameterized in bits.
+  Valid values: 64, 128, 256, 512, 1024 (must be a multiple
+  of 64). Default remains 64. Wider windows tolerate heavier
+  transport reordering at a cost of `W / 8` bytes of bitmap
+  per `(source_id, payload_type, key_epoch)` stream.
+  - `ReplayWindow::with_window_bits(bits: u32)` — new constructor.
+  - `SessionBuilder::with_replay_window_bits(bits: u32)` — session-
+    level override.
+  - `DEFAULT_WINDOW_BITS` (= 64) and `MAX_WINDOW_BITS` (= 1024)
+    constants exported at the crate root. `WINDOW_BITS` retained
+    as a back-compat alias for `DEFAULT_WINDOW_BITS`.
+
+### Changed
+
+- `Session::new` default state (under the `consent` feature) is
+  now `LegacyBypass` instead of `Pending`. Behavior is unchanged
+  — both states allow FRAME to flow. Callers that relied on
+  observing `Pending` in telemetry should switch to `LegacyBypass`
+  (there is no combined `PendingOrLegacy` helper by design; the
+  intent difference was the whole point of the split).
+- `ReplayWindow::new()` remains; it constructs a default 64-slot
+  window, so existing callers are unaffected.
+- `ReplayWindow.bitmap` is now `Vec<u64>` internally instead of a
+  single `u64`. Not part of the public API.
+- SPEC draft-02r2: §5.1 generalized to `W` bits; §12.6 / §12.7
+  redrawn around the six-variant state machine; Appendix B adds
+  a draft-02r2 row.
+- Consent-ceremony walkthrough in `xenia-viewer-web` updated: the
+  WASM fixture now opens in ceremony mode (`AwaitingRequest`) so
+  the interactive demo exercises the full state machine.
+
+### Deprecated
+
+- None. `ConsentState::Pending` never shipped outside the
+  draft-02 → draft-02r1 docs as a public enum variant (the Rust
+  enum was `Pending` in alpha.3 and alpha.4). Callers migrating
+  from alpha.4:
+  - Pattern matches on `ConsentState::Pending` → rename to
+    `ConsentState::LegacyBypass` (unchanged behavior) OR
+    `ConsentState::AwaitingRequest` (ceremony mode, opt in via
+    `SessionBuilder::require_consent`).
+  - Exhaustive matches on `ConsentState` gain two new arms
+    (`LegacyBypass` and `AwaitingRequest`). `#[deny(unused)]`
+    callers will see a clippy nag until both are handled.
+
+### Plan status
+
+- `#2 Split Pending` — **closed** in this release.
+- `#4 Configurable replay window size` — **closed** in this release.
+- `#1 session_binding field` and `#3 duplicate/conflict transition
+  table` remain deferred to `0.2.0-alpha.1` / draft-03 (both are
+  breaking wire or semantics changes).
+
 ## [0.1.0-alpha.4] — 2026-04-18
 
 ### Security / Correctness

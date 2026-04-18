@@ -1,10 +1,13 @@
-# Xenia Wire Protocol — Specification draft-02r1
+# Xenia Wire Protocol — Specification draft-02r2
 
-> **Status**: draft-02r1 (2026-04-18 clarifying revision of draft-02).
-> Corresponds to `xenia-wire 0.1.0-alpha.3` on crates.io. No wire-format
-> changes from draft-02; revisions are clarifications that address
-> ambiguities identified in first-round informal cryptographic review.
-> See Appendix B for the full change list.
+> **Status**: draft-02r2 (2026-04-18 clarifying revision of draft-02r1).
+> Corresponds to `xenia-wire 0.1.0-alpha.5` on crates.io. No wire-format
+> changes from draft-02 / draft-02r1; draft-02r2 refines the consent
+> session state machine (§12.6 / §12.7) and adds a configurable replay
+> window size (§5). Both are receiver-local; two draft-02r2 peers and
+> two draft-02r1 peers interoperate at the wire level so long as they
+> agree on window size (default 64 slots). See Appendix B for the full
+> change list.
 >
 > Pre-alpha — the format is subject to breaking change in subsequent
 > drafts. Reviewers: please open an issue for any remaining ambiguity;
@@ -67,11 +70,15 @@ protocol codifies the terms of that hospitality cryptographically.
 
 ### 1.4 Version
 
-This document specifies **draft-02r1** of the wire protocol — a
-clarifying revision of draft-02 that adds no wire-format changes.
-The spec version is independent of the `xenia-wire` crate version;
-the mapping from crate version to wire draft is recorded in
-Appendix B.
+This document specifies **draft-02r2** of the wire protocol — a
+clarifying revision of draft-02r1 that adds no wire-format changes.
+draft-02r2 splits the former `Pending` consent state into `LegacyBypass`
++ `AwaitingRequest` (receiver-local; see §12.6) and exposes a
+configurable per-stream replay window size of 64 to 1024 bits
+(receiver-local; see §5). Peers agree on the window size out-of-band;
+the default remains 64. The spec version is independent of the
+`xenia-wire` crate version; the mapping from crate version to wire
+draft is recorded in Appendix B.
 
 ### 1.4.1 Draft compatibility
 
@@ -294,13 +301,16 @@ participates in.
 
 ### 5.1 Semantics
 
-The receiver maintains, per `(source_id, pld_type)` tuple, a
-64-bit sliding window over received sequence numbers. The window
+The receiver maintains, per `(source_id, pld_type, key_epoch)`
+tuple, a sliding window of `W` bits over received sequence numbers.
+`W` is a receiver-local constant, REQUIRED to be a multiple of 64
+between 64 and 1024 inclusive. The default is `W = 64`. The window
 tracks:
 
 - `highest`: the highest sequence seen so far on this stream.
-- `bitmap`: a 64-bit mask where bit `i` indicates sequence
-  `highest - i` has been received (bit 0 = highest).
+- `bitmap`: a `W`-bit mask where bit `i` indicates sequence
+  `highest - i` has been received (bit 0 = highest). Implemented
+  as `⌈W / 64⌉` 64-bit words.
 
 An incoming envelope with sequence `seq` is accepted if and only
 if:
@@ -310,14 +320,30 @@ if:
    `bitmap = 1`), OR
 2. `seq > highest` (strictly new high: shift the bitmap left by
    `seq - highest` bits, set bit 0, update `highest`), OR
-3. `highest - seq < 64` AND bit `(highest - seq)` of `bitmap` is
+3. `highest - seq < W` AND bit `(highest - seq)` of `bitmap` is
    unset (within-window, unseen: set the bit, accept).
 
 Otherwise the envelope is rejected.
 
-Sequences where `highest - seq >= 64` (more than 64 below the
+Sequences where `highest - seq >= W` (more than `W` below the
 current high) MUST be rejected outright — these are either replays
 or late-delivery beyond tolerance.
+
+**Window-size selection (draft-02r2):** the default `W = 64` tracks
+IPsec/DTLS and is sufficient for in-order or mildly reordered
+transports (TCP, QUIC, loopback, well-provisioned WANs). Deployments
+carrying heavily reordered traffic — UDP over multi-path, lossy
+LTE, high-jitter Wi-Fi — MAY widen the window up to 1024 bits to
+tolerate larger reorder fans without false replay rejections. The
+memory cost is `W / 8` bytes of bitmap per `(source_id, pld_type,
+key_epoch)` stream; at `W = 1024` this is 128 bytes per stream.
+
+Peers MUST agree on `W` out-of-band (e.g. via a configuration
+profile shared alongside the session key). The wire does not carry
+the window size. A sender that emits a `seq` more than `W` below
+the receiver's `highest` will see its envelope rejected as a
+replay even though the AEAD tag verifies; this is by design
+(§5.1 rule 3) and behaves identically to the fixed-64 case.
 
 ### 5.2 Multi-stream independence
 
@@ -895,40 +921,60 @@ while ticket #1234 is In-Progress") evaluated at each frame against
 a decentralized truth-source. Receivers that do not understand the
 predicate MUST reject the request as malformed.
 
-### 12.6 Session state machine
+### 12.6 Session state machine (draft-02r2)
 
-Every session SHALL track consent state:
+Every session SHALL track consent state, one of six variants. Two
+*start states* disambiguate the pre-draft-02r2 `Pending` variant:
+
+- **`LegacyBypass`** — the consent system is not in use for this
+  session. Application payloads flow unimpeded (corresponds to
+  interpretation (1) of the former `Pending` state — see §12.7
+  below). Sticky: every observed event is a no-op.
+- **`AwaitingRequest`** — the consent system IS in use; no
+  `ConsentRequest` has been observed yet. Application payloads are
+  blocked until a ceremony completes (interpretation (2) of the
+  former `Pending` state).
+
+Deployments opt into `AwaitingRequest` via an implementation-
+specific configuration (the reference implementation exposes it
+via `SessionBuilder::require_consent(true)`). Callers that need
+draft-02 / draft-02r1 wire-level behavior use `LegacyBypass`; no
+wire-format change is required to switch between them.
 
 ```
-  ┌─────────┐  observe Request   ┌──────────┐
-  │ Pending │ ─────────────────▶ │ Requested │
-  └─────────┘                    └──────────┘
-       │                              │
-       │                              │ observe Response{approved=true}
-       │                              ▼
-       │                         ┌──────────┐
-       │                         │ Approved │◀──┐
-       │                         └──────────┘   │
-       │                              │         │
-       │                              │         │ (Approved is stable
-       │                              │         │  until revocation)
-       │                              │         │
-       │                              │ observe Revocation
-       │                              ▼
-       │                         ┌──────────┐
-       │                         │ Revoked  │
-       │                         └──────────┘
-       │
-       │ observe Response{approved=false}
-       ▼
-  ┌────────┐
-  │ Denied │ (from Requested)
-  └────────┘
+  ┌──────────────┐   (any event)
+  │ LegacyBypass │ ◀─────────────── LegacyBypass   (sticky)
+  └──────────────┘
+
+  ┌─────────────────┐  observe Request   ┌──────────┐
+  │ AwaitingRequest │ ─────────────────▶ │ Requested │
+  └─────────────────┘                    └──────────┘
+                                              │
+                                              │ observe Response{approved=true}
+                                              ▼
+                                         ┌──────────┐
+                                         │ Approved │◀──┐
+                                         └──────────┘   │
+                                              │         │
+                                              │         │ (Approved is stable
+                                              │         │  until revocation)
+                                              │         │
+                                              │ observe Revocation
+                                              ▼
+                                         ┌──────────┐
+                                         │ Revoked  │ (terminal)
+                                         └──────────┘
+
+                       observe Response{approved=false}
+  AwaitingRequest ────────(via Requested)──────────────▶ Denied (terminal)
 ```
 
 Driven by the caller (not the wire) after verifying each message.
-Transitions not shown (e.g., Response from Pending, Revocation
-from Pending) MUST be no-ops.
+Transitions not shown (e.g. `Response` from `AwaitingRequest`,
+`Revocation` from `AwaitingRequest`) MUST be no-ops. In particular,
+`LegacyBypass` is sticky — an unsolicited `Request` does NOT
+auto-promote a session out of `LegacyBypass`. Callers opt into
+ceremony-mode at session construction.
 
 **Duplicate and conflict handling** (draft-02r1):
 
@@ -964,45 +1010,44 @@ from Pending) MUST be no-ops.
   concurrent requests, but the wire does not require more than
   the standard replay-window defense.
 
-### 12.7 FRAME gating
+### 12.7 FRAME gating (draft-02r2)
 
-When a session's consent state is `Requested`, `Denied`, or
-`Revoked`, the receiver MUST NOT accept, and the sender MUST NOT
-seal, payload types `0x10` / `0x11` / `0x12` (application `FRAME` /
-`INPUT` / `FRAME_LZ4`). Attempts return:
+When a session's consent state is `AwaitingRequest`, `Requested`,
+`Denied`, or `Revoked`, the receiver MUST NOT accept, and the
+sender MUST NOT seal, payload types `0x10` / `0x11` / `0x12`
+(application `FRAME` / `INPUT` / `FRAME_LZ4`). Attempts return:
 
 - `ConsentRevoked` when state is `Revoked`.
-- `NoConsent` otherwise.
+- `NoConsent` otherwise (`AwaitingRequest`, `Requested`, `Denied`).
 
-When state is `Pending` or `Approved`, application payloads flow
-normally.
+When state is `LegacyBypass` or `Approved`, application payloads
+flow normally.
 
-> **On the `Pending` state's dual meaning** (draft-02r1): the
-> `Pending` state is overloaded in draft-02. It conflates two
-> operationally different situations:
->
-> 1. **"Consent system not in use"** — a session that intends to
->    use an out-of-band consent mechanism (MSP pre-authorization,
->    deployment-level trust anchors) and will never run a Xenia
->    ceremony. Application traffic should flow unimpeded.
-> 2. **"Awaiting request"** — a session that intends to use
->    Xenia's ceremony but has not yet seen a `ConsentRequest`.
->    A security-conscious deployment might want to block traffic
->    until the ceremony completes.
->
-> The wire cannot distinguish these intent-level positions from
-> the sequence of events it observes. The current rule — `Pending`
-> allows traffic — matches interpretation (1) and is the correct
-> default for backward compatibility with draft-01 deployments.
-> Deployments that want interpretation (2) MUST either (a)
-> configure the receiver to require a `ConsentRequest` before
-> opening any application payload, enforced at the application
-> layer above the wire, or (b) wait for a future draft that
-> introduces distinct states (tentatively named `LegacyBypass`,
-> `AwaitingRequest`, `Requested`, ...).
->
-> Splitting `Pending` into richer states is tracked as a
-> post-draft-02 design item.
+**Why two "allow" states.** The old `Pending` state conflated two
+operationally different situations:
+
+1. **"Consent system not in use"** — a session that intends to
+   use an out-of-band consent mechanism (MSP pre-authorization,
+   deployment-level trust anchors) and will never run a Xenia
+   ceremony. Application traffic should flow unimpeded. This
+   becomes `LegacyBypass`.
+2. **"Awaiting request"** — a session that intends to use
+   Xenia's ceremony but has not yet seen a `ConsentRequest`.
+   A security-conscious deployment wants to block traffic until
+   the ceremony completes. This becomes `AwaitingRequest`.
+
+draft-02r2 gives each interpretation its own variant. The choice is
+made at session construction (it cannot be inferred from the wire),
+and the two variants behave symmetrically across seal / open.
+
+**Backwards compatibility with draft-02r1.** The wire format is
+unchanged. The two new states are purely receiver-local
+classification; they don't appear in any on-wire structure.
+Existing deployments that used `Pending == allow` can keep that
+semantics by constructing sessions in `LegacyBypass` (the
+reference implementation's default). Deployments that want
+traffic blocked until the ceremony completes opt into
+`AwaitingRequest`.
 
 ### 12.8 Security properties
 
@@ -1106,6 +1151,7 @@ from a non-Rust implementation.
 | draft-01 | 2026-04-18 | `0.1.0-alpha.1` / `alpha.2` | Initial publication. |
 | draft-02 | 2026-04-18 | `0.1.0-alpha.3` | Adds §12 Consent Ceremony (payload types `0x20`/`0x21`/`0x22`). Requires Ed25519 signing. No breaking change to existing wire format — §1–§11 are unchanged. |
 | **draft-02r1** | 2026-04-18 | `0.1.0-alpha.3` → `alpha.4` (no wire change; alpha.4 only closes a reference-impl gap) | Clarifying revision in response to first round of informal cryptographic review. No wire-format changes. Highlights: (a) §1.4 version-consistency fix; (b) explicit AAD=empty statement in §2; (c) `epch` → `epoch` naming cleanup; (d) `source_id` "6 bytes on wire, label may derive from 8-byte fixture" clarification; (e) explicit session-global counter semantics + tightened sequence-exhaustion boundary in §3; (f) per-key-epoch replay state in §5.3 (flags a reference-implementation gap to close); (g) compression side-channel subsection §7.5; (h) observability-local-vs-remote split in §9.1; (i) Poly1305 bound precision in §10.2; (j) canonical-encoding subsection §12.3.1; (k) third-party-verifiable-signed-consent terminology instead of "non-repudiation" throughout §12; (l) `ConsentScope` per-frame enforcement note; (m) duplicate/conflict handling on the consent state machine; (n) explicit discussion of the `Pending`-state dual-meaning design gap; (o) session-binding known-limitation flag. Four design-level items (session_binding field, richer consent states, duplicate semantics decision, configurable replay window size) tracked as post-draft-02 design issues. |
+| **draft-02r2** | 2026-04-18 | `0.1.0-alpha.5` | Clarifying revision; no wire-format changes. Closes two of the four design items flagged at the end of draft-02r1: (i) splits the former `Pending` consent state into `LegacyBypass` (consent handled out-of-band; FRAME flows) and `AwaitingRequest` (ceremony required; FRAME blocked until `Approved`) — see §12.6 / §12.7. Receiver-local; opt-in at session construction; interoperable with draft-02r1 peers. (ii) Generalizes the replay window from fixed 64 bits to a receiver-configurable `W ∈ {64, 128, 256, 512, 1024}` — see §5.1. Receiver-local; peers agree on `W` out-of-band; default remains 64. Two design items remain for a future breaking draft (draft-03 / `0.2.0`): explicit `session_binding` field on `ConsentRequestCore`, and a normative duplicate/conflict transition table for the consent state machine. |
 
 ---
 

@@ -36,7 +36,8 @@
   .state-bar { background: var(--state-bg); border: 1px solid var(--state-border); border-radius: 6px; padding: 1em; margin: 1em 0; }
   .state-bar .row { display: flex; gap: 2em; align-items: baseline; }
   .state { font-weight: bold; padding: 0.15em 0.55em; border-radius: 3px; background: #f0f0f0; font-size: 0.95em; }
-  .state.Pending { background: #e9e9e9; color: #666; }
+  .state.LegacyBypass { background: #e9e9e9; color: #666; }
+  .state.AwaitingRequest { background: #e9e9e9; color: #666; }
   .state.Requested { background: #fff4c8; color: #7a5800; }
   .state.Approved { background: #d5ecd8; color: #1e5a2f; }
   .state.Denied { background: #f5d7d2; color: #7a2b20; }
@@ -85,8 +86,8 @@
 
 <div class="state-bar">
   <div class="row">
-    <div><strong>Technician</strong>: <span id="tech-state" class="state Pending">Pending</span></div>
-    <div><strong>End-user</strong>: <span id="user-state" class="state Pending">Pending</span></div>
+    <div><strong>Technician</strong>: <span id="tech-state" class="state AwaitingRequest">AwaitingRequest</span></div>
+    <div><strong>End-user</strong>: <span id="user-state" class="state AwaitingRequest">AwaitingRequest</span></div>
   </div>
 </div>
 

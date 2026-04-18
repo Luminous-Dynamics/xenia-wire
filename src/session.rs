@@ -127,7 +127,7 @@ impl Session {
             current_key_epoch: 0,
             prev_key_epoch: None,
             #[cfg(feature = "consent")]
-            consent_state: crate::consent::ConsentState::Pending,
+            consent_state: crate::consent::ConsentState::LegacyBypass,
         }
     }
 
@@ -237,7 +237,12 @@ impl Session {
     ///
     /// Transitions (see [`crate::consent::ConsentState`]):
     ///
-    /// - `Pending` + `Request` → `Requested`
+    /// - `LegacyBypass` + any event → `LegacyBypass` (consent not
+    ///   in use; observing an unsolicited request does NOT
+    ///   auto-promote out of legacy mode — caller opts into
+    ///   ceremony-mode at session construction via
+    ///   [`SessionBuilder::require_consent`]).
+    /// - `AwaitingRequest` + `Request` → `Requested`
     /// - `Requested` + `Response{approved=true}` → `Approved`
     /// - `Requested` + `Response{approved=false}` → `Denied`
     /// - `Approved` + `Revocation` → `Revoked`
@@ -249,7 +254,11 @@ impl Session {
     pub fn observe_consent(&mut self, event: ConsentEvent) -> crate::consent::ConsentState {
         use crate::consent::ConsentState;
         self.consent_state = match (self.consent_state, event) {
-            (ConsentState::Pending, ConsentEvent::Request) => ConsentState::Requested,
+            // LegacyBypass is sticky — unsolicited events don't auto-
+            // promote out. Caller opts into ceremony mode at
+            // construction.
+            (ConsentState::LegacyBypass, _) => ConsentState::LegacyBypass,
+            (ConsentState::AwaitingRequest, ConsentEvent::Request) => ConsentState::Requested,
             (ConsentState::Requested, ConsentEvent::ResponseApproved) => ConsentState::Approved,
             (ConsentState::Requested, ConsentEvent::ResponseDenied) => ConsentState::Denied,
             (ConsentState::Approved, ConsentEvent::Revocation) => ConsentState::Revoked,
@@ -261,25 +270,29 @@ impl Session {
     /// Gate predicate: is the session allowed to seal/open a `FRAME`
     /// payload right now?
     ///
-    /// Enforcement is opt-in:
+    /// See SPEC §12.7 for the normative rule. Summary:
     ///
-    /// - `Pending` (initial state, no ceremony observed): **allowed**.
-    ///   A caller who never starts a consent ceremony gets draft-01
-    ///   behavior — the `consent` feature is a capability, not a
-    ///   mandate. This preserves compatibility for application-level
-    ///   consent models that don't use Xenia's built-in ceremony.
+    /// - `LegacyBypass` (default — consent system not in use):
+    ///   **allowed**. Preserves draft-02 behavior for callers with
+    ///   an out-of-band consent mechanism.
+    /// - `AwaitingRequest` (opt-in via
+    ///   [`SessionBuilder::require_consent`]): **blocked** until a
+    ///   ceremony completes. `NoConsent` error.
     /// - `Requested` (ceremony in progress, awaiting response):
-    ///   blocked. Once you commit to the ceremony, you finish it.
-    /// - `Approved`: allowed.
-    /// - `Denied` / `Revoked`: blocked.
+    ///   blocked. `NoConsent` error.
+    /// - `Approved`: **allowed**.
+    /// - `Denied`: blocked. `NoConsent` error.
+    /// - `Revoked`: blocked. `ConsentRevoked` error.
     #[cfg(feature = "consent")]
     #[inline]
     fn can_seal_frame(&self) -> Result<(), WireError> {
         use crate::consent::ConsentState;
         match self.consent_state {
-            ConsentState::Pending | ConsentState::Approved => Ok(()),
+            ConsentState::LegacyBypass | ConsentState::Approved => Ok(()),
             ConsentState::Revoked => Err(WireError::ConsentRevoked),
-            ConsentState::Requested | ConsentState::Denied => Err(WireError::NoConsent),
+            ConsentState::AwaitingRequest
+            | ConsentState::Requested
+            | ConsentState::Denied => Err(WireError::NoConsent),
         }
     }
 
@@ -456,6 +469,139 @@ impl Session {
 impl Default for Session {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// ─── SessionBuilder (added in draft-02r2) ─────────────────────────────
+//
+// The builder pattern exists to let callers opt into behaviors that
+// would otherwise require either (a) new `Session::with_*` constructors
+// (API churn) or (b) post-construction mutators (awkward order-of-
+// operations). The builder is additive: existing `Session::new`,
+// `Session::with_source_id`, and `Session::with_rekey_grace` remain
+// unchanged.
+
+/// Opt-in configuration for a fresh [`Session`]. Constructed via
+/// [`Session::builder`]; finalized via [`SessionBuilder::build`].
+///
+/// Defaults reproduce [`Session::new`]: random `source_id` + `epoch`,
+/// [`DEFAULT_REKEY_GRACE`] grace, 64-slot replay window, and
+/// `consent_required = false` (→ [`crate::consent::ConsentState::LegacyBypass`]
+/// when the `consent` feature is on).
+pub struct SessionBuilder {
+    source_id: Option<[u8; 8]>,
+    epoch: Option<u8>,
+    rekey_grace: Duration,
+    #[cfg(feature = "consent")]
+    consent_required: bool,
+    replay_window_bits: u32,
+}
+
+impl SessionBuilder {
+    /// Create a builder with default values.
+    pub fn new() -> Self {
+        Self {
+            source_id: None,
+            epoch: None,
+            rekey_grace: DEFAULT_REKEY_GRACE,
+            #[cfg(feature = "consent")]
+            consent_required: false,
+            replay_window_bits: 64,
+        }
+    }
+
+    /// Pin the `source_id` + `epoch` for deterministic test fixtures.
+    /// Normal callers SHOULD omit this and let the builder randomize.
+    pub fn with_source_id(mut self, source_id: [u8; 8], epoch: u8) -> Self {
+        self.source_id = Some(source_id);
+        self.epoch = Some(epoch);
+        self
+    }
+
+    /// Override the previous-key grace duration. See
+    /// [`DEFAULT_REKEY_GRACE`].
+    pub fn with_rekey_grace(mut self, grace: Duration) -> Self {
+        self.rekey_grace = grace;
+        self
+    }
+
+    /// Require the consent ceremony to complete before application
+    /// `FRAME` / `INPUT` / `FRAME_LZ4` payloads are accepted.
+    ///
+    /// - `require = false` (default): initial state is `LegacyBypass`;
+    ///   consent is handled out-of-band by the application.
+    /// - `require = true`: initial state is `AwaitingRequest`;
+    ///   application payloads are blocked until a `ConsentRequest` +
+    ///   approving `ConsentResponse` transition the session to
+    ///   `Approved`.
+    ///
+    /// Only available with the `consent` feature.
+    #[cfg(feature = "consent")]
+    pub fn require_consent(mut self, require: bool) -> Self {
+        self.consent_required = require;
+        self
+    }
+
+    /// Override the per-stream replay window size in bits.
+    /// Must be a multiple of 64; valid values are 64 (default),
+    /// 128, 256, 512, 1024.
+    ///
+    /// Memory cost per `(source_id, pld_type, key_epoch)` stream is
+    /// `bits / 8` bytes of bitmap plus a small constant. 1024-slot
+    /// windows cost 128 bytes per stream.
+    ///
+    /// Panics at `build()` time if the value is out of range.
+    pub fn with_replay_window_bits(mut self, bits: u32) -> Self {
+        self.replay_window_bits = bits;
+        self
+    }
+
+    /// Finalize the builder and construct a [`Session`].
+    ///
+    /// Panics if `replay_window_bits` is invalid (not a multiple of 64,
+    /// less than 64, or more than 1024).
+    pub fn build(self) -> Session {
+        let source_id = self.source_id.unwrap_or_else(rand::random);
+        let epoch = self.epoch.unwrap_or_else(rand::random);
+        let replay_window = ReplayWindow::with_window_bits(self.replay_window_bits);
+
+        Session {
+            session_key: None,
+            prev_session_key: None,
+            key_established_at: None,
+            prev_key_expires_at: None,
+            nonce_counter: 0,
+            source_id,
+            epoch,
+            replay_window,
+            rekey_grace: self.rekey_grace,
+            current_key_epoch: 0,
+            prev_key_epoch: None,
+            #[cfg(feature = "consent")]
+            consent_state: if self.consent_required {
+                crate::consent::ConsentState::AwaitingRequest
+            } else {
+                crate::consent::ConsentState::LegacyBypass
+            },
+        }
+    }
+}
+
+impl Default for SessionBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Session {
+    /// Start a [`SessionBuilder`] for opt-in configuration. Use this
+    /// when you want `require_consent()`, a non-default replay window
+    /// size, or deterministic fixture `source_id` / `epoch` without
+    /// stacking multiple post-construction mutators.
+    ///
+    /// Added in draft-02r2.
+    pub fn builder() -> SessionBuilder {
+        SessionBuilder::new()
     }
 }
 

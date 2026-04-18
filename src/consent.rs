@@ -323,41 +323,65 @@ impl Sealable for ConsentRevocation {
     }
 }
 
-/// Session-level consent state machine.
+/// Session-level consent state machine (draft-02r2).
 ///
-/// Transitions:
+/// Two start states disambiguate the pre-draft-02r2 `Pending` variant:
+///
+/// - [`Session::new`](crate::Session::new) →
+///   [`ConsentState::LegacyBypass`] (sticky; FRAME flows out-of-band).
+/// - [`SessionBuilder::require_consent(true)`](crate::SessionBuilder::require_consent)
+///   → [`ConsentState::AwaitingRequest`] (FRAME blocked until ceremony
+///   completes).
 ///
 /// ```text
-///           ConsentRequest sealed
-/// Pending  ────────────────────────▶  Requested
-///                                     │
-///                                     │ ConsentResponse{approved=true} opened
-///                                     ▼
-///                                  Approved ────┐
-///                                     │         │ ConsentRevocation opened
-///                                     │         ▼
-///                                     │      Revoked
-///                                     │
-///                                     │ ConsentResponse{approved=false} opened
-///                                     ▼
-///                                   Denied
+///                      (any event)
+/// LegacyBypass ◀──────────────────────── LegacyBypass   (sticky)
+///
+///                       ConsentRequest opened
+/// AwaitingRequest ─────────────────────────▶ Requested
+///                                            │
+///                                            │ ConsentResponse{approved=true}
+///                                            ▼
+///                                         Approved ────┐
+///                                            │         │ ConsentRevocation
+///                                            │         ▼
+///                                            │      Revoked   (terminal)
+///                                            │
+///                                            │ ConsentResponse{approved=false}
+///                                            ▼
+///                                          Denied    (terminal)
 /// ```
 ///
 /// `Session::observe_consent` drives these transitions. Application
-/// `FRAME` payloads are accepted only in the `Approved` state — see
-/// [`crate::Session::seal`] and [`crate::Session::open`] for the
-/// enforcement points.
+/// `FRAME` payloads are accepted in `LegacyBypass` and `Approved`; any
+/// other state blocks the seal / open path. See [`crate::Session::seal`]
+/// and [`crate::Session::open`] for the enforcement points.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConsentState {
-    /// No request has been observed on this session yet.
-    Pending,
+    /// Consent system not in use for this session. Application
+    /// payloads flow unimpeded. Default for [`crate::Session::new`];
+    /// preserves the draft-02 "Pending allows traffic" behavior.
+    /// Use this when consent is handled out-of-band (e.g. via an
+    /// MSP pre-authorization mechanism above the wire).
+    ///
+    /// Added in draft-02r2.
+    LegacyBypass,
+    /// Consent system IS in use; no `ConsentRequest` observed yet.
+    /// Application `FRAME` / `INPUT` / `FRAME_LZ4` payloads are
+    /// blocked until a ceremony completes. Opt in via
+    /// [`crate::SessionBuilder::require_consent`].
+    ///
+    /// Added in draft-02r2 to disambiguate the dual meaning of
+    /// the pre-draft-02r2 `Pending` state. See SPEC §12.7.
+    AwaitingRequest,
     /// A `ConsentRequest` was sent / received but not yet answered.
     Requested,
     /// Consent was approved by the responder. FRAME payloads flow.
     Approved,
-    /// The responder denied the request. Terminal state.
+    /// The responder denied the request. Terminal for this ceremony.
     Denied,
-    /// A revocation was received after approval. Terminal state.
+    /// A revocation was received after approval. Terminal for this
+    /// ceremony.
     Revoked,
 }
 
