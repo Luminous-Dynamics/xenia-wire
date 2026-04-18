@@ -16,14 +16,31 @@ This document is the scoped follow-up. It is deliberately short:
   opinion; 4-6 are lower-risk "any concerns?" items.
 
 Section-number references (e.g., §12.3.1) are to SPEC.md at
-`v0.2.0-alpha.2`. Source-file references are to the reference
+`v0.2.0-alpha.3`. Source-file references are to the reference
 implementation at the same tag.
 
-**No other wire changes.** §1–§11 (envelope layout, nonce
+**What changed, precisely.** §1–§11 (envelope layout, nonce
 construction, replay window, AEAD, payload type registry) are
-byte-for-byte identical to draft-02r1. All deltas live in the
-signed-body layer (§12), and — within the signed-body layer —
-the receive-side state machine and fingerprint verification.
+byte-for-byte identical to draft-02r1. The deltas are confined
+to §12 (Consent Ceremony) in three layers:
+
+1. **Canonical signed-body contract** — breaking change in
+   `0.2.0-alpha.1`: `ConsentRequestCore` / `ConsentResponseCore`
+   / `ConsentRevocationCore` each gained a mandatory 32-byte
+   `session_fingerprint` field at a fixed canonical position.
+2. **Receive-side state machine** — breaking change in
+   `0.2.0-alpha.1`: normative transition table (§12.6.1),
+   `ConsentEvent` carries `request_id`, `observe_consent`
+   returns `Result`.
+3. **Receive-side hardening, no-wire-change** — in
+   `0.2.0-alpha.2` and `0.2.0-alpha.3`: rekey-aware
+   fingerprint verify, timing-channel assumption, constant-
+   time dual-derivation path during grace window.
+
+Sender-side behavior is unchanged from an integrator's
+perspective once the struct-literal migration (point 1) is
+done. Receiver-side behavior gained both the new error channel
+(point 2) and the hardened verify path (point 3).
 
 ---
 
@@ -165,10 +182,15 @@ effect is the whole reason; it's not a cryptographic property.
 
 **Specific ask.** Is this defensive asymmetry worth it, or
 does the interop cost of the mixed convention outweigh the
-mistake-reduction gain? We're open to normalizing to
-little-endian in a future breaking draft if the reviewer
-recommends it — but that's a future-draft decision, not a
-draft-03 one.
+mistake-reduction gain?
+
+We acknowledge this is the weakest design choice in the
+cryptographic set — **defensible, not elegant.** If the
+reviewer recommends normalizing to all-little-endian, we're
+willing to do it in the next breaking draft (draft-04 /
+`0.3.0`). Not a draft-03 blocker; documenting the stance
+upfront so the reviewer knows it's on the "change next time"
+shortlist rather than an entrenched position.
 
 ### 2.3 Timing side-channel in `verify_fingerprint_either_epoch` (RESOLVED in 0.2.0-alpha.3)
 
@@ -188,11 +210,27 @@ grace window. SPEC §12.3.1 rekey interaction now states this as
 a normative MUST for receivers.
 
 **Ask becomes:** review confirmation that the fix is sufficient.
-If an attacker can still distinguish "grace window active" from
-"no grace" via the absence of the second derivation, that's a
-known protocol-visible state (the presence of a prev key is not
-secret), so we don't think further masking is needed. Please
-confirm this reasoning.
+The reasoning we want confirmed, stated crisply:
+
+> The presence of a previous session key is **protocol-visible
+> operational state, not secret key material.** The rekey grace
+> window is a protocol-level feature (§6.2, default 5s) whose
+> start and end are observable to any on-path attacker from
+> nonce counter resets, AEAD-verify failures, and the mere
+> appearance of messages that only decrypt under the previous
+> key. An attacker who can measure verify-path timing gains
+> nothing from learning "prev key is present" that they cannot
+> already infer from these other signals. The dual-HKDF cost is
+> therefore needed only to hide **which** epoch matched — not
+> whether the grace window is active. alpha.3 hides the former;
+> hiding the latter would require constant-time dummy
+> derivations and an indistinguishable grace-window state
+> machine, which we judge out of scope for a wire protocol.
+
+Please confirm the underlined claim ("protocol-visible
+operational state, not secret") is sufficient justification for
+not adding constant-time dummy derivations outside the grace
+window.
 
 ### 2.4 Transition-table completeness (§12.6.1)
 
@@ -248,7 +286,7 @@ point at a sink we missed.
 
 ## 3. Pointers
 
-- **SPEC**: `SPEC.md` at tag `v0.2.0-alpha.2` on
+- **SPEC**: `SPEC.md` at tag `v0.2.0-alpha.3` on
   `Luminous-Dynamics/xenia-wire`. §12.3, §12.3.1, §12.6.1, §12.6.2,
   §12.8 are the draft-03 deltas. Appendix B row for draft-03
   records the changelog.
