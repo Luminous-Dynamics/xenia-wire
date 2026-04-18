@@ -67,9 +67,11 @@ protocol codifies the terms of that hospitality cryptographically.
 
 ### 1.4 Version
 
-This document specifies **draft-02** of the wire protocol. The spec
-version is independent of the `xenia-wire` crate version; the mapping
-from crate version to wire draft is recorded in Appendix B.
+This document specifies **draft-02r1** of the wire protocol — a
+clarifying revision of draft-02 that adds no wire-format changes.
+The spec version is independent of the `xenia-wire` crate version;
+the mapping from crate version to wire draft is recorded in
+Appendix B.
 
 ### 1.4.1 Draft compatibility
 
@@ -211,6 +213,12 @@ The nonce layout ensures uniqueness as long as:
    sessions rekey every ~30 minutes and reset the counter (§6.4),
    so the boundary is only reachable by a caller that has disabled
    or failed to trigger rekey.
+
+   Implementations SHOULD rekey well before the boundary is reached
+   (e.g., at `2^31` on a pure counter trigger, or on a time / volume
+   trigger earlier) to preserve a safety margin. The `SequenceExhausted`
+   hard boundary is a last-resort defense against latent caller bugs,
+   not a normal operating point.
 
 ### 3.2 Worked example
 
@@ -615,7 +623,10 @@ Assuming:
 - The session key is a uniformly random 256-bit secret unknown
   to the attacker.
 - `source_id` and `epoch` are uniformly random at session setup.
-- The nonce counter is monotonic per stream.
+- The sender maintains a session-global monotonic nonce counter
+  (§3): one counter shared across all `pld_type` streams, with the
+  `pld_type` byte in the nonce providing per-stream domain
+  separation.
 
 Xenia Wire provides:
 
@@ -921,11 +932,23 @@ from Pending) MUST be no-ops.
 
 **Duplicate and conflict handling** (draft-02r1):
 
-- A second `ConsentRequest` observed while state is `Requested`
-  MAY update `request_id` / `valid_until` on the receiver side,
-  or MAY be dropped — this is an application-policy choice not
-  fixed by the wire. Implementations SHOULD document their chosen
-  behavior.
+- A second `ConsentRequest` observed while state is `Requested` with
+  a `request_id` strictly higher than the current one SHOULD be
+  treated as a replacement (update `request_id` / `valid_until` on
+  the receiver side). A `ConsentRequest` with a lower or equal
+  `request_id` SHOULD be dropped as stale-or-replay; the replay
+  window already catches duplicates, so this is a policy tightening
+  on top of wire-level defenses. Implementations SHOULD document
+  their chosen behavior.
+- **Consent messages themselves are NOT gated by the current consent
+  state.** A session in state `Revoked` can still receive and process
+  a fresh `ConsentRequest` (starting a new ceremony); a session in
+  `Denied` can receive a new `Request`; etc. The gate in §12.7
+  applies to application `FRAME` / `INPUT` / `FRAME_LZ4` payloads,
+  not to consent-layer messages themselves. This prevents a
+  session from deadlocking itself out of reaching `Approved` again
+  after a terminal state — a fresh ceremony at a higher `request_id`
+  is always reachable.
 - A second `ConsentResponse` for the same `request_id` that
   confirms the already-recorded decision MUST be a no-op.
 - A second `ConsentResponse` for the same `request_id` that
@@ -1058,6 +1081,9 @@ an alternate implementation can reproduce every byte:
 | 04 | `long_payload` | 256 bytes covering every byte value. |
 | 05 | `nonce_structure` | Three sequential seals, seq counter increments. |
 | 06 | `lz4_frame` | LZ4-before-AEAD pipeline. |
+| 07 | `consent_request` | draft-02 ConsentRequest signed with deterministic Ed25519 seed. |
+| 08 | `consent_response` | draft-02 ConsentResponse approving vector 07. |
+| 09 | `consent_revocation` | draft-02 ConsentRevocation signed by vector 08's responder. |
 
 Fixed fixture parameters:
 
@@ -1079,7 +1105,7 @@ from a non-Rust implementation.
 |-------|------|---------------|---------|
 | draft-01 | 2026-04-18 | `0.1.0-alpha.1` / `alpha.2` | Initial publication. |
 | draft-02 | 2026-04-18 | `0.1.0-alpha.3` | Adds §12 Consent Ceremony (payload types `0x20`/`0x21`/`0x22`). Requires Ed25519 signing. No breaking change to existing wire format — §1–§11 are unchanged. |
-| **draft-02r1** | 2026-04-18 | `0.1.0-alpha.3` (spec revision, no crate bump) | Clarifying revision in response to first round of informal cryptographic review. No wire-format changes. Highlights: (a) §1.4 version-consistency fix; (b) explicit AAD=empty statement in §2; (c) `epch` → `epoch` naming cleanup; (d) `source_id` "6 bytes on wire, label may derive from 8-byte fixture" clarification; (e) explicit session-global counter semantics + tightened sequence-exhaustion boundary in §3; (f) per-key-epoch replay state in §5.3 (flags a reference-implementation gap to close); (g) compression side-channel subsection §7.5; (h) observability-local-vs-remote split in §9.1; (i) Poly1305 bound precision in §10.2; (j) canonical-encoding subsection §12.3.1; (k) third-party-verifiable-signed-consent terminology instead of "non-repudiation" throughout §12; (l) `ConsentScope` per-frame enforcement note; (m) duplicate/conflict handling on the consent state machine; (n) explicit discussion of the `Pending`-state dual-meaning design gap; (o) session-binding known-limitation flag. Four design-level items (session_binding field, richer consent states, duplicate semantics decision, configurable replay window size) tracked as post-draft-02 design issues. |
+| **draft-02r1** | 2026-04-18 | `0.1.0-alpha.3` → `alpha.4` (no wire change; alpha.4 only closes a reference-impl gap) | Clarifying revision in response to first round of informal cryptographic review. No wire-format changes. Highlights: (a) §1.4 version-consistency fix; (b) explicit AAD=empty statement in §2; (c) `epch` → `epoch` naming cleanup; (d) `source_id` "6 bytes on wire, label may derive from 8-byte fixture" clarification; (e) explicit session-global counter semantics + tightened sequence-exhaustion boundary in §3; (f) per-key-epoch replay state in §5.3 (flags a reference-implementation gap to close); (g) compression side-channel subsection §7.5; (h) observability-local-vs-remote split in §9.1; (i) Poly1305 bound precision in §10.2; (j) canonical-encoding subsection §12.3.1; (k) third-party-verifiable-signed-consent terminology instead of "non-repudiation" throughout §12; (l) `ConsentScope` per-frame enforcement note; (m) duplicate/conflict handling on the consent state machine; (n) explicit discussion of the `Pending`-state dual-meaning design gap; (o) session-binding known-limitation flag. Four design-level items (session_binding field, richer consent states, duplicate semantics decision, configurable replay window size) tracked as post-draft-02 design issues. |
 
 ---
 
