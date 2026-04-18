@@ -1,0 +1,34 @@
+Vector 11: contradictory_response (SPEC draft-03 §12.6.1)
+---------------------------------------------------------
+Event-sequence fixture exercising the ConsentViolation::
+ContradictoryResponse path. The session is in ceremony mode.
+
+A second ConsentResponse with a different `approved` value for
+the same `request_id` MUST be rejected as a protocol violation
+rather than accepted as "later wins". SPEC §12.6.2 records the
+rationale: the protocol's correct primitive for "change of
+mind" is ConsentRevocation, which has its own timestamp and
+signed core.
+
+This vector covers both directions:
+  Approved + ResponseDenied{id=active}   -> violation {prior=true,  new=false}
+  Denied   + ResponseApproved{id=active} -> violation {prior=false, new=true}
+
+Vector format: see 10_revocation_before_approval.txt.
+
+---BEGIN---
+INITIAL AwaitingRequest
+EVENT Request 1
+EXPECT_STATE Requested
+EVENT ResponseApproved 1
+EXPECT_STATE Approved
+EVENT ResponseDenied 1
+EXPECT_VIOLATION ContradictoryResponse 1 true false
+EXPECT_STATE Approved
+EVENT Request 2
+EXPECT_STATE Requested
+EVENT ResponseDenied 2
+EXPECT_STATE Denied
+EVENT ResponseApproved 2
+EXPECT_VIOLATION ContradictoryResponse 2 false true
+EXPECT_STATE Denied

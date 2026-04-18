@@ -7,6 +7,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0-alpha.2] — 2026-04-18
+
+Tracks **SPEC draft-03**. No wire-format change from 0.2.0-alpha.1;
+receiver-side hardening + developer-experience additions. All
+draft-03 peers on any mix of 0.2.0-alpha.1 / alpha.2 continue to
+interoperate at the wire level.
+
+### Added
+
+- **Rekey-aware fingerprint verification**
+  ([SPEC §12.3.1 rekey interaction]) — `Session::verify_consent_request`,
+  `_response`, and `_revocation` now transparently probe BOTH the
+  current and the previous session keys when comparing a consent
+  message's embedded `session_fingerprint`. A consent message
+  signed moments before a rekey — AEAD-verified under the previous
+  key during the rekey grace window — now also passes the
+  fingerprint check. Previously, such in-flight messages would
+  false-reject because the verifier derived the local fingerprint
+  only from the current key, while the sender had derived from
+  the (now-previous) key.
+  - Internal helper `Session::session_fingerprint_from_key(request_id,
+    key)` factored out of the public `session_fingerprint`.
+  - Internal probe `verify_fingerprint_either_epoch` tries current
+    then previous; returns `false` iff neither matches.
+  - Regression test:
+    `integration_consent::verify_probes_prev_key_during_rekey_grace`.
+
+- **Interop test vectors 10 / 11 / 12** for the three
+  `ConsentViolation` variants. Event-sequence line-oriented
+  fixtures (new format; grammar documented in
+  `test-vectors/10_revocation_before_approval.txt`) exercise
+  `RevocationBeforeApproval`, `ContradictoryResponse`, and
+  `StaleResponseForUnknownRequest` under adversarial ordering.
+  Ref-impl runner in `tests/violation_vectors.rs`; alternate-
+  language implementations can write a parallel runner from the
+  vector format alone. Format separates doc prose from the
+  machine-parseable script via an explicit `---BEGIN---` marker.
+
+- **`cargo-fuzz` target `fuzz_observe_consent`** — coverage-guided
+  fuzzer for the consent state machine. Feeds arbitrary
+  `Vec<ConsentEvent>` (via `arbitrary::Arbitrary`) into a
+  ceremony-mode session and asserts four invariants on every
+  step: no panic, state always a valid variant, seal-gate matches
+  state per SPEC §12.7, and violations never mutate state.
+  Enable via `cargo +nightly fuzz run fuzz_observe_consent`. The
+  existing `fuzz_replay_window` target was also updated to the
+  post-alpha.4 four-argument `ReplayWindow::accept` signature.
+
+- **`MIGRATION.md`** — a dedicated migration guide with
+  before/after Rust snippets + TypeScript sketches for every
+  API break between published versions. Primary content: the
+  0.1.x → 0.2.0-alpha.1 break. Paired with the per-release
+  `CHANGELOG` entries.
+
+- **SPEC §12.8 timing-channel requirement** — added a
+  load-bearing assumption paragraph specifying that the
+  consent-verification pipeline (bincode deserialization,
+  Ed25519 verify, fingerprint compare) MUST NOT branch on
+  secret-dependent bytes. The reference implementation ships a
+  constant-time compare (`ct_eq_32`); alternate-language
+  implementers are on the hook for auditing their bincode +
+  Ed25519 equivalents. Also enumerates the caveat that
+  fixed-size bincode v1 structs are best-effort constant-time
+  but not guaranteed — implementations that cannot assert the
+  property SHOULD fall back to comparing the re-serialized
+  bytes against the wire slice before invoking Ed25519 verify.
+
+### Changed
+
+- Test vector manifest in SPEC Appendix A + `test-vectors/README.md`
+  gained rows 10/11/12 for the new event-sequence fixtures.
+
+### Not changed
+
+- Wire format (envelope + signed canonical bodies) unchanged.
+- No API break.
+- `consent` feature dependency set unchanged.
+
 ## [0.2.0-alpha.1] — 2026-04-18
 
 Tracks **SPEC draft-03**. **Breaking wire change at the signed-

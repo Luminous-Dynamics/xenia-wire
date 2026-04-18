@@ -1183,6 +1183,44 @@ and the two variants behave symmetrically across seal / open.
   is out of scope. An MSP attestation chain (key signing by the
   employer) is a forthcoming extension.
 
+**Timing-channel assumption (draft-03, load-bearing).** The
+consent-verification pipeline comprises three data-dependent
+operations: (a) bincode deserialization of the signed body, (b)
+Ed25519 signature verification over the re-encoded core, and (c)
+constant-time comparison of the 32-byte `session_fingerprint`.
+For the security properties above to hold, none of (a), (b), or
+(c) may branch on secret-dependent bytes in a way that leaks
+timing information to an attacker observing verification latency.
+
+- **(c) is explicitly constant-time** in the reference
+  implementation (`session.rs::ct_eq_32`, a 32-iteration XOR-OR
+  loop). Alternate-language implementations MUST use a
+  constant-time byte-string comparison — `crypto_verify_32` in
+  libsodium-flavored APIs, `subtle::ConstantTimeEq` in Rust, or
+  an audited equivalent. A data-dependent early-return on (c)
+  leaks the fingerprint byte-by-byte under repeated probing.
+- **(b) MUST be supplied by a constant-time Ed25519
+  implementation.** The reference implementation uses
+  `ed25519-dalek`, which documents this property. Alternate-
+  language implementations MUST verify the claim for their
+  chosen library; toy Ed25519 implementations typically are NOT
+  constant-time.
+- **(a) bincode v1 deserialization of a fixed-size struct
+  (`core`) does not typically branch on its contents** — the
+  field widths are known at compile time, and the only
+  variable-width fields are the `reason` and `causal_binding`
+  blobs whose *length prefixes* are read first. The operation
+  is best-effort constant-time but not guaranteed by the
+  bincode crate; implementations that cannot assert this
+  property SHOULD fall back to comparing the re-serialized
+  bytes against the original wire slice before invoking (b).
+
+Implementations that fail this assumption may be vulnerable to
+Lucky13-style timing attacks that recover the fingerprint (and
+therefore the derived session key's HKDF output for a chosen
+`request_id`) byte-by-byte. The wire specification cannot
+enforce the assumption; auditors SHOULD verify it.
+
 ### 12.9 Threats considered in this draft
 
 - **Replayed ConsentRequest**: rejected by the replay window (§5) —
@@ -1231,7 +1269,10 @@ an alternate implementation can reproduce every byte:
 | 06 | `lz4_frame` | LZ4-before-AEAD pipeline. |
 | 07 | `consent_request` | draft-02 ConsentRequest signed with deterministic Ed25519 seed. |
 | 08 | `consent_response` | draft-02 ConsentResponse approving vector 07. |
-| 09 | `consent_revocation` | draft-02 ConsentRevocation signed by vector 08's responder. |
+| 09 | `consent_revocation` | draft-03 ConsentRevocation signed by vector 08's responder; shares the session_fingerprint of 07 + 08. |
+| 10 | `revocation_before_approval` | draft-03 event-sequence fixture: `ConsentViolation::RevocationBeforeApproval` from `AwaitingRequest` AND from `Requested`. |
+| 11 | `contradictory_response` | draft-03 event-sequence fixture: `ConsentViolation::ContradictoryResponse` in both directions (prior=true→new=false and prior=false→new=true). |
+| 12 | `stale_response` | draft-03 event-sequence fixture: `ConsentViolation::StaleResponseForUnknownRequest` from `AwaitingRequest`, `Requested`, AND `Approved`. |
 
 Fixed fixture parameters:
 

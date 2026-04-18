@@ -268,24 +268,69 @@ impl Session {
     /// Callers SHOULD derive the fingerprint immediately before
     /// signing / verifying and not cache it across rekeys — the
     /// fingerprint changes with the session key.
+    ///
+    /// On the verify side, prefer the convenience helpers
+    /// [`Self::verify_consent_request`] / `_response` / `_revocation`
+    /// rather than calling this directly, because those helpers
+    /// transparently probe the previous key during the rekey grace
+    /// window (a consent message sealed moments before rekey can
+    /// legitimately carry a prev-key fingerprint; see §12.3.1 rekey
+    /// interaction).
     #[cfg(feature = "consent")]
     pub fn session_fingerprint(&self, request_id: u64) -> Result<[u8; 32], WireError> {
+        let key = self.session_key.as_ref().ok_or(WireError::NoSessionKey)?;
+        Ok(self.session_fingerprint_from_key(request_id, key))
+    }
+
+    /// Internal fingerprint derivation against an arbitrary 32-byte
+    /// AEAD key. Private because the public surface only exposes
+    /// "derive against the current key"; verify-path probing of the
+    /// previous key uses this helper internally.
+    ///
+    /// See [`Self::session_fingerprint`] for the derivation spec.
+    #[cfg(feature = "consent")]
+    fn session_fingerprint_from_key(&self, request_id: u64, key: &[u8; 32]) -> [u8; 32] {
         use hkdf::Hkdf;
         use sha2::Sha256;
-
-        let key = self.session_key.as_ref().ok_or(WireError::NoSessionKey)?;
-        let ikm: [u8; 32] = **key;
 
         let mut info = [0u8; 8 + 1 + 8];
         info[..8].copy_from_slice(&self.source_id);
         info[8] = self.epoch;
         info[9..17].copy_from_slice(&request_id.to_be_bytes());
 
-        let hk = Hkdf::<Sha256>::new(Some(b"xenia-session-fingerprint-v1"), &ikm);
+        let hk = Hkdf::<Sha256>::new(Some(b"xenia-session-fingerprint-v1"), key);
         let mut out = [0u8; 32];
         hk.expand(&info, &mut out)
             .expect("HKDF-SHA-256 expand of 32 bytes cannot fail");
-        Ok(out)
+        out
+    }
+
+    /// Probe both the current and (if present) previous session
+    /// keys for a fingerprint match against `claimed` (SPEC
+    /// draft-03 §12.3.1 rekey interaction). Constant-time compare
+    /// on each candidate.
+    ///
+    /// Returns `true` iff either derivation matches. Returns
+    /// `false` if no key is installed.
+    #[cfg(feature = "consent")]
+    fn verify_fingerprint_either_epoch(
+        &self,
+        request_id: u64,
+        claimed: &[u8; 32],
+    ) -> bool {
+        if let Some(key) = self.session_key.as_ref() {
+            let fp = self.session_fingerprint_from_key(request_id, key);
+            if ct_eq_32(&fp, claimed) {
+                return true;
+            }
+        }
+        if let Some(prev) = self.prev_session_key.as_ref() {
+            let fp = self.session_fingerprint_from_key(request_id, prev);
+            if ct_eq_32(&fp, claimed) {
+                return true;
+            }
+        }
+        false
     }
 
     /// Sign a [`ConsentRequestCore`] after injecting the session
@@ -340,8 +385,12 @@ impl Session {
     /// 1. The Ed25519 signature is valid,
     /// 2. The embedded public key matches `expected_pubkey` (if provided),
     ///    and
-    /// 3. The embedded `session_fingerprint` equals the fingerprint
-    ///    this session derives locally for the same `request_id`.
+    /// 3. The embedded `session_fingerprint` matches the fingerprint
+    ///    this session derives locally under **either** the current
+    ///    session key OR the previous session key (during the rekey
+    ///    grace window). Probing both covers the in-flight case where
+    ///    the sender signed under the previous key moments before a
+    ///    rekey and the message arrived after the receiver rekeyed.
     ///
     /// Returns `false` (never a `WireError`) on any mismatch — per SPEC
     /// §11 the caller should react to verification failure the same way
@@ -355,15 +404,13 @@ impl Session {
         if !req.verify(expected_pubkey) {
             return false;
         }
-        match self.session_fingerprint(req.core.request_id) {
-            Ok(fp) => ct_eq_32(&fp, &req.core.session_fingerprint),
-            Err(_) => false,
-        }
+        self.verify_fingerprint_either_epoch(req.core.request_id, &req.core.session_fingerprint)
     }
 
     /// Verify a [`ConsentResponse`] against this session's fingerprint
     /// AND the responder's public key. See
-    /// [`Self::verify_consent_request`].
+    /// [`Self::verify_consent_request`] — same both-epochs probing
+    /// behavior for the rekey grace window.
     #[cfg(feature = "consent")]
     pub fn verify_consent_response(
         &self,
@@ -373,15 +420,16 @@ impl Session {
         if !resp.verify(expected_pubkey) {
             return false;
         }
-        match self.session_fingerprint(resp.core.request_id) {
-            Ok(fp) => ct_eq_32(&fp, &resp.core.session_fingerprint),
-            Err(_) => false,
-        }
+        self.verify_fingerprint_either_epoch(
+            resp.core.request_id,
+            &resp.core.session_fingerprint,
+        )
     }
 
     /// Verify a [`ConsentRevocation`] against this session's fingerprint
     /// AND the revoker's public key. See
-    /// [`Self::verify_consent_request`].
+    /// [`Self::verify_consent_request`] — same both-epochs probing
+    /// behavior for the rekey grace window.
     #[cfg(feature = "consent")]
     pub fn verify_consent_revocation(
         &self,
@@ -391,10 +439,7 @@ impl Session {
         if !rev.verify(expected_pubkey) {
             return false;
         }
-        match self.session_fingerprint(rev.core.request_id) {
-            Ok(fp) => ct_eq_32(&fp, &rev.core.session_fingerprint),
-            Err(_) => false,
-        }
+        self.verify_fingerprint_either_epoch(rev.core.request_id, &rev.core.session_fingerprint)
     }
 
     /// Drive the consent state machine from an observed consent message.

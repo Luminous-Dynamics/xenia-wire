@@ -405,6 +405,61 @@ fn higher_request_id_after_terminal_starts_fresh_ceremony() {
 }
 
 #[test]
+fn verify_probes_prev_key_during_rekey_grace() {
+    // A consent message signed under the OLD key must still verify
+    // on the receiver during the rekey grace window, even though the
+    // receiver has already installed the new key. The fingerprint on
+    // the message was derived from the old key; the receiver probes
+    // both epochs and matches against prev_session_key.
+
+    let original_key = [0x42; 32];
+    let mut sender = Session::builder()
+        .with_source_id([0x88; 8], 0x01)
+        .require_consent(true)
+        .build();
+    let mut receiver = Session::builder()
+        .with_source_id([0x88; 8], 0x01)
+        .require_consent(true)
+        .build();
+    sender.install_key(original_key);
+    receiver.install_key(original_key);
+
+    // Sender signs a ConsentRequest under the original key.
+    let tech_sk = new_signing_key();
+    let request = make_request(&sender, &tech_sk, REQUEST_ID);
+    // Sanity: sender's own verify passes.
+    assert!(sender.verify_consent_request(&request, None));
+
+    // Receiver rekeys BEFORE observing the request (in-flight seal).
+    // Now receiver's current_key is different from the key that
+    // derived the fingerprint in `request`.
+    receiver.install_key([0x99; 32]);
+
+    // Without the prev-key probe, this would fail. With it, verify
+    // still succeeds because prev_session_key still has the original.
+    assert!(
+        receiver.verify_consent_request(&request, None),
+        "in-flight consent signed under prev key must verify during grace"
+    );
+
+    // After tick() elapses the grace window, prev key is dropped and
+    // the same message must no longer verify.
+    let mut receiver2 = Session::builder()
+        .with_source_id([0x88; 8], 0x01)
+        .require_consent(true)
+        .with_rekey_grace(std::time::Duration::from_millis(1))
+        .build();
+    receiver2.install_key(original_key);
+    receiver2.install_key([0x99; 32]);
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    receiver2.tick();
+    assert!(
+        !receiver2.verify_consent_request(&request, None),
+        "after grace expires, prev-key fingerprint MUST no longer verify"
+    );
+}
+
+#[test]
 fn session_fingerprint_mismatch_fails_verify() {
     // A ConsentRequest signed under one session's fingerprint must NOT
     // verify against a different session's fingerprint, even with the

@@ -1,0 +1,33 @@
+Vector 12: stale_response (SPEC draft-03 §12.6.1)
+-------------------------------------------------
+Event-sequence fixture exercising the ConsentViolation::
+StaleResponseForUnknownRequest path. The session is in
+ceremony mode.
+
+A ConsentResponse whose `request_id` was never observed as a
+Request MUST be rejected. A well-behaved peer would have
+emitted a Request first; a stale-id response implies the peer
+is confused, replaying, or out of sync.
+
+This vector covers:
+  AwaitingRequest + ResponseApproved{any_id} -> violation
+  Requested       + ResponseApproved{id ≠ active} -> violation
+  Approved        + ResponseDenied{id ≠ active}  -> violation (stale, not contradictory)
+
+Vector format: see 10_revocation_before_approval.txt.
+
+---BEGIN---
+INITIAL AwaitingRequest
+EVENT ResponseApproved 7
+EXPECT_VIOLATION StaleResponseForUnknownRequest 7
+EXPECT_STATE AwaitingRequest
+EVENT Request 8
+EXPECT_STATE Requested
+EVENT ResponseApproved 9
+EXPECT_VIOLATION StaleResponseForUnknownRequest 9
+EXPECT_STATE Requested
+EVENT ResponseApproved 8
+EXPECT_STATE Approved
+EVENT ResponseDenied 99
+EXPECT_VIOLATION StaleResponseForUnknownRequest 99
+EXPECT_STATE Approved

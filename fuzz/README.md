@@ -16,6 +16,7 @@ $ cargo install cargo-fuzz
 $ cargo +nightly fuzz run fuzz_open              -- -max_total_time=300
 $ cargo +nightly fuzz run fuzz_open_frame        -- -max_total_time=300
 $ cargo +nightly fuzz run fuzz_replay_window     -- -max_total_time=300
+$ cargo +nightly fuzz run fuzz_observe_consent   -- -max_total_time=300
 ```
 
 `-max_total_time=300` runs the target for 5 minutes and exits. Drop
@@ -29,6 +30,7 @@ artifacts under `fuzz/corpus/<target>/` and `fuzz/artifacts/<target>/`.
 | `fuzz_open` | `Session::open()` on arbitrary bytes. Catches panics in nonce parsing, AEAD verify, replay-window keying. |
 | `fuzz_open_frame` | `open_frame()` — AEAD + bincode deserialize. Catches codec panics on structurally-valid envelopes. |
 | `fuzz_replay_window` | `ReplayWindow::accept()` with adversarial sequence patterns. Catches arithmetic bugs in the window shift / bitmap update. |
+| `fuzz_observe_consent` | `Session::observe_consent()` on arbitrary `Vec<ConsentEvent>` (`arbitrary`-derived). Asserts four invariants on every step: no panic; state is always a valid variant; seal-gate matches state per SPEC §12.7; violations never mutate state. |
 
 ## Reporting findings
 

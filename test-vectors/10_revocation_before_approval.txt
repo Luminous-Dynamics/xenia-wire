@@ -1,0 +1,44 @@
+Vector 10: revocation_before_approval (SPEC draft-03 §12.6.1)
+-------------------------------------------------------------
+Event-sequence fixture exercising the ConsentViolation::
+RevocationBeforeApproval path. The session is in ceremony mode
+(opt-in, AwaitingRequest initial state). A Revocation observed
+with no prior Approval is a hard error; the session state MUST
+NOT be mutated.
+
+This vector covers the transition table rows:
+  AwaitingRequest + Revocation -> violation RevocationBeforeApproval
+  Requested       + Revocation -> violation RevocationBeforeApproval
+
+Implementations in other languages can replay this sequence
+against their own observe_consent analogue and validate that
+(a) the violation is raised with the correct variant +
+request_id, and (b) the state is unchanged after the
+violation.
+
+Vector format: line-oriented DSL. Every directive line lives
+below a literal "---BEGIN---" marker; everything above the
+marker is documentation-only prose and is ignored by the
+parser. Blank lines and lines starting with "#" or "-" are
+also ignored.
+
+  INITIAL <state>           — starting ConsentState
+  EVENT <kind> <request_id> — observe_consent event to drive
+      kinds: Request | ResponseApproved | ResponseDenied | Revocation
+  EXPECT_STATE <state>      — asserted state after last event
+  EXPECT_VIOLATION <variant> <request_id> [prior new]
+                            — asserted violation from last event
+      variants: RevocationBeforeApproval
+              | ContradictoryResponse   (requires prior + new as bool)
+              | StaleResponseForUnknownRequest
+
+---BEGIN---
+INITIAL AwaitingRequest
+EVENT Revocation 5
+EXPECT_VIOLATION RevocationBeforeApproval 5
+EXPECT_STATE AwaitingRequest
+EVENT Request 6
+EXPECT_STATE Requested
+EVENT Revocation 6
+EXPECT_VIOLATION RevocationBeforeApproval 6
+EXPECT_STATE Requested

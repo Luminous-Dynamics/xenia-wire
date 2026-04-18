@@ -38,6 +38,9 @@ All vectors share:
 | 07 | consent_request | ConsentRequest signed with a deterministic Ed25519 seed, draft-03 with mandatory session_fingerprint (`--features consent`). |
 | 08 | consent_response | Approving ConsentResponse to vector 07 (distinct responder seed; same session_fingerprint). |
 | 09 | consent_revocation | ConsentRevocation signed by the responder terminating the session (same session_fingerprint as vectors 07 + 08). |
+| 10 | revocation_before_approval | Event-sequence fixture: `ConsentViolation::RevocationBeforeApproval` from both `AwaitingRequest` and `Requested`. draft-03. |
+| 11 | contradictory_response | Event-sequence fixture: `ConsentViolation::ContradictoryResponse` in both directions (Approved→Denied and Denied→Approved). draft-03. |
+| 12 | stale_response | Event-sequence fixture: `ConsentViolation::StaleResponseForUnknownRequest` from `AwaitingRequest`, `Requested`, and `Approved`. draft-03. |
 
 ## Regenerating
 
@@ -56,6 +59,8 @@ same commit.
 
 ## How to use from another language
 
+### Envelope vectors (01-09)
+
 For each vector:
 
 1. Parse the `.envelope.hex` file into a byte array.
@@ -67,3 +72,17 @@ For each vector:
 If steps 1-5 succeed and the plaintext matches, your
 implementation is byte-compatible with `xenia-wire` for that
 scenario.
+
+### Event-sequence vectors (10-12)
+
+These fixtures do not ship envelope or input hex files; they
+are line-oriented scripts that exercise your `observe_consent`
+analogue. The grammar is fully documented inside
+`10_revocation_before_approval.txt`. Parse after the
+`---BEGIN---` marker and drive your state machine one EVENT at
+a time, asserting EXPECT_STATE / EXPECT_VIOLATION as you go.
+
+The reference implementation's runner is in
+`tests/violation_vectors.rs`; an alternate-language runner
+should replicate the same assertions to validate draft-03
+compliance.
