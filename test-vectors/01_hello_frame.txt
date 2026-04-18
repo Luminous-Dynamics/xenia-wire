@@ -1,0 +1,23 @@
+Vector 01: hello_frame
+----------------------
+A minimal Frame with a 12-byte UTF-8 payload "hello, xenia".
+This is the canonical roundtrip fixture.
+
+Scenario:
+source_id = "XENIATST"  (8 bytes)
+epoch     = 0x42
+key       = "xenia-wire-test-vector-key-2026!"  (32 bytes)
+seq       = 0  (first seal on this session)
+payload_type = 0x10 (FRAME)
+
+Frame struct (bincode-encoded in .input.hex):
+frame_id     = 1          (u64 LE: 0100000000000000)
+timestamp_ms = 1700000000000 (u64 LE: 008b0e0095010000)
+payload      = "hello, xenia" (length-prefixed: 0c00000000000000 + utf8)
+
+Envelope layout (.envelope.hex):
+bytes [0..6]   = source_id[0..6]  = 58454e49415453
+byte  [6]      = payload_type     = 10
+byte  [7]      = epoch            = 42
+bytes [8..12]  = sequence LE u32  = 00000000
+bytes [12..]   = ChaCha20-Poly1305 ciphertext || tag (16-byte tag)

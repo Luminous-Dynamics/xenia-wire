@@ -1,0 +1,17 @@
+Vector 02: input_pointer
+------------------------
+A minimal Input with a 3-byte payload "tap".
+Demonstrates payload_type=0x11 domain separation on the
+reverse path.
+
+Scenario:
+source_id = "XENIATST"
+epoch     = 0x42
+key       = fixture-key
+seq       = 0
+payload_type = 0x11 (INPUT)
+
+Note: because payload_type differs from vector 01, the nonce
+differs even though sequence and source_id are identical.
+This is the domain-separation property — same key, same
+source, same seq, different stream ≠ nonce collision.

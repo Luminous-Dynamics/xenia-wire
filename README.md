@@ -176,15 +176,21 @@ Full methodology is written up in the forthcoming Xenia protocol paper.
 
 ## Specification
 
-Reading [`SPEC.md`](SPEC.md) should be sufficient to write an
-interoperable implementation in any language. Reading the source of
-this crate should NOT be necessary. If you find gaps in the spec,
-please file an issue.
+Reading [`SPEC.md`](SPEC.md) (**draft-01**) should be sufficient to
+write an interoperable implementation in any language. Reading the
+source of this crate should NOT be necessary. If you find gaps in
+the spec, please file an issue — the spec is the normative reference,
+not the Rust source.
 
-- `SPEC.md` — full wire-format specification (draft-01 after Week 2).
-- `CHANGELOG.md` — version history.
-- `test-vectors/` — hex-encoded input/output pairs for cross-implementation
-  validation (populated at Week 2).
+- [`SPEC.md`](SPEC.md) — full wire-format specification, 11 sections
+  + 3 appendices covering nonce layout, replay window semantics,
+  key lifecycle, LZ4-before-AEAD rule, error taxonomy, and security
+  properties.
+- [`CHANGELOG.md`](CHANGELOG.md) — version history.
+- [`test-vectors/`](test-vectors/README.md) — 6 deterministic hex
+  fixtures for cross-implementation validation. An implementation in
+  Go, Swift, Python, or any other language can reproduce every
+  envelope byte from the published fixtures.
 
 ## License
 

@@ -1,0 +1,14 @@
+Vector 05: nonce_structure
+--------------------------
+Three sealed envelopes on the same session, demonstrating
+the monotonic sequence in nonce bytes [8..12]:
+
+envelope 0: nonce[8..12] = 00000000  (seq = 0)
+envelope 1: nonce[8..12] = 01000000  (seq = 1, little-endian)
+envelope 2: nonce[8..12] = 02000000  (seq = 2)
+
+source_id[0..6], payload_type, and epoch are identical across
+all three envelopes — only the sequence bytes advance.
+
+This vector tests that an independent implementation constructs
+the nonce in the exact byte order specified in SPEC.md §3.

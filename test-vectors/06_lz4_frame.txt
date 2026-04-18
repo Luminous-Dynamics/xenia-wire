@@ -1,0 +1,25 @@
+Vector 06: lz4_frame
+--------------------
+Frame sealed via LZ4-before-AEAD path (seal_frame_lz4).
+
+Scenario:
+source_id = "XENIATST"
+epoch     = 0x42
+key       = fixture-key
+seq       = 0
+payload_type = 0x12 (FRAME_LZ4)
+frame.payload = [0x5A; 2048]  (highly compressible)
+
+Pipeline:
+Frame -> bincode         -> 2072 bytes (.bincoded.hex)
+-> lz4 prepend-size -> 41 bytes (.lz4_compressed.hex)
+-> AEAD seal      -> 69 bytes (.envelope.hex)
+
+The lz4_compressed bytes are what feeds into the AEAD —
+ChaCha20-Poly1305 encrypts those. An implementation in
+another language must produce byte-identical lz4_compressed
+bytes from the bincoded input, then AEAD-seal them with
+the fixed key/nonce to match the envelope.
+
+LZ4 MUST precede AEAD — ciphertext is pseudorandom and does
+not compress. See SPEC.md §7.
