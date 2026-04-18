@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 //
 // Browser-side glue for the xenia-wire WASM demo. Expects
-// `pkg/xenia_viewer_web.js` to be next to this file (produced by
+// `./pkg/xenia_viewer_web.js` to be next to this file (produced by
 // `wasm-pack build --target web`).
 
 import init, {

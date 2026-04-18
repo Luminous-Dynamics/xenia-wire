@@ -1,0 +1,157 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Xenia — consent ceremony walk-through</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --fg: #1a1a1a;
+    --muted: #6b6b6b;
+    --accent: #2a4d69;
+    --accent-hover: #3a6b94;
+    --tech-bg: #eef4fb;
+    --tech-border: #9fbad4;
+    --user-bg: #f4eef9;
+    --user-border: #c5a9dd;
+    --state-bg: #fafafa;
+    --state-border: #e4e4e4;
+    --banner-bg: #fff8dc;
+    --banner-border: #d4af37;
+    --ok: #2d7a3f;
+    --err: #b03030;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, sans-serif; max-width: 52em; margin: 2em auto; padding: 0 1em; line-height: 1.5; color: var(--fg); }
+  h1 { margin-bottom: 0.2em; }
+  .subtitle { color: var(--muted); margin-top: 0; }
+  .nav { margin-bottom: 1em; }
+  .nav a { color: var(--accent); margin-right: 1em; }
+  .banner { background: var(--banner-bg); border: 1px solid var(--banner-border); padding: 0.75em 1em; border-radius: 4px; margin: 1em 0; font-size: 0.92em; }
+  .columns { display: grid; grid-template-columns: 1fr 1fr; gap: 1em; margin: 1em 0; }
+  @media (max-width: 600px) { .columns { grid-template-columns: 1fr; } }
+  .party { border-radius: 6px; padding: 1em; border: 1px solid; }
+  .tech { background: var(--tech-bg); border-color: var(--tech-border); }
+  .user { background: var(--user-bg); border-color: var(--user-border); }
+  .party h3 { margin-top: 0; }
+  .pubkey { font-family: monospace; font-size: 0.85em; color: var(--muted); word-break: break-all; }
+  .state-bar { background: var(--state-bg); border: 1px solid var(--state-border); border-radius: 6px; padding: 1em; margin: 1em 0; }
+  .state-bar .row { display: flex; gap: 2em; align-items: baseline; }
+  .state { font-weight: bold; padding: 0.15em 0.55em; border-radius: 3px; background: #f0f0f0; font-size: 0.95em; }
+  .state.Pending { background: #e9e9e9; color: #666; }
+  .state.Requested { background: #fff4c8; color: #7a5800; }
+  .state.Approved { background: #d5ecd8; color: #1e5a2f; }
+  .state.Denied { background: #f5d7d2; color: #7a2b20; }
+  .state.Revoked { background: #eed5d0; color: #7a2b20; }
+  label { display: block; margin: 0.5em 0 0.2em; font-size: 0.95em; }
+  input[type="text"], input[type="number"], select, textarea {
+    font-family: inherit; font-size: 1em; padding: 0.3em 0.5em;
+    width: 100%; border: 1px solid #ccc; border-radius: 3px;
+  }
+  button { background: var(--accent); color: #fff; border: 0; padding: 0.5em 1em;
+    border-radius: 4px; cursor: pointer; font-size: 0.95em; margin: 0.5em 0.25em 0 0; }
+  button:hover:not(:disabled) { background: var(--accent-hover); }
+  button:disabled { background: #aaa; cursor: not-allowed; }
+  button.danger { background: #8a3b3a; }
+  button.danger:hover:not(:disabled) { background: #ad4a48; }
+  button.subtle { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+  .log { background: #111; color: #c8e1b9; padding: 0.75em; border-radius: 4px; margin-top: 1em;
+    font-family: monospace; font-size: 0.82em; max-height: 14em; overflow-y: auto; }
+  .log .ok { color: #94d980; }
+  .log .err { color: #f08080; }
+  .log .meta { color: #888; }
+  .field-group { display: flex; gap: 0.5em; align-items: end; margin-top: 0.5em; }
+  .field-group > * { margin: 0; }
+  .hint { color: var(--muted); font-size: 0.88em; }
+</style>
+
+<div class="nav">
+  <a href="./index.html">← back to Xenia</a>
+  <a href="./demo.html">quick demo</a>
+  <a href="./viewer.html">viewer MVP →</a>
+</div>
+
+<h1>Consent ceremony walk-through</h1>
+<p class="subtitle">
+  Interactive demo of Xenia's consent layer, running entirely in your
+  browser. Everything is local — no server, no network, no real
+  session.
+</p>
+
+<div class="banner">
+  Each side (technician and end-user) has its own Ed25519 device key.
+  Messages are signed by the sender's key and the signature covers
+  the bincode-encoded message body, not the sealed envelope — so
+  consent can be verified independently of the AEAD session.
+</div>
+
+<div class="state-bar">
+  <div class="row">
+    <div><strong>Technician</strong>: <span id="tech-state" class="state Pending">Pending</span></div>
+    <div><strong>End-user</strong>: <span id="user-state" class="state Pending">Pending</span></div>
+  </div>
+</div>
+
+<div class="columns">
+
+  <div class="party tech">
+    <h3>Technician side</h3>
+    <div class="hint">device pubkey</div>
+    <div id="tech-pubkey" class="pubkey">…</div>
+
+    <label for="reason">Ticket reference / reason</label>
+    <input type="text" id="reason" value="ticket #1234 password reset">
+
+    <label for="scope">Scope</label>
+    <select id="scope">
+      <option value="0">Screen only</option>
+      <option value="1" selected>Screen + input</option>
+      <option value="2">Screen + input + files</option>
+      <option value="3">Full interactive</option>
+    </select>
+
+    <label for="duration">Duration (seconds)</label>
+    <input type="number" id="duration" value="1800" min="60" max="86400">
+
+    <div class="field-group">
+      <button id="btn-request">1. Request access</button>
+      <button id="btn-seal-frame" disabled>3. Seal a test frame</button>
+    </div>
+
+    <div class="hint" style="margin-top:0.5em">After consent, the technician can seal <code>FRAME</code> envelopes. Before, any attempt fails with <code>NoConsent</code>.</div>
+  </div>
+
+  <div class="party user">
+    <h3>End-user side</h3>
+    <div class="hint">device pubkey</div>
+    <div id="user-pubkey" class="pubkey">…</div>
+
+    <div id="request-received" style="display:none; margin-top:1em;">
+      <div><strong>Consent request received</strong></div>
+      <div id="request-details" style="margin: 0.5em 0; font-size: 0.9em;"></div>
+
+      <div class="field-group">
+        <button id="btn-approve">Approve</button>
+        <button id="btn-deny" class="subtle">Deny</button>
+      </div>
+    </div>
+
+    <div id="revoke-controls" style="display:none; margin-top:1em;">
+      <div class="hint">Session approved — either side may revoke at any time.</div>
+      <div class="field-group">
+        <button id="btn-revoke" class="danger">Revoke</button>
+      </div>
+    </div>
+
+    <div id="no-request" style="margin-top:1em; color: var(--muted); font-style: italic;">
+      No consent request yet — click <strong>Request access</strong> on the technician side.
+    </div>
+  </div>
+
+</div>
+
+<div class="log" id="log" aria-label="Event log"></div>
+
+<div style="margin-top: 1em;">
+  <button id="btn-reset" class="subtle">Reset ceremony</button>
+</div>
+
+<script type="module" src="./consent.js"></script>

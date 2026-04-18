@@ -1,72 +1,227 @@
 <!doctype html>
 <meta charset="utf-8">
-<title>xenia-wire — browser demo</title>
+<title>Xenia — PQC-sealed remote control you can audit</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-  body { font-family: system-ui, sans-serif; max-width: 44em; margin: 2em auto; padding: 0 1em; line-height: 1.5; color: #222; }
-  h1 { margin-bottom: 0; }
-  .subtitle { color: #666; margin-top: 0.25em; }
-  .banner { background: #fff8dc; border: 1px solid #d4af37; padding: 0.75em 1em; border-radius: 4px; margin: 1em 0; }
-  pre { background: #f6f6f6; padding: 0.75em; border-radius: 4px; overflow-x: auto; font-size: 0.9em; }
-  code { background: #f6f6f6; padding: 0.1em 0.3em; border-radius: 3px; }
-  button { background: #2a4d69; color: #fff; border: 0; padding: 0.5em 1em; border-radius: 4px; cursor: pointer; font-size: 1em; }
-  button:hover { background: #3a6b94; }
-  button:disabled { background: #999; cursor: not-allowed; }
-  input[type="text"] { font-family: monospace; padding: 0.3em 0.5em; font-size: 1em; width: 100%; box-sizing: border-box; }
-  .row { margin: 0.75em 0; }
-  .ok { color: #2d7a3f; }
-  .err { color: #b03030; }
-  .meta { color: #666; font-size: 0.9em; }
+  :root {
+    --fg: #1a1a1a;
+    --muted: #6b6b6b;
+    --accent: #2a4d69;
+    --accent-hover: #3a6b94;
+    --card-bg: #fafafa;
+    --card-border: #e4e4e4;
+    --banner-bg: #fff8dc;
+    --banner-border: #d4af37;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; max-width: 52em; margin: 2em auto; padding: 0 1em; line-height: 1.55; color: var(--fg); }
+  h1 { margin-bottom: 0.2em; font-size: 2em; }
+  h2 { margin-top: 2em; }
+  .subtitle { color: var(--muted); font-size: 1.1em; margin-top: 0; }
+  .banner { background: var(--banner-bg); border: 1px solid var(--banner-border); padding: 0.75em 1em; border-radius: 4px; margin: 1em 0; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(15em, 1fr)); gap: 1em; margin: 1.5em 0; }
+  .card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 6px; padding: 1em; display: flex; flex-direction: column; }
+  .card h3 { margin: 0 0 0.25em 0; }
+  .card p { margin: 0.25em 0 1em 0; color: var(--muted); flex-grow: 1; }
+  .card a.btn { background: var(--accent); color: #fff; padding: 0.45em 0.9em; border-radius: 4px; text-decoration: none; font-size: 0.95em; align-self: start; }
+  .card a.btn:hover { background: var(--accent-hover); }
+  .meta { color: var(--muted); font-size: 0.9em; }
+  code { background: #f0f0f0; padding: 0.1em 0.3em; border-radius: 3px; font-size: 0.92em; }
+  pre { background: #f6f6f6; padding: 0.75em 1em; border-radius: 4px; overflow-x: auto; font-size: 0.88em; }
+  a { color: var(--accent); }
+  footer { margin-top: 3em; padding-top: 1em; border-top: 1px solid var(--card-border); color: var(--muted); font-size: 0.88em; }
 </style>
 
-<h1>xenia-wire — browser demo</h1>
+<h1>Xenia</h1>
 <p class="subtitle">
-  Pre-alpha PQC-sealed wire protocol, running in WebAssembly.
+  A PQC-ready, decentralized-trust wire protocol for remote control.
+  Open specification. Auditable reference implementation. Pre-alpha.
 </p>
 
 <div class="banner">
   <strong>PRE-ALPHA — DO NOT USE IN PRODUCTION.</strong>
-  This page is a reference demo that the Xenia wire works in
-  a browser. It seals and opens a frame locally in WASM —
-  there is no network, no server, no real session.
-  See <a href="https://github.com/Luminous-Dynamics/xenia-wire">the repo</a> for
-  the crate, spec, and paper.
+  The wire format is not yet frozen. Breaking changes will land
+  between <code>0.1.x</code> releases. No formal cryptographic review
+  has happened. The handshake layer is a placeholder. This is a
+  research artifact seeking review, not a product.
 </div>
 
-<h2>Demo</h2>
-
-<div class="row">
-  <label for="payload">Payload</label><br>
-  <input type="text" id="payload" value="hello, xenia — from the browser">
-</div>
-
-<div class="row">
-  <button id="run">Seal + open</button>
-</div>
-
-<div id="output"></div>
-
-<h2>What's happening</h2>
-
-<ol>
-  <li>JS calls <code>new WasmSession()</code> twice (sender + receiver).</li>
-  <li>Both sides install the same 32-byte fixture key via <code>installKey</code>.</li>
-  <li>Sender calls <code>sealFrame</code> with the payload above — ChaCha20-Poly1305 encrypts into an envelope.</li>
-  <li>Receiver calls <code>openFrame</code> on the envelope bytes — AEAD verifies, replay window advances, <code>Frame</code> deserializes.</li>
-  <li>A second <code>openFrame</code> on the same bytes is rejected by the replay window.</li>
-</ol>
+<h2>Why</h2>
 
 <p>
-  The entire roundtrip runs in WASM; open DevTools and look at
-  <code>console.log</code> for per-step diagnostics.
+  Modern MSP remote-control tools — ConnectWise, TeamViewer, AnyDesk —
+  concentrate identity, authority, and authentication in a single
+  vendor. When any of the three is compromised at the vendor layer,
+  every downstream MSP is compromised in parallel.
+  <a href="https://www.connectwise.com/company/trust/security-bulletins/connectwise-screenconnect-23.9.8">CVE-2024-1709</a>
+  is the pattern's canonical demonstration: an authentication-bypass
+  in ScreenConnect was weaponized within 24 hours and used to deploy
+  ransomware across dozens of MSP client networks through a single
+  vendor hole. Patching the CVE doesn't alter the topology. The
+  topology is the problem.
 </p>
 
-<h2>Source</h2>
+<p>
+  Xenia specifies a <em>wire</em> that cleanly separates symmetric
+  crypto on the byte level from trust topology. The wire is
+  open-spec and byte-deterministic across implementations. The trust
+  topology is a separate, composable layer. You can run Xenia with a
+  centralized identity provider today; you can swap it for a
+  decentralized one tomorrow, with no wire-format change.
+</p>
+
+<h2>What's here right now</h2>
+
+<div class="cards">
+
+  <div class="card">
+    <h3>The crate</h3>
+    <p>
+      <code>xenia-wire</code> on crates.io —
+      pure-Rust, Apache/MIT, 87 tests green,
+      builds on native + wasm32, has a full specification and
+      deterministic test vectors.
+    </p>
+    <a class="btn" href="https://crates.io/crates/xenia-wire">
+      crates.io →
+    </a>
+  </div>
+
+  <div class="card">
+    <h3>The specification</h3>
+    <p>
+      SPEC.md draft-02. 11 sections + 3 appendices. Normative
+      reference. Reading the Rust source should not be necessary
+      to write a compatible implementation in another language.
+    </p>
+    <a class="btn" href="https://github.com/Luminous-Dynamics/xenia-wire/blob/main/SPEC.md">
+      SPEC.md →
+    </a>
+  </div>
+
+  <div class="card">
+    <h3>The paper</h3>
+    <p>
+      ~4,800-word draft with design rationale + empirical
+      evaluation on real Pixel 8 Pro hardware (bandwidth, HoL
+      blocking under loss, LZ4-before-seal compression ratios).
+    </p>
+    <a class="btn" href="https://github.com/Luminous-Dynamics/xenia-wire/blob/main/papers/xenia-paper.md">
+      paper →
+    </a>
+  </div>
+
+</div>
+
+<h2>Try it in your browser</h2>
+
+<p>
+  Three interactive demos running entirely in WebAssembly — no server,
+  no network, everything local:
+</p>
+
+<div class="cards">
+
+  <div class="card">
+    <h3>Quick demo</h3>
+    <p>
+      Minimal <code>seal_frame</code> / <code>open_frame</code>
+      roundtrip. Confirms the wire works on the web platform.
+    </p>
+    <a class="btn" href="./demo.html">open demo →</a>
+  </div>
+
+  <div class="card">
+    <h3>Consent ceremony</h3>
+    <p>
+      Interactive walk-through. Technician requests access; end-user
+      approves or denies; see the full Ed25519-signed flow including
+      revocation. <strong>This is the distinctive feature</strong>.
+    </p>
+    <a class="btn" href="./consent.html">walk through →</a>
+  </div>
+
+  <div class="card">
+    <h3>Viewer MVP</h3>
+    <p>
+      Canvas-rendered synthetic "remote screen" + captured keyboard
+      and mouse events sealed as <code>Input</code> envelopes.
+      Loopback — no real server yet.
+    </p>
+    <a class="btn" href="./viewer.html">open viewer →</a>
+  </div>
+
+</div>
+
+<h2>Quick install</h2>
+
+<pre>$ cargo add 'xenia-wire@0.1.0-alpha.3'</pre>
+
+<p>
+  Then a minimal seal/open roundtrip:
+</p>
+
+<pre>use xenia_wire::{Session, seal_frame, open_frame, Frame};
+
+let key = [0xAB; 32];
+let mut sender = Session::new();
+let mut receiver = Session::new();
+sender.install_key(key);
+receiver.install_key(key);
+
+let frame = Frame {
+    frame_id: 1,
+    timestamp_ms: 1_700_000_000_000,
+    payload: b"hello, xenia".to_vec(),
+};
+let sealed = seal_frame(&frame, &mut sender).unwrap();
+let opened = open_frame(&sealed, &mut receiver).unwrap();
+assert_eq!(opened.payload, b"hello, xenia");</pre>
+
+<h2>Seeking review</h2>
+
+<p>
+  The protocol is pre-alpha. I'm specifically looking for:
+</p>
 
 <ul>
-  <li><a href="https://github.com/Luminous-Dynamics/xenia-wire/blob/main/xenia-viewer-web/src/lib.rs">Viewer WASM wrapper</a> (30 lines, <code>wasm-bindgen</code>)</li>
-  <li><a href="https://github.com/Luminous-Dynamics/xenia-wire/blob/main/xenia-viewer-web/www/app.js">Browser-side JS</a> (~40 lines)</li>
-  <li><a href="https://github.com/Luminous-Dynamics/xenia-wire/blob/main/SPEC.md">SPEC.md draft-01</a> — the normative wire spec</li>
-  <li><a href="https://github.com/Luminous-Dynamics/xenia-wire/blob/main/papers/xenia-paper.md">Paper draft</a> — design rationale + empirical evaluation</li>
+  <li>
+    <strong>Cryptographers</strong> — a 15-minute check on SPEC §3
+    (nonce layout) and §5 (replay window). The goal is to catch
+    composition issues before the wire format freezes.
+  </li>
+  <li>
+    <strong>MSP operators</strong> — a reality check on the threat
+    model in §6.2 of the paper. Does the decentralized-trust posture
+    match how you actually think about risk?
+  </li>
+  <li>
+    <strong>Implementers in other languages</strong> — use the
+    <a href="https://github.com/Luminous-Dynamics/xenia-wire/tree/main/test-vectors">
+      byte-deterministic test vectors</a>
+    to validate a Go / Swift / Python / Zig client. Divergence is
+    useful information either way.
+  </li>
 </ul>
 
-<script type="module" src="./app.js"></script>
+<p>
+  <a href="https://github.com/Luminous-Dynamics/xenia-wire/issues">Open
+  an issue</a> for design feedback. For security-sensitive reports,
+  please use the
+  <a href="https://github.com/Luminous-Dynamics/xenia-wire/security/advisories/new">private
+  advisory</a> channel instead.
+</p>
+
+<footer>
+  <p>
+    <strong>Xenia</strong> (ξενία) — the ancient Greek covenant between
+    guest and host. A technician is a guest in a client's machine;
+    the client extends bounded hospitality; the protocol codifies the
+    terms cryptographically.
+  </p>
+  <p>
+    Built by <a href="https://luminousdynamics.io">Luminous Dynamics</a>.
+    Dual-licensed Apache-2.0 / MIT.
+    <a href="https://github.com/Luminous-Dynamics/xenia-wire">Source on GitHub</a>.
+  </p>
+</footer>

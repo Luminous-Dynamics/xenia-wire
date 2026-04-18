@@ -1,0 +1,103 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Xenia — viewer MVP</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --fg: #1a1a1a;
+    --muted: #6b6b6b;
+    --accent: #2a4d69;
+    --accent-hover: #3a6b94;
+    --card-bg: #fafafa;
+    --card-border: #e4e4e4;
+    --banner-bg: #fff8dc;
+    --banner-border: #d4af37;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, sans-serif; max-width: 52em; margin: 2em auto; padding: 0 1em; line-height: 1.5; color: var(--fg); }
+  h1 { margin-bottom: 0.2em; }
+  .subtitle { color: var(--muted); margin-top: 0; }
+  .nav { margin-bottom: 1em; }
+  .nav a { color: var(--accent); margin-right: 1em; }
+  .banner { background: var(--banner-bg); border: 1px solid var(--banner-border); padding: 0.75em 1em; border-radius: 4px; margin: 1em 0; font-size: 0.92em; }
+  .viewer-frame { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 6px; padding: 1em; margin: 1em 0; }
+  canvas { background: #000; display: block; margin: 0 auto; cursor: crosshair;
+    border-radius: 4px; image-rendering: pixelated; }
+  .controls { display: flex; gap: 0.5em; margin-top: 0.75em; flex-wrap: wrap; }
+  button { background: var(--accent); color: #fff; border: 0; padding: 0.5em 1em;
+    border-radius: 4px; cursor: pointer; font-size: 0.95em; }
+  button:hover:not(:disabled) { background: var(--accent-hover); }
+  button:disabled { background: #aaa; cursor: not-allowed; }
+  button.subtle { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(10em, 1fr)); gap: 0.75em; margin: 1em 0; }
+  .stat { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 4px; padding: 0.6em 0.8em; }
+  .stat .label { color: var(--muted); font-size: 0.85em; }
+  .stat .value { font-weight: bold; font-size: 1.3em; font-family: monospace; }
+  .log { background: #111; color: #c8e1b9; padding: 0.75em; border-radius: 4px; margin-top: 1em;
+    font-family: monospace; font-size: 0.82em; max-height: 12em; overflow-y: auto; }
+  .log .ok { color: #94d980; }
+  .log .meta { color: #888; }
+  .log .input { color: #8fd4f2; }
+  code { background: #f0f0f0; padding: 0.1em 0.3em; border-radius: 3px; }
+</style>
+
+<div class="nav">
+  <a href="./index.html">← back to Xenia</a>
+  <a href="./demo.html">quick demo</a>
+  <a href="./consent.html">consent walk-through</a>
+</div>
+
+<h1>Viewer MVP</h1>
+<p class="subtitle">
+  Synthetic "remote screen" rendered from sealed <code>FRAME</code>
+  envelopes. Mouse and keyboard events flow back as sealed
+  <code>Input</code>. Loopback: sender and receiver are the same
+  browser tab. Everything WASM, no server.
+</p>
+
+<div class="banner">
+  Real cross-machine remote desktop needs a server-side screen
+  capture, a transport (WebSocket or WebTransport), and real input
+  injection. That's Track-B engineering. This page demonstrates the
+  wire works under realistic-shaped traffic: 160×120 RGBA frames at
+  ~15 fps + keyboard/mouse events on the reverse path.
+</div>
+
+<div class="viewer-frame">
+  <canvas id="screen" width="320" height="240" tabindex="0"></canvas>
+
+  <div class="controls">
+    <button id="btn-start">Start stream</button>
+    <button id="btn-stop" disabled>Stop</button>
+    <button id="btn-clear" class="subtle">Clear log</button>
+  </div>
+</div>
+
+<div class="stats">
+  <div class="stat">
+    <div class="label">Frames sealed</div>
+    <div class="value" id="stat-frames">0</div>
+  </div>
+  <div class="stat">
+    <div class="label">Inputs sealed</div>
+    <div class="value" id="stat-inputs">0</div>
+  </div>
+  <div class="stat">
+    <div class="label">Total bytes on wire</div>
+    <div class="value" id="stat-bytes">0</div>
+  </div>
+  <div class="stat">
+    <div class="label">fps (measured)</div>
+    <div class="value" id="stat-fps">—</div>
+  </div>
+</div>
+
+<p>
+  Click on the canvas and press keys / move the mouse — events are
+  captured and sealed as <code>Input</code> envelopes on the reverse
+  path. The canvas's tab-index makes it focusable.
+</p>
+
+<div class="log" id="log" aria-label="Event log"></div>
+
+<script type="module" src="./viewer.js"></script>

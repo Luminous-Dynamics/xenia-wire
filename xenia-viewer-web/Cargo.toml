@@ -17,11 +17,14 @@ publish = false  # demo crate; not published to crates.io
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-xenia-wire = { path = "..", version = "0.1.0-alpha.3" }
+xenia-wire = { path = "..", version = "0.1.0-alpha.3", features = ["consent"] }
 wasm-bindgen = "0.2"
 js-sys = "0.3"
 web-sys = { version = "0.3", features = ["console"] }
 hex = "0.4"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+rand = "0.8"
+getrandom = { version = "0.2", features = ["js"] }
 console_error_panic_hook = { version = "0.1", optional = true }
 
 [features]
