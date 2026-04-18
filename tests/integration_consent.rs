@@ -17,8 +17,8 @@ use xenia_wire::consent::{
     ConsentRevocation, ConsentRevocationCore, ConsentScope, ConsentState,
 };
 use xenia_wire::{
-    open, open_frame, seal, seal_frame, Frame, Session, WireError, PAYLOAD_TYPE_CONSENT_REQUEST,
-    PAYLOAD_TYPE_CONSENT_RESPONSE, PAYLOAD_TYPE_CONSENT_REVOCATION,
+    open_consent_request, open_consent_response, open_frame, seal_consent_request,
+    seal_consent_response, seal_consent_revocation, seal_frame, Frame, Session, WireError,
 };
 
 fn paired_sessions(key: [u8; 32]) -> (Session, Session) {
@@ -90,27 +90,28 @@ fn full_consent_ceremony_allows_frame_flow() {
     let tech_sk = new_signing_key();
     let user_sk = new_signing_key();
 
-    // 1. Tech seals a ConsentRequest via the generic path.
+    // 1. Tech seals a ConsentRequest, then records that it sent one.
     let request = make_request(&tech_sk);
-    let sealed_req = seal(&request, &mut tech, PAYLOAD_TYPE_CONSENT_REQUEST).unwrap();
-    // Tech also drives its own state when it SENDS the request.
+    let sealed_req = seal_consent_request(&request, &mut tech).unwrap();
     tech.observe_consent(ConsentEvent::Request);
     assert_eq!(tech.consent_state(), ConsentState::Requested);
 
-    // 2. User opens the request, verifies, and observes the event.
-    let received_req: ConsentRequest = open(&sealed_req, &mut user).unwrap();
+    // 2. User opens the request, verifies the signature, THEN drives
+    //    its state machine. Observe-after-open is the natural order on
+    //    the receive side.
+    let received_req: ConsentRequest = open_consent_request(&sealed_req, &mut user).unwrap();
     assert!(received_req.verify(None));
     user.observe_consent(ConsentEvent::Request);
     assert_eq!(user.consent_state(), ConsentState::Requested);
 
-    // 3. User seals an approving response.
+    // 3. User seals an approving response, records it.
     let response = make_response(&user_sk, received_req.core.request_id, true, "");
-    let sealed_resp = seal(&response, &mut user, PAYLOAD_TYPE_CONSENT_RESPONSE).unwrap();
+    let sealed_resp = seal_consent_response(&response, &mut user).unwrap();
     user.observe_consent(ConsentEvent::ResponseApproved);
     assert_eq!(user.consent_state(), ConsentState::Approved);
 
-    // 4. Tech opens the response, verifies, observes.
-    let received_resp: ConsentResponse = open(&sealed_resp, &mut tech).unwrap();
+    // 4. Tech opens the response, verifies, THEN observes.
+    let received_resp: ConsentResponse = open_consent_response(&sealed_resp, &mut tech).unwrap();
     assert!(received_resp.verify(None));
     assert!(received_resp.core.approved);
     tech.observe_consent(ConsentEvent::ResponseApproved);
@@ -145,13 +146,13 @@ fn denied_response_blocks_frame() {
     let user_sk = new_signing_key();
 
     let req = make_request(&tech_sk);
-    seal(&req, &mut tech, PAYLOAD_TYPE_CONSENT_REQUEST).unwrap();
+    seal_consent_request(&req, &mut tech).unwrap();
     tech.observe_consent(ConsentEvent::Request);
 
     // User denies.
     let resp = make_response(&user_sk, 1, false, "nope");
-    let sealed = seal(&resp, &mut user, PAYLOAD_TYPE_CONSENT_RESPONSE).unwrap();
-    let received: ConsentResponse = open(&sealed, &mut tech).unwrap();
+    let sealed = seal_consent_response(&resp, &mut user).unwrap();
+    let received: ConsentResponse = open_consent_response(&sealed, &mut tech).unwrap();
     assert!(!received.core.approved);
     tech.observe_consent(ConsentEvent::ResponseDenied);
     assert_eq!(tech.consent_state(), ConsentState::Denied);
@@ -171,12 +172,12 @@ fn revocation_terminates_session_and_blocks_subsequent_frames() {
 
     // Bring both peers to Approved.
     let req = make_request(&tech_sk);
-    seal(&req, &mut tech, PAYLOAD_TYPE_CONSENT_REQUEST).unwrap();
+    seal_consent_request(&req, &mut tech).unwrap();
     tech.observe_consent(ConsentEvent::Request);
     user.observe_consent(ConsentEvent::Request);
 
     let resp = make_response(&user_sk, 1, true, "");
-    seal(&resp, &mut user, PAYLOAD_TYPE_CONSENT_RESPONSE).unwrap();
+    seal_consent_response(&resp, &mut user).unwrap();
     tech.observe_consent(ConsentEvent::ResponseApproved);
     user.observe_consent(ConsentEvent::ResponseApproved);
 
@@ -184,13 +185,14 @@ fn revocation_terminates_session_and_blocks_subsequent_frames() {
     let sealed = seal_frame(&sample_frame(), &mut tech).unwrap();
     let _: Frame = open_frame(&sealed, &mut user).unwrap();
 
-    // User revokes.
+    // User revokes via the dedicated wrapper.
     let rev = make_revocation(&user_sk, 1);
-    let sealed_rev = seal(&rev, &mut user, PAYLOAD_TYPE_CONSENT_REVOCATION).unwrap();
+    let sealed_rev = seal_consent_revocation(&rev, &mut user).unwrap();
     user.observe_consent(ConsentEvent::Revocation);
     assert_eq!(user.consent_state(), ConsentState::Revoked);
 
-    let received_rev: ConsentRevocation = open(&sealed_rev, &mut tech).unwrap();
+    let received_rev: ConsentRevocation =
+        xenia_wire::open_consent_revocation(&sealed_rev, &mut tech).unwrap();
     assert!(received_rev.verify(None));
     tech.observe_consent(ConsentEvent::Revocation);
     assert_eq!(tech.consent_state(), ConsentState::Revoked);

@@ -121,3 +121,9 @@ pub use wire::{open_frame, open_input, seal_frame, seal_input};
 
 #[cfg(feature = "lz4")]
 pub use wire::{open_frame_lz4, seal_frame_lz4};
+
+#[cfg(feature = "consent")]
+pub use wire::{
+    open_consent_request, open_consent_response, open_consent_revocation, seal_consent_request,
+    seal_consent_response, seal_consent_revocation,
+};

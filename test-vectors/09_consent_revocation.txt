@@ -1,0 +1,22 @@
+Vector 09: consent_revocation (draft-02, feature = consent)
+-----------------------------------------------------------
+A ConsentRevocation signed by the end-user (same seed as
+vector 08) terminating the session approved in vector 08.
+Any party that holds the approved session's key MUST treat
+subsequent FRAME envelopes as WireError::ConsentRevoked after
+observing this message.
+
+Fixture parameters:
+source_id  = "XENIATST"
+epoch      = 0x42
+key        = fixture-key (shared)
+payload_type = 0x22 (CONSENT_REVOCATION)
+
+Ed25519 signing seed: "xenia-consent-test-vector-seed#2"
+(same as vector 08; same identity)
+
+ConsentRevocation fields:
+request_id      = 7
+revoker_pubkey  = derived Ed25519 public key
+issued_at       = 1700000700
+reason          = "session complete"

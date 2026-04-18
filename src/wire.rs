@@ -111,6 +111,88 @@ pub fn open_frame_lz4(bytes: &[u8], session: &mut Session) -> Result<crate::Fram
     <crate::Frame as Sealable>::from_bin(&plaintext)
 }
 
+// ─── Consent ceremony wrappers (SPEC draft-02 §12) ───────────────────
+//
+// These mirror the seal_frame / seal_input surface for the consent
+// ceremony messages: callers never need to remember payload-type bytes
+// or pass them by hand to the generic `seal` / `open`. Feature-gated
+// on `consent` (which also brings the underlying types into scope via
+// `crate::consent`).
+
+/// Seal a [`crate::consent::ConsentRequest`] under
+/// [`crate::PAYLOAD_TYPE_CONSENT_REQUEST`] (0x20).
+///
+/// The consent state machine treats this as an outbound `Request`
+/// event — after a successful seal, the caller SHOULD drive the local
+/// `Session` via [`Session::observe_consent`][crate::Session::observe_consent]`(ConsentEvent::Request)`
+/// so subsequent FRAME seals are correctly gated.
+#[cfg(feature = "consent")]
+pub fn seal_consent_request(
+    request: &crate::consent::ConsentRequest,
+    session: &mut Session,
+) -> Result<Vec<u8>, WireError> {
+    seal(
+        request,
+        session,
+        payload_types::PAYLOAD_TYPE_CONSENT_REQUEST,
+    )
+}
+
+/// Open an envelope sealed by [`seal_consent_request`].
+#[cfg(feature = "consent")]
+pub fn open_consent_request(
+    bytes: &[u8],
+    session: &mut Session,
+) -> Result<crate::consent::ConsentRequest, WireError> {
+    open(bytes, session)
+}
+
+/// Seal a [`crate::consent::ConsentResponse`] under
+/// [`crate::PAYLOAD_TYPE_CONSENT_RESPONSE`] (0x21).
+#[cfg(feature = "consent")]
+pub fn seal_consent_response(
+    response: &crate::consent::ConsentResponse,
+    session: &mut Session,
+) -> Result<Vec<u8>, WireError> {
+    seal(
+        response,
+        session,
+        payload_types::PAYLOAD_TYPE_CONSENT_RESPONSE,
+    )
+}
+
+/// Open an envelope sealed by [`seal_consent_response`].
+#[cfg(feature = "consent")]
+pub fn open_consent_response(
+    bytes: &[u8],
+    session: &mut Session,
+) -> Result<crate::consent::ConsentResponse, WireError> {
+    open(bytes, session)
+}
+
+/// Seal a [`crate::consent::ConsentRevocation`] under
+/// [`crate::PAYLOAD_TYPE_CONSENT_REVOCATION`] (0x22).
+#[cfg(feature = "consent")]
+pub fn seal_consent_revocation(
+    revocation: &crate::consent::ConsentRevocation,
+    session: &mut Session,
+) -> Result<Vec<u8>, WireError> {
+    seal(
+        revocation,
+        session,
+        payload_types::PAYLOAD_TYPE_CONSENT_REVOCATION,
+    )
+}
+
+/// Open an envelope sealed by [`seal_consent_revocation`].
+#[cfg(feature = "consent")]
+pub fn open_consent_revocation(
+    bytes: &[u8],
+    session: &mut Session,
+) -> Result<crate::consent::ConsentRevocation, WireError> {
+    open(bytes, session)
+}
+
 #[cfg(all(test, feature = "reference-frame"))]
 mod tests {
     use super::*;

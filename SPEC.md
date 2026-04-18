@@ -588,6 +588,19 @@ The signature covers `bincode::serialize(&core)` — NOT the sealed
 envelope. This lets a third-party auditor verify the consent using
 only the plaintext and the public key, without the session key.
 
+> ⚠️ **Canonical encoding requirement (load-bearing)**. The signature
+> is verified by deserializing `core` from `bincode::serialize(&core)`,
+> so the exact byte sequence matters. Implementations MUST use
+> **bincode v1 with the default configuration**: little-endian,
+> fixed-int (not varint), no size-limit enforcement beyond normal
+> memory bounds. Bincode v2's `encode_to_vec` is NOT compatible —
+> the varint encoding of `u64` fields produces different bytes, so a
+> v2-generated signature will fail v1 verification and vice versa.
+>
+> A future draft MAY define a version-tagged canonical encoding that
+> decouples the signature layer from the library ecosystem. For now,
+> bincode v1 is the normative wire encoding for `core` bytes.
+
 #### ConsentResponse
 
 ```

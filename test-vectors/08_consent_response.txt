@@ -1,0 +1,23 @@
+Vector 08: consent_response (draft-02, feature = consent)
+---------------------------------------------------------
+An approving ConsentResponse to vector 07. Signed with a
+DIFFERENT Ed25519 seed than the request, modelling the
+requester/responder split (technician + end-user as
+distinct identities).
+
+Fixture parameters:
+source_id  = "XENIATST"
+epoch      = 0x42
+key        = fixture-key (shared)
+payload_type = 0x21 (CONSENT_RESPONSE)
+
+Ed25519 signing seed: "xenia-consent-test-vector-seed#2"
+
+ConsentResponse fields:
+request_id       = 7  (matches vector 07)
+responder_pubkey = derived Ed25519 public key
+approved         = true
+reason           = ""
+
+Signature is Ed25519 over bincode v1 of core. See SPEC
+§12.3 for the canonical-encoding requirement.

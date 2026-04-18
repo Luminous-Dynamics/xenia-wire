@@ -7,7 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.3] — 2026-04-18
+
 ### Added
+
+- **API polish for the consent ceremony.** New dedicated wrappers
+  `seal_consent_request` / `open_consent_request` /
+  `seal_consent_response` / `open_consent_response` /
+  `seal_consent_revocation` / `open_consent_revocation`. Callers no
+  longer need to import `PAYLOAD_TYPE_CONSENT_*` constants to use
+  the generic `seal`/`open` path. Mirrors the `seal_frame` /
+  `seal_input` surface for a consistent API shape.
+- **Test vectors 08 and 09** — `consent_response` and
+  `consent_revocation` with deterministic Ed25519 seeds. Vectors 08
+  + 09 share a signing identity (modelling an end-user who first
+  approves then later revokes). An alternate-language implementer
+  can now validate all three consent message types, not just the
+  request.
+- **Property tests for the consent state machine**
+  (`tests/proptest_consent.rs`): 5 properties × ~256 proptest cases
+  each, asserting state-validity, Denied/Revoked terminality,
+  FRAME-seal-gate ≡ state, and no-return-to-Pending.
+- **SPEC §12.3 canonical-encoding requirement**: signatures MUST be
+  verified using bincode v1 with default configuration
+  (little-endian, fixint, no size limit). Bincode v2's varint
+  encoding is explicitly NOT compatible. This was load-bearing but
+  undocumented in draft-02's original text; future drafts may
+  define a version-tagged encoding.
+
+### Fixed
+
+- Integration test `full_consent_ceremony_allows_frame_flow` now
+  observes consent events AFTER opening each message (the natural
+  order on the receive side), not before. Purely cosmetic — the
+  state machine accepts out-of-order events — but the test now
+  reads the way real callers would structure their handlers.
+
+### Changed
 
 - **Week 4: wasm32 compatibility + browser demo.**
   - `xenia-wire` now compiles cleanly on `wasm32-unknown-unknown`
@@ -143,6 +179,7 @@ is still to come (Week 2). Published early to enable design feedback.
 - `SPEC.md` is not yet published (target: Week 2).
 - Test-vector suite is not yet populated (target: Week 2).
 
-[Unreleased]: https://github.com/Luminous-Dynamics/xenia-wire/compare/v0.1.0-alpha.2...HEAD
+[Unreleased]: https://github.com/Luminous-Dynamics/xenia-wire/compare/v0.1.0-alpha.3...HEAD
+[0.1.0-alpha.3]: https://github.com/Luminous-Dynamics/xenia-wire/compare/v0.1.0-alpha.2...v0.1.0-alpha.3
 [0.1.0-alpha.2]: https://github.com/Luminous-Dynamics/xenia-wire/compare/v0.1.0-alpha.1...v0.1.0-alpha.2
 [0.1.0-alpha.1]: https://github.com/Luminous-Dynamics/xenia-wire/releases/tag/v0.1.0-alpha.1

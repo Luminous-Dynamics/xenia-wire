@@ -36,6 +36,8 @@ All vectors share:
 | 05 | nonce_structure | Three sequential seals demonstrating seq counter increment. |
 | 06 | lz4_frame | LZ4-before-AEAD (`--features lz4` only). |
 | 07 | consent_request | ConsentRequest signed with a deterministic Ed25519 seed (`--features consent` only, draft-02). |
+| 08 | consent_response | Approving ConsentResponse to vector 07 (distinct responder seed). |
+| 09 | consent_revocation | ConsentRevocation signed by the responder terminating the session. |
 
 ## Regenerating
 

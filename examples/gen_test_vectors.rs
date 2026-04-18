@@ -39,6 +39,10 @@ fn main() -> std::io::Result<()> {
     emit_06_lz4_frame(out_dir)?;
     #[cfg(feature = "consent")]
     emit_07_consent_request(out_dir)?;
+    #[cfg(feature = "consent")]
+    emit_08_consent_response(out_dir)?;
+    #[cfg(feature = "consent")]
+    emit_09_consent_revocation(out_dir)?;
 
     write_index(out_dir)?;
     println!("Wrote test vectors to {}", out_dir.display());
@@ -375,6 +379,115 @@ trait SealableExt: xenia_wire::Sealable {
 #[cfg(feature = "consent")]
 impl<T: xenia_wire::Sealable> SealableExt for T {}
 
+/// Vector 08: consent_response — deterministic approving response
+/// signed by a DIFFERENT Ed25519 seed than the request (modelling
+/// the technician + end-user as distinct identities).
+#[cfg(feature = "consent")]
+fn emit_08_consent_response(out: &Path) -> std::io::Result<()> {
+    use ed25519_dalek::SigningKey;
+    use xenia_wire::consent::{ConsentResponse, ConsentResponseCore};
+    use xenia_wire::PAYLOAD_TYPE_CONSENT_RESPONSE;
+
+    // Distinct seed from vector 07 — same fixture scheme.
+    let seed: [u8; 32] = *b"xenia-consent-test-vector-seed#2";
+    let sk = SigningKey::from_bytes(&seed);
+    let pk = sk.verifying_key().to_bytes();
+
+    let mut session = deterministic_session();
+    let core = ConsentResponseCore {
+        request_id: 7, // matches vector 07's request_id
+        responder_pubkey: pk,
+        approved: true,
+        reason: "".to_string(),
+    };
+    let response = ConsentResponse::sign(core, &sk);
+
+    let plaintext = response.to_bin_via_trait();
+    let envelope = session
+        .seal(&plaintext, PAYLOAD_TYPE_CONSENT_RESPONSE)
+        .expect("seal consent response");
+
+    write_hex(&out.join("08_consent_response.input.hex"), &plaintext)?;
+    write_hex(&out.join("08_consent_response.envelope.hex"), &envelope)?;
+    fs::write(
+        out.join("08_consent_response.txt"),
+        "Vector 08: consent_response (draft-02, feature = consent)\n\
+         ---------------------------------------------------------\n\
+         An approving ConsentResponse to vector 07. Signed with a\n\
+         DIFFERENT Ed25519 seed than the request, modelling the\n\
+         requester/responder split (technician + end-user as\n\
+         distinct identities).\n\n\
+         Fixture parameters:\n\
+           source_id  = \"XENIATST\"\n\
+           epoch      = 0x42\n\
+           key        = fixture-key (shared)\n\
+           payload_type = 0x21 (CONSENT_RESPONSE)\n\n\
+         Ed25519 signing seed: \"xenia-consent-test-vector-seed#2\"\n\n\
+         ConsentResponse fields:\n\
+           request_id       = 7  (matches vector 07)\n\
+           responder_pubkey = derived Ed25519 public key\n\
+           approved         = true\n\
+           reason           = \"\"\n\n\
+         Signature is Ed25519 over bincode v1 of core. See SPEC\n\
+         §12.3 for the canonical-encoding requirement.\n",
+    )
+}
+
+/// Vector 09: consent_revocation — deterministic revocation signed
+/// by the responder (vector 08's pubkey), terminating the session
+/// initiated in vector 07.
+#[cfg(feature = "consent")]
+fn emit_09_consent_revocation(out: &Path) -> std::io::Result<()> {
+    use ed25519_dalek::SigningKey;
+    use xenia_wire::consent::{ConsentRevocation, ConsentRevocationCore};
+    use xenia_wire::PAYLOAD_TYPE_CONSENT_REVOCATION;
+
+    // Same seed as the responder in vector 08 — the end-user is
+    // revoking their previous approval.
+    let seed: [u8; 32] = *b"xenia-consent-test-vector-seed#2";
+    let sk = SigningKey::from_bytes(&seed);
+    let pk = sk.verifying_key().to_bytes();
+
+    let mut session = deterministic_session();
+    let core = ConsentRevocationCore {
+        request_id: 7,
+        revoker_pubkey: pk,
+        issued_at: 1_700_000_700,
+        reason: "session complete".to_string(),
+    };
+    let revocation = ConsentRevocation::sign(core, &sk);
+
+    let plaintext = revocation.to_bin_via_trait();
+    let envelope = session
+        .seal(&plaintext, PAYLOAD_TYPE_CONSENT_REVOCATION)
+        .expect("seal consent revocation");
+
+    write_hex(&out.join("09_consent_revocation.input.hex"), &plaintext)?;
+    write_hex(&out.join("09_consent_revocation.envelope.hex"), &envelope)?;
+    fs::write(
+        out.join("09_consent_revocation.txt"),
+        "Vector 09: consent_revocation (draft-02, feature = consent)\n\
+         -----------------------------------------------------------\n\
+         A ConsentRevocation signed by the end-user (same seed as\n\
+         vector 08) terminating the session approved in vector 08.\n\
+         Any party that holds the approved session's key MUST treat\n\
+         subsequent FRAME envelopes as WireError::ConsentRevoked after\n\
+         observing this message.\n\n\
+         Fixture parameters:\n\
+           source_id  = \"XENIATST\"\n\
+           epoch      = 0x42\n\
+           key        = fixture-key (shared)\n\
+           payload_type = 0x22 (CONSENT_REVOCATION)\n\n\
+         Ed25519 signing seed: \"xenia-consent-test-vector-seed#2\"\n\
+         (same as vector 08; same identity)\n\n\
+         ConsentRevocation fields:\n\
+           request_id      = 7\n\
+           revoker_pubkey  = derived Ed25519 public key\n\
+           issued_at       = 1700000700\n\
+           reason          = \"session complete\"\n",
+    )
+}
+
 fn write_index(out: &Path) -> std::io::Result<()> {
     fs::write(
         out.join("README.md"),
@@ -405,7 +518,9 @@ fn write_index(out: &Path) -> std::io::Result<()> {
          | 04 | long_payload | 256-byte payload covering every byte value. |\n\
          | 05 | nonce_structure | Three sequential seals demonstrating seq counter increment. |\n\
          | 06 | lz4_frame | LZ4-before-AEAD (`--features lz4` only). |\n\
-         | 07 | consent_request | ConsentRequest signed with a deterministic Ed25519 seed (`--features consent` only, draft-02). |\n\n\
+         | 07 | consent_request | ConsentRequest signed with a deterministic Ed25519 seed (`--features consent` only, draft-02). |\n\
+         | 08 | consent_response | Approving ConsentResponse to vector 07 (distinct responder seed). |\n\
+         | 09 | consent_revocation | ConsentRevocation signed by the responder terminating the session. |\n\n\
          ## Regenerating\n\n\
          ```console\n\
          $ cargo run --example gen_test_vectors --all-features\n\

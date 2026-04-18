@@ -116,6 +116,67 @@ fn vector_05_nonce_structure_has_incrementing_sequence() {
     }
 }
 
+#[cfg(feature = "consent")]
+#[test]
+fn vector_07_consent_request_opens_and_verifies() {
+    use xenia_wire::consent::ConsentRequest;
+    let envelope = read_hex(&vectors_dir().join("07_consent_request.envelope.hex"));
+    let mut receiver = fresh_receiver();
+    let plaintext = receiver.open(&envelope).expect("vector 07 must open");
+    let request: ConsentRequest =
+        bincode::deserialize(&plaintext).expect("vector 07 must deserialize");
+    assert!(request.verify(None), "vector 07 signature must verify");
+    assert_eq!(request.core.request_id, 7);
+}
+
+#[cfg(feature = "consent")]
+#[test]
+fn vector_08_consent_response_opens_and_verifies() {
+    use xenia_wire::consent::ConsentResponse;
+    let envelope = read_hex(&vectors_dir().join("08_consent_response.envelope.hex"));
+    let mut receiver = fresh_receiver();
+    let plaintext = receiver.open(&envelope).expect("vector 08 must open");
+    let response: ConsentResponse =
+        bincode::deserialize(&plaintext).expect("vector 08 must deserialize");
+    assert!(response.verify(None), "vector 08 signature must verify");
+    assert_eq!(response.core.request_id, 7);
+    assert!(response.core.approved);
+}
+
+#[cfg(feature = "consent")]
+#[test]
+fn vector_09_consent_revocation_opens_and_verifies() {
+    use xenia_wire::consent::ConsentRevocation;
+    let envelope = read_hex(&vectors_dir().join("09_consent_revocation.envelope.hex"));
+    let mut receiver = fresh_receiver();
+    let plaintext = receiver.open(&envelope).expect("vector 09 must open");
+    let revocation: ConsentRevocation =
+        bincode::deserialize(&plaintext).expect("vector 09 must deserialize");
+    assert!(revocation.verify(None), "vector 09 signature must verify");
+    assert_eq!(revocation.core.request_id, 7);
+    // Vectors 08 + 09 share the same signing seed (modelling the end-user
+    // approving AND later revoking).
+    assert_eq!(revocation.core.revoker_pubkey.len(), 32);
+}
+
+#[cfg(feature = "consent")]
+#[test]
+fn vectors_08_and_09_share_signing_identity() {
+    // Same end-user approves in 08 and revokes in 09 — verify the
+    // responder_pubkey and revoker_pubkey match.
+    use xenia_wire::consent::{ConsentResponse, ConsentRevocation};
+    let env08 = read_hex(&vectors_dir().join("08_consent_response.envelope.hex"));
+    let env09 = read_hex(&vectors_dir().join("09_consent_revocation.envelope.hex"));
+    let mut receiver = fresh_receiver();
+    // Opens are independent-stream because payload_type differs (0x21 vs 0x22)
+    // so the replay window is independent. We can open them in any order.
+    let pt08 = receiver.open(&env08).unwrap();
+    let pt09 = receiver.open(&env09).unwrap();
+    let resp: ConsentResponse = bincode::deserialize(&pt08).unwrap();
+    let rev: ConsentRevocation = bincode::deserialize(&pt09).unwrap();
+    assert_eq!(resp.core.responder_pubkey, rev.core.revoker_pubkey);
+}
+
 #[cfg(feature = "lz4")]
 #[test]
 fn vector_06_lz4_frame_roundtrips() {
