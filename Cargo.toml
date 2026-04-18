@@ -1,6 +1,6 @@
 [package]
 name = "xenia-wire"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 edition = "2021"
 rust-version = "1.85"
 authors = ["Tristan Stoltz <tristan.stoltz@evolvingresonantcocreationism.com>"]

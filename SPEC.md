@@ -373,13 +373,14 @@ of them based on which key verified its AEAD tag in step 2 above.
 After the previous key expires (§6.3), the previous-epoch window
 MAY be discarded.
 
-**Reference implementation note**. The `xenia-wire 0.1.0-alpha.3`
-reference implementation does NOT yet implement per-epoch replay
-scoping — it uses a single `(source_id, pld_type)`-keyed window.
-This is a reference-implementation limitation, not a wire-format
-issue, and is tracked as an open issue against the reference. A
-draft-02r1–conformant implementation MUST implement per-epoch
-scoping as described above.
+**Reference implementation status**. As of `xenia-wire 0.1.0-alpha.4`
+(2026-04-18) the reference implementation matches this specification:
+`ReplayWindow::accept` takes `(source_id, payload_type, key_epoch, seq)`,
+`Session` tracks `current_key_epoch` + `prev_key_epoch`, and
+`Session::tick` reclaims old-epoch replay state when the previous
+key's grace period expires. See
+[issue #5](https://github.com/Luminous-Dynamics/xenia-wire/issues/5)
+for the bug-fix history. `0.1.0-alpha.3` users SHOULD upgrade.
 
 ### 5.4 First-seen starting sequence
 

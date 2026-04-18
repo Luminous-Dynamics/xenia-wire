@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.4] — 2026-04-18
+
+### Security / Correctness
+
+- **Per-key-epoch replay state**
+  ([#5](https://github.com/Luminous-Dynamics/xenia-wire/issues/5)) —
+  the replay window is now keyed by `(source_id, payload_type,
+  key_epoch)` instead of `(source_id, payload_type)`. This closes a
+  latent bug where the sender's nonce-counter reset on rekey (SPEC
+  §3 / §6.4) would collide with the receiver's accumulated `highest`
+  from the old key: a freshly-rekeyed stream at `seq=0` would be
+  rejected against an `highest=1000` from the previous key, causing
+  silent data loss for up to `highest - WINDOW_BITS + 1` envelopes
+  post-rekey.
+  - `Session::install_key` now advances an internal `key_epoch` on
+    each rekey (wrapping `u8`).
+  - `Session::open` tracks which key verified the AEAD tag and
+    passes that key's epoch to `ReplayWindow::accept`.
+  - `Session::tick` reclaims old-epoch replay state when the
+    previous key's grace period expires.
+  - `ReplayWindow::accept` signature changed from
+    `accept(key: (u64, u8), seq: u64)` to
+    `accept(source_id: u64, payload_type: u8, key_epoch: u8, seq: u64)`.
+    `ReplayWindow` is not part of the recommended public surface;
+    users of `Session::seal` / `Session::open` are unaffected.
+  - New `ReplayWindow::drop_epoch(u8)` helper for explicit cleanup.
+
+### Added
+
+- `tests/integration_rekey_replay.rs` — 5 regression tests covering
+  the primary bug scenario (high old-key sequence + rekey does not
+  false-reject), replay during grace still rejects, in-flight
+  old-key envelopes still open during grace, `tick()` reclaims
+  old-epoch state, and a 10-rekey stress scenario.
+- 3 new `ReplayWindow` unit tests for per-epoch semantics.
+
+### Changed
+
+- SPEC.md §5.3 impl-gap caveat **removed** — the reference
+  implementation now matches the draft-02r1 spec.
+- `replay_window.rs` module docs updated with the per-epoch scoping
+  story (SPEC §5.3).
+
+### Fixed
+
+- The latent silent-data-loss-on-rekey bug described above. No
+  production deployment known to be affected (pre-alpha crate), but
+  any 0.1.0-alpha.3 user running sustained streams through a rekey
+  SHOULD upgrade.
+
 ## [0.1.0-alpha.3] — 2026-04-18
 
 ### Added
@@ -179,7 +229,8 @@ is still to come (Week 2). Published early to enable design feedback.
 - `SPEC.md` is not yet published (target: Week 2).
 - Test-vector suite is not yet populated (target: Week 2).
 
-[Unreleased]: https://github.com/Luminous-Dynamics/xenia-wire/compare/v0.1.0-alpha.3...HEAD
+[Unreleased]: https://github.com/Luminous-Dynamics/xenia-wire/compare/v0.1.0-alpha.4...HEAD
+[0.1.0-alpha.4]: https://github.com/Luminous-Dynamics/xenia-wire/compare/v0.1.0-alpha.3...v0.1.0-alpha.4
 [0.1.0-alpha.3]: https://github.com/Luminous-Dynamics/xenia-wire/compare/v0.1.0-alpha.2...v0.1.0-alpha.3
 [0.1.0-alpha.2]: https://github.com/Luminous-Dynamics/xenia-wire/compare/v0.1.0-alpha.1...v0.1.0-alpha.2
 [0.1.0-alpha.1]: https://github.com/Luminous-Dynamics/xenia-wire/releases/tag/v0.1.0-alpha.1

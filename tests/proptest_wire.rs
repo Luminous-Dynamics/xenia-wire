@@ -21,7 +21,7 @@ proptest! {
     fn replay_window_sequential_always_accepts(n in 0u64..=200) {
         let mut w = ReplayWindow::new();
         for seq in 0..=n {
-            prop_assert!(w.accept((0x1234_5678_9ABC_DEF0, 0x10), seq));
+            prop_assert!(w.accept(0x1234_5678_9ABC_DEF0, 0x10, 0u8, seq));
         }
     }
 
@@ -29,8 +29,8 @@ proptest! {
     #[test]
     fn replay_window_duplicate_always_rejects(seq in 0u64..1_000_000) {
         let mut w = ReplayWindow::new();
-        prop_assert!(w.accept((0xDEAD_BEEF, 0x10), seq));
-        prop_assert!(!w.accept((0xDEAD_BEEF, 0x10), seq));
+        prop_assert!(w.accept(0xDEAD_BEEF, 0x10, 0u8, seq));
+        prop_assert!(!w.accept(0xDEAD_BEEF, 0x10, 0u8, seq));
     }
 
     /// Different (source_id, payload_type) keys are independent — the
@@ -46,12 +46,12 @@ proptest! {
     ) {
         prop_assume!((sid1, pt1) != (sid2, pt2));
         let mut w = ReplayWindow::new();
-        prop_assert!(w.accept((sid1, pt1), seq));
+        prop_assert!(w.accept(sid1, pt1, 0u8, seq));
         // Same seq on the OTHER stream is a first-seen on that stream.
-        prop_assert!(w.accept((sid2, pt2), seq));
+        prop_assert!(w.accept(sid2, pt2, 0u8, seq));
         // But each stream rejects its own replay.
-        prop_assert!(!w.accept((sid1, pt1), seq));
-        prop_assert!(!w.accept((sid2, pt2), seq));
+        prop_assert!(!w.accept(sid1, pt1, 0u8, seq));
+        prop_assert!(!w.accept(sid2, pt2, 0u8, seq));
     }
 
     /// Advancing the window by > WINDOW_BITS permanently drops the old
@@ -62,10 +62,10 @@ proptest! {
         jump in (WINDOW_BITS + 1)..(WINDOW_BITS + 1_000),
     ) {
         let mut w = ReplayWindow::new();
-        prop_assert!(w.accept((0x42, 0x10), old_seq));
-        prop_assert!(w.accept((0x42, 0x10), old_seq + jump));
+        prop_assert!(w.accept(0x42, 0x10, 0u8, old_seq));
+        prop_assert!(w.accept(0x42, 0x10, 0u8, old_seq + jump));
         // old_seq is now more than WINDOW_BITS below highest → too old.
-        prop_assert!(!w.accept((0x42, 0x10), old_seq));
+        prop_assert!(!w.accept(0x42, 0x10, 0u8, old_seq));
     }
 
     /// Out-of-order arrivals within the window are accepted (once) and
@@ -76,10 +76,10 @@ proptest! {
         offset in 1u64..WINDOW_BITS,
     ) {
         let mut w = ReplayWindow::new();
-        prop_assert!(w.accept((0x77, 0x10), highest));
+        prop_assert!(w.accept(0x77, 0x10, 0u8, highest));
         let target = highest - offset;
-        prop_assert!(w.accept((0x77, 0x10), target));
-        prop_assert!(!w.accept((0x77, 0x10), target));
+        prop_assert!(w.accept(0x77, 0x10, 0u8, target));
+        prop_assert!(!w.accept(0x77, 0x10, 0u8, target));
     }
 }
 

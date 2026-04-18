@@ -84,6 +84,15 @@ pub struct Session {
     replay_window: ReplayWindow,
     /// How long the previous key remains valid after rekey.
     rekey_grace: Duration,
+    /// Epoch of the current session key (SPEC draft-02r1 §5.3).
+    /// Increments (wrapping) on each `install_key`. Purely internal;
+    /// not transmitted on the wire. Used to key per-epoch replay-window
+    /// state so a counter reset at rekey doesn't clash with lingering
+    /// high-water marks from the previous key.
+    current_key_epoch: u8,
+    /// Epoch of the previous session key during the rekey grace
+    /// window. `Some` iff `prev_session_key` is `Some`.
+    prev_key_epoch: Option<u8>,
     /// Consent ceremony state (draft-02 §12). Only enforced when the
     /// `consent` feature is compiled in.
     #[cfg(feature = "consent")]
@@ -115,6 +124,8 @@ impl Session {
             epoch,
             replay_window: ReplayWindow::new(),
             rekey_grace: DEFAULT_REKEY_GRACE,
+            current_key_epoch: 0,
+            prev_key_epoch: None,
             #[cfg(feature = "consent")]
             consent_state: crate::consent::ConsentState::Pending,
         }
@@ -134,14 +145,17 @@ impl Session {
     /// grace-period expiry of the configured `rekey_grace`; the new key becomes
     /// current; the nonce counter resets to zero.
     ///
-    /// The replay window is NOT cleared on rekey — `source_id` is stable
-    /// for the session's lifetime, so the `(source_id, payload_type)`
-    /// streams persist across rekey. This prevents a cross-rekey replay
-    /// from an attacker who recorded old envelopes.
+    /// The replay window is NOT cleared on rekey, but it IS scoped by
+    /// key epoch (SPEC §5.3 / draft-02r1) — the incoming new-key
+    /// stream starts a fresh per-epoch window rather than fighting
+    /// the old key's high-water mark. When the previous key expires
+    /// in [`Self::tick`], its per-epoch replay state is dropped.
     pub fn install_key(&mut self, key: [u8; 32]) {
         if self.session_key.is_some() {
             self.prev_session_key = self.session_key.take();
             self.prev_key_expires_at = Some(Instant::now() + self.rekey_grace);
+            self.prev_key_epoch = Some(self.current_key_epoch);
+            self.current_key_epoch = self.current_key_epoch.wrapping_add(1);
         }
         self.session_key = Some(Zeroizing::new(key));
         self.key_established_at = Some(Instant::now());
@@ -162,6 +176,12 @@ impl Session {
             if Instant::now() > expires {
                 self.prev_session_key = None;
                 self.prev_key_expires_at = None;
+                // Drop replay state for the old epoch — its envelopes
+                // can no longer AEAD-verify, so the window is pure
+                // memory overhead now.
+                if let Some(old_epoch) = self.prev_key_epoch.take() {
+                    self.replay_window.drop_epoch(old_epoch);
+                }
             }
         }
     }
@@ -354,29 +374,48 @@ impl Session {
         let nonce = Nonce::from_slice(nonce_bytes);
 
         // AEAD verify: current key, then prev_session_key fallback.
-        let plaintext = if let Some(key) = self.session_key.as_ref() {
+        // Track which key verified so the replay-window check below can
+        // use the correct key_epoch (SPEC §5.3 / draft-02r1).
+        let (plaintext, verified_epoch) = if let Some(key) = self.session_key.as_ref() {
             let key_bytes: [u8; 32] = **key;
             let cipher = ChaCha20Poly1305::new((&key_bytes).into());
             if let Ok(pt) = cipher.decrypt(nonce, ciphertext) {
-                Some(pt)
-            } else if let Some(prev) = self.prev_session_key.as_ref() {
+                (Some(pt), Some(self.current_key_epoch))
+            } else if let (Some(prev), Some(prev_epoch)) =
+                (self.prev_session_key.as_ref(), self.prev_key_epoch)
+            {
                 let prev_bytes: [u8; 32] = **prev;
                 let cipher = ChaCha20Poly1305::new((&prev_bytes).into());
-                cipher.decrypt(nonce, ciphertext).ok()
+                match cipher.decrypt(nonce, ciphertext) {
+                    Ok(pt) => (Some(pt), Some(prev_epoch)),
+                    Err(_) => (None, None),
+                }
             } else {
-                None
+                (None, None)
             }
-        } else if let Some(prev) = self.prev_session_key.as_ref() {
+        } else if let (Some(prev), Some(prev_epoch)) =
+            (self.prev_session_key.as_ref(), self.prev_key_epoch)
+        {
             let prev_bytes: [u8; 32] = **prev;
             let cipher = ChaCha20Poly1305::new((&prev_bytes).into());
-            cipher.decrypt(nonce, ciphertext).ok()
+            match cipher.decrypt(nonce, ciphertext) {
+                Ok(pt) => (Some(pt), Some(prev_epoch)),
+                Err(_) => (None, None),
+            }
         } else {
             return Err(WireError::NoSessionKey);
         };
 
         let plaintext = plaintext.ok_or(WireError::OpenFailed)?;
+        // If AEAD succeeded we MUST have an epoch; debug-assert to catch
+        // any refactor that breaks the invariant.
+        let verified_epoch =
+            verified_epoch.expect("AEAD succeeded so a key verified; epoch must be set");
 
-        // Replay window check.
+        // Replay window check — scoped to the epoch of the key that
+        // verified (NOT the current epoch; an old envelope that
+        // verified under prev_key is checked against the prev-epoch
+        // window, not the current-epoch window).
         let mut source_id_u64 = 0u64;
         for (i, b) in nonce_bytes[..6].iter().enumerate() {
             source_id_u64 |= (*b as u64) << (i * 8);
@@ -391,7 +430,7 @@ impl Session {
 
         if !self
             .replay_window
-            .accept((source_id_u64, payload_type), seq)
+            .accept(source_id_u64, payload_type, verified_epoch, seq)
         {
             return Err(WireError::OpenFailed);
         }
