@@ -76,6 +76,22 @@ pub enum WireError {
     #[cfg(feature = "consent")]
     #[error("xenia wire: consent revoked — session terminated")]
     ConsentRevoked,
+
+    /// Consent state machine transition is a protocol violation
+    /// (SPEC draft-03 §12.6). Surfaced by
+    /// [`crate::Session::observe_consent`] when the peer emits a
+    /// consent event that cannot legally follow the current state —
+    /// for example a `Revocation` from `Requested` (revoking something
+    /// that was never approved), or a `Denied` that contradicts a
+    /// prior `Approved` for the same `request_id`.
+    ///
+    /// This variant signals "the peer's state machine is broken or
+    /// compromised." The wire layer does NOT own the transport, so it
+    /// cannot tear down the connection itself. Callers SHOULD treat
+    /// this as a hard fault and terminate the session.
+    #[cfg(feature = "consent")]
+    #[error("xenia wire: consent protocol violation: {0}")]
+    ConsentProtocolViolation(crate::consent::ConsentViolation),
 }
 
 impl WireError {

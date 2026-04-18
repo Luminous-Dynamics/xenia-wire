@@ -22,8 +22,8 @@ use ed25519_dalek::SigningKey;
 use rand::rngs::OsRng;
 use wasm_bindgen::prelude::*;
 use xenia_wire::consent::{
-    ConsentEvent, ConsentRequest, ConsentRequestCore, ConsentResponse, ConsentResponseCore,
-    ConsentRevocation, ConsentRevocationCore, ConsentScope, ConsentState,
+    ConsentEvent, ConsentRequestCore, ConsentResponseCore, ConsentRevocationCore, ConsentScope,
+    ConsentState,
 };
 use xenia_wire::{
     open_consent_request, open_consent_response, open_consent_revocation, open_frame,
@@ -202,18 +202,25 @@ impl WasmConsentCeremony {
         let scope = scope_from_u8(scope)
             .ok_or_else(|| JsError::new("invalid ConsentScope value (0..=3)"))?;
         let now = js_sys::Date::now() as u64 / 1000;
+        let request_id = self.next_request_id;
         let core = ConsentRequestCore {
-            request_id: self.next_request_id,
+            request_id,
             requester_pubkey: self.tech_sk.verifying_key().to_bytes(),
+            session_fingerprint: [0; 32], // overwritten by sign_consent_request
             valid_until: now + valid_seconds,
             scope,
             reason,
             causal_binding: None,
         };
-        let req = ConsentRequest::sign(core, &self.tech_sk);
+        let req = self
+            .tech
+            .sign_consent_request(core, &self.tech_sk)
+            .map_err(|e| JsError::new(&e.to_string()))?;
         let envelope = seal_consent_request(&req, &mut self.tech)
             .map_err(|e| JsError::new(&e.to_string()))?;
-        self.tech.observe_consent(ConsentEvent::Request);
+        self.tech
+            .observe_consent(ConsentEvent::Request { request_id })
+            .map_err(|v| JsError::new(&v.to_string()))?;
         self.next_request_id += 1;
         Ok(envelope)
     }
@@ -226,8 +233,13 @@ impl WasmConsentCeremony {
     pub fn end_user_open_request(&mut self, envelope: &[u8]) -> Result<JsValue, JsError> {
         let req = open_consent_request(envelope, &mut self.user)
             .map_err(|e| JsError::new(&e.to_string()))?;
-        let verified = req.verify(None);
-        self.user.observe_consent(ConsentEvent::Request);
+        // Session-bound verify: checks signature AND HKDF fingerprint.
+        let verified = self.user.verify_consent_request(&req, None);
+        self.user
+            .observe_consent(ConsentEvent::Request {
+                request_id: req.core.request_id,
+            })
+            .map_err(|v| JsError::new(&v.to_string()))?;
 
         let obj = js_sys::Object::new();
         set_field(&obj, "request_id", JsValue::from(req.core.request_id as f64))?;
@@ -263,18 +275,24 @@ impl WasmConsentCeremony {
         let core = ConsentResponseCore {
             request_id,
             responder_pubkey: self.user_sk.verifying_key().to_bytes(),
+            session_fingerprint: [0; 32], // overwritten
             approved,
             reason,
         };
-        let resp = ConsentResponse::sign(core, &self.user_sk);
+        let resp = self
+            .user
+            .sign_consent_response(core, &self.user_sk)
+            .map_err(|e| JsError::new(&e.to_string()))?;
         let envelope = seal_consent_response(&resp, &mut self.user)
             .map_err(|e| JsError::new(&e.to_string()))?;
         let event = if approved {
-            ConsentEvent::ResponseApproved
+            ConsentEvent::ResponseApproved { request_id }
         } else {
-            ConsentEvent::ResponseDenied
+            ConsentEvent::ResponseDenied { request_id }
         };
-        self.user.observe_consent(event);
+        self.user
+            .observe_consent(event)
+            .map_err(|v| JsError::new(&v.to_string()))?;
         Ok(envelope)
     }
 
@@ -285,13 +303,19 @@ impl WasmConsentCeremony {
     pub fn technician_open_response(&mut self, envelope: &[u8]) -> Result<JsValue, JsError> {
         let resp = open_consent_response(envelope, &mut self.tech)
             .map_err(|e| JsError::new(&e.to_string()))?;
-        let verified = resp.verify(None);
+        let verified = self.tech.verify_consent_response(&resp, None);
         let event = if resp.core.approved {
-            ConsentEvent::ResponseApproved
+            ConsentEvent::ResponseApproved {
+                request_id: resp.core.request_id,
+            }
         } else {
-            ConsentEvent::ResponseDenied
+            ConsentEvent::ResponseDenied {
+                request_id: resp.core.request_id,
+            }
         };
-        self.tech.observe_consent(event);
+        self.tech
+            .observe_consent(event)
+            .map_err(|v| JsError::new(&v.to_string()))?;
 
         let obj = js_sys::Object::new();
         set_field(&obj, "request_id", JsValue::from(resp.core.request_id as f64))?;
@@ -331,13 +355,19 @@ impl WasmConsentCeremony {
         let core = ConsentRevocationCore {
             request_id,
             revoker_pubkey: self.user_sk.verifying_key().to_bytes(),
+            session_fingerprint: [0; 32], // overwritten
             issued_at: now,
             reason,
         };
-        let rev = ConsentRevocation::sign(core, &self.user_sk);
+        let rev = self
+            .user
+            .sign_consent_revocation(core, &self.user_sk)
+            .map_err(|e| JsError::new(&e.to_string()))?;
         let envelope = seal_consent_revocation(&rev, &mut self.user)
             .map_err(|e| JsError::new(&e.to_string()))?;
-        self.user.observe_consent(ConsentEvent::Revocation);
+        self.user
+            .observe_consent(ConsentEvent::Revocation { request_id })
+            .map_err(|v| JsError::new(&v.to_string()))?;
         Ok(envelope)
     }
 
@@ -346,8 +376,12 @@ impl WasmConsentCeremony {
     pub fn technician_open_revocation(&mut self, envelope: &[u8]) -> Result<JsValue, JsError> {
         let rev = open_consent_revocation(envelope, &mut self.tech)
             .map_err(|e| JsError::new(&e.to_string()))?;
-        let verified = rev.verify(None);
-        self.tech.observe_consent(ConsentEvent::Revocation);
+        let verified = self.tech.verify_consent_revocation(&rev, None);
+        self.tech
+            .observe_consent(ConsentEvent::Revocation {
+                request_id: rev.core.request_id,
+            })
+            .map_err(|v| JsError::new(&v.to_string()))?;
 
         let obj = js_sys::Object::new();
         set_field(&obj, "request_id", JsValue::from(rev.core.request_id as f64))?;
@@ -411,15 +445,13 @@ impl WasmViewer {
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
         let key: [u8; 32] = rand::random();
+        // Session::new → LegacyBypass. FRAME/INPUT flow out-of-band
+        // (no ceremony needed) — that's what we want for this
+        // demo-focused MVP viewer.
         let mut sender = Session::new();
         let mut receiver = Session::new();
         sender.install_key(key);
         receiver.install_key(key);
-        // Pre-approve consent on both sides so FRAME/INPUT flow freely.
-        sender.observe_consent(ConsentEvent::Request);
-        sender.observe_consent(ConsentEvent::ResponseApproved);
-        receiver.observe_consent(ConsentEvent::Request);
-        receiver.observe_consent(ConsentEvent::ResponseApproved);
         Self {
             sender,
             receiver,

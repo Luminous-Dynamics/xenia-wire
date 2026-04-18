@@ -93,10 +93,24 @@ pub struct Session {
     /// Epoch of the previous session key during the rekey grace
     /// window. `Some` iff `prev_session_key` is `Some`.
     prev_key_epoch: Option<u8>,
-    /// Consent ceremony state (draft-02 §12). Only enforced when the
+    /// Consent ceremony state (draft-03 §12). Only enforced when the
     /// `consent` feature is compiled in.
     #[cfg(feature = "consent")]
     consent_state: crate::consent::ConsentState,
+    /// The `request_id` of the active ceremony, if any. Set when a
+    /// `Request` event transitions the session to `Requested`; bumped
+    /// on replacement / new-ceremony-after-terminal-state. `None`
+    /// while state is `LegacyBypass` or `AwaitingRequest`.
+    /// Used by `observe_consent` to distinguish stale responses,
+    /// contradictory responses, and legitimate replacements.
+    #[cfg(feature = "consent")]
+    active_request_id: Option<u64>,
+    /// The last observed `approved` decision for `active_request_id`,
+    /// if any. `Some(true)` in `Approved`; `Some(false)` in `Denied`;
+    /// `None` otherwise. Enables detection of contradictory responses
+    /// (SPEC draft-03 §12.6 / `ConsentViolation::ContradictoryResponse`).
+    #[cfg(feature = "consent")]
+    last_response_approved: Option<bool>,
 }
 
 impl Session {
@@ -128,6 +142,10 @@ impl Session {
             prev_key_epoch: None,
             #[cfg(feature = "consent")]
             consent_state: crate::consent::ConsentState::LegacyBypass,
+            #[cfg(feature = "consent")]
+            active_request_id: None,
+            #[cfg(feature = "consent")]
+            last_response_approved: None,
         }
     }
 
@@ -218,7 +236,7 @@ impl Session {
         self.key_established_at
     }
 
-    /// Current consent ceremony state (SPEC draft-02 §12).
+    /// Current consent ceremony state (SPEC draft-03 §12).
     ///
     /// Only available when the `consent` feature is enabled.
     #[cfg(feature = "consent")]
@@ -226,45 +244,372 @@ impl Session {
         self.consent_state
     }
 
+    /// Derive the 32-byte session fingerprint for a given `request_id`
+    /// (SPEC draft-03 §12.3.1).
+    ///
+    /// The fingerprint is HKDF-SHA-256 over the current session key:
+    ///
+    /// ```text
+    /// salt   = b"xenia-session-fingerprint-v1"
+    /// ikm    = current session_key   (32 bytes)
+    /// info   = source_id || epoch || request_id.to_be_bytes()
+    ///          (8 + 1 + 8 = 17 bytes)
+    /// output = 32 bytes
+    /// ```
+    ///
+    /// Both peers derive the same fingerprint from their own copy of
+    /// the session key. Each peer embeds the derived fingerprint in
+    /// every signed consent message body; receivers re-derive locally
+    /// and compare. A signed consent message whose fingerprint does
+    /// not match the receiver's derivation has been replayed from a
+    /// different session and MUST be rejected.
+    ///
+    /// Returns [`WireError::NoSessionKey`] if no key is installed.
+    /// Callers SHOULD derive the fingerprint immediately before
+    /// signing / verifying and not cache it across rekeys — the
+    /// fingerprint changes with the session key.
+    #[cfg(feature = "consent")]
+    pub fn session_fingerprint(&self, request_id: u64) -> Result<[u8; 32], WireError> {
+        use hkdf::Hkdf;
+        use sha2::Sha256;
+
+        let key = self.session_key.as_ref().ok_or(WireError::NoSessionKey)?;
+        let ikm: [u8; 32] = **key;
+
+        let mut info = [0u8; 8 + 1 + 8];
+        info[..8].copy_from_slice(&self.source_id);
+        info[8] = self.epoch;
+        info[9..17].copy_from_slice(&request_id.to_be_bytes());
+
+        let hk = Hkdf::<Sha256>::new(Some(b"xenia-session-fingerprint-v1"), &ikm);
+        let mut out = [0u8; 32];
+        hk.expand(&info, &mut out)
+            .expect("HKDF-SHA-256 expand of 32 bytes cannot fail");
+        Ok(out)
+    }
+
+    /// Sign a [`ConsentRequestCore`] after injecting the session
+    /// fingerprint derived from this session's state and the core's
+    /// `request_id` (SPEC draft-03 §12.3 / §12.3.1).
+    ///
+    /// The caller constructs a `ConsentRequestCore` with any
+    /// `session_fingerprint` value (the helper overwrites it). On the
+    /// send path this is the recommended entry point; it removes the
+    /// possibility of a caller forgetting to derive-and-inject.
+    #[cfg(feature = "consent")]
+    pub fn sign_consent_request(
+        &self,
+        mut core: crate::consent::ConsentRequestCore,
+        signing_key: &ed25519_dalek::SigningKey,
+    ) -> Result<crate::consent::ConsentRequest, WireError> {
+        core.session_fingerprint = self.session_fingerprint(core.request_id)?;
+        Ok(crate::consent::ConsentRequest::sign(core, signing_key))
+    }
+
+    /// Sign a [`ConsentResponseCore`] after injecting the session
+    /// fingerprint for the core's `request_id`. See
+    /// [`Self::sign_consent_request`].
+    #[cfg(feature = "consent")]
+    pub fn sign_consent_response(
+        &self,
+        mut core: crate::consent::ConsentResponseCore,
+        signing_key: &ed25519_dalek::SigningKey,
+    ) -> Result<crate::consent::ConsentResponse, WireError> {
+        core.session_fingerprint = self.session_fingerprint(core.request_id)?;
+        Ok(crate::consent::ConsentResponse::sign(core, signing_key))
+    }
+
+    /// Sign a [`ConsentRevocationCore`] after injecting the session
+    /// fingerprint for the core's `request_id`. See
+    /// [`Self::sign_consent_request`].
+    #[cfg(feature = "consent")]
+    pub fn sign_consent_revocation(
+        &self,
+        mut core: crate::consent::ConsentRevocationCore,
+        signing_key: &ed25519_dalek::SigningKey,
+    ) -> Result<crate::consent::ConsentRevocation, WireError> {
+        core.session_fingerprint = self.session_fingerprint(core.request_id)?;
+        Ok(crate::consent::ConsentRevocation::sign(core, signing_key))
+    }
+
+    /// Verify a [`ConsentRequest`] against this session's fingerprint
+    /// AND the requester's public key (SPEC draft-03 §12.3.1).
+    ///
+    /// Returns `true` iff:
+    ///
+    /// 1. The Ed25519 signature is valid,
+    /// 2. The embedded public key matches `expected_pubkey` (if provided),
+    ///    and
+    /// 3. The embedded `session_fingerprint` equals the fingerprint
+    ///    this session derives locally for the same `request_id`.
+    ///
+    /// Returns `false` (never a `WireError`) on any mismatch — per SPEC
+    /// §11 the caller should react to verification failure the same way
+    /// for all sub-cases.
+    #[cfg(feature = "consent")]
+    pub fn verify_consent_request(
+        &self,
+        req: &crate::consent::ConsentRequest,
+        expected_pubkey: Option<&[u8; 32]>,
+    ) -> bool {
+        if !req.verify(expected_pubkey) {
+            return false;
+        }
+        match self.session_fingerprint(req.core.request_id) {
+            Ok(fp) => ct_eq_32(&fp, &req.core.session_fingerprint),
+            Err(_) => false,
+        }
+    }
+
+    /// Verify a [`ConsentResponse`] against this session's fingerprint
+    /// AND the responder's public key. See
+    /// [`Self::verify_consent_request`].
+    #[cfg(feature = "consent")]
+    pub fn verify_consent_response(
+        &self,
+        resp: &crate::consent::ConsentResponse,
+        expected_pubkey: Option<&[u8; 32]>,
+    ) -> bool {
+        if !resp.verify(expected_pubkey) {
+            return false;
+        }
+        match self.session_fingerprint(resp.core.request_id) {
+            Ok(fp) => ct_eq_32(&fp, &resp.core.session_fingerprint),
+            Err(_) => false,
+        }
+    }
+
+    /// Verify a [`ConsentRevocation`] against this session's fingerprint
+    /// AND the revoker's public key. See
+    /// [`Self::verify_consent_request`].
+    #[cfg(feature = "consent")]
+    pub fn verify_consent_revocation(
+        &self,
+        rev: &crate::consent::ConsentRevocation,
+        expected_pubkey: Option<&[u8; 32]>,
+    ) -> bool {
+        if !rev.verify(expected_pubkey) {
+            return false;
+        }
+        match self.session_fingerprint(rev.core.request_id) {
+            Ok(fp) => ct_eq_32(&fp, &rev.core.session_fingerprint),
+            Err(_) => false,
+        }
+    }
+
     /// Drive the consent state machine from an observed consent message.
     ///
     /// Callers invoke this AFTER successfully opening a consent envelope
     /// (`PAYLOAD_TYPE_CONSENT_REQUEST` / `_RESPONSE` / `_REVOCATION`)
-    /// and verifying the signature. The session does not validate
-    /// signatures itself — that's an application-level policy decision
-    /// (which pubkeys are trusted, which expiry windows are acceptable,
-    /// etc.).
+    /// and verifying the signature AND the session fingerprint. The
+    /// session does not validate signatures or fingerprints itself —
+    /// that's an application policy decision (which pubkeys to trust,
+    /// which expiry windows to accept). Use
+    /// [`Self::verify_consent_request`] (and siblings) for the
+    /// standard verification path.
     ///
-    /// Transitions (see [`crate::consent::ConsentState`]):
+    /// # Transition table (SPEC draft-03 §12.6)
     ///
-    /// - `LegacyBypass` + any event → `LegacyBypass` (consent not
-    ///   in use; observing an unsolicited request does NOT
-    ///   auto-promote out of legacy mode — caller opts into
-    ///   ceremony-mode at session construction via
-    ///   [`SessionBuilder::require_consent`]).
-    /// - `AwaitingRequest` + `Request` → `Requested`
-    /// - `Requested` + `Response{approved=true}` → `Approved`
-    /// - `Requested` + `Response{approved=false}` → `Denied`
-    /// - `Approved` + `Revocation` → `Revoked`
-    /// - Any other combination is a no-op (the caller's state machine
-    ///   is out of sync; rejecting here would leak sub-case detail).
+    /// `LegacyBypass` is **sticky** — every event is a no-op, state
+    /// stays `LegacyBypass`. The caller opts into ceremony mode at
+    /// construction via [`SessionBuilder::require_consent`]; a session
+    /// in LegacyBypass never emits or honors consent events.
     ///
-    /// Returns the new state for observability.
+    /// For the remaining states, `id` refers to `event.request_id()`
+    /// and `active` refers to the session's `active_request_id`.
+    ///
+    /// | Current          | Event                    | Next state / action                                    |
+    /// |------------------|--------------------------|--------------------------------------------------------|
+    /// | `AwaitingRequest`| `Request{id}`            | → `Requested`, `active_id = id`                        |
+    /// | `AwaitingRequest`| `Response{*, id}`        | → **`StaleResponseForUnknownRequest`**                 |
+    /// | `AwaitingRequest`| `Revocation{id}`         | → **`RevocationBeforeApproval`**                       |
+    /// | `Requested`      | `Request{id}`, id > active | → `Requested`, `active_id = id` (replacement)        |
+    /// | `Requested`      | `Request{id}`, id ≤ active | no-op (stale)                                        |
+    /// | `Requested`      | `ResponseApproved{id==active}` | → `Approved`, record `last_response=true`         |
+    /// | `Requested`      | `ResponseDenied{id==active}`   | → `Denied`, record `last_response=false`          |
+    /// | `Requested`      | `Response{id≠active}`    | → **`StaleResponseForUnknownRequest`**                 |
+    /// | `Requested`      | `Revocation{id}`         | → **`RevocationBeforeApproval`**                       |
+    /// | `Approved`       | `Request{id}`, id > active | → `Requested`, reset tracking (new ceremony)         |
+    /// | `Approved`       | `ResponseApproved{id==active}` | no-op (idempotent)                                |
+    /// | `Approved`       | `ResponseDenied{id==active}` | → **`ContradictoryResponse{prior=true, new=false}`** |
+    /// | `Approved`       | `Response{id≠active}`    | → **`StaleResponseForUnknownRequest`**                 |
+    /// | `Approved`       | `Revocation{id==active}` | → `Revoked`                                            |
+    /// | `Approved`       | `Revocation{id≠active}`  | no-op (stale revocation)                               |
+    /// | `Denied`         | `Request{id}`, id > active | → `Requested`, reset tracking (new ceremony)         |
+    /// | `Denied`         | `ResponseDenied{id==active}` | no-op (idempotent)                                 |
+    /// | `Denied`         | `ResponseApproved{id==active}` | → **`ContradictoryResponse{prior=false, new=true}`** |
+    /// | `Denied`         | `Revocation{id}`         | no-op (nothing to revoke)                              |
+    /// | `Revoked`        | `Request{id}`, id > active | → `Requested`, reset tracking (fresh ceremony)       |
+    /// | `Revoked`        | *                        | no-op                                                  |
+    ///
+    /// Bold entries return `Err(ConsentViolation)`; the state is NOT
+    /// mutated on violation (the caller is expected to tear down).
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(state)` on any legal transition or benign no-op.
+    /// - `Err(ConsentViolation)` when the peer emitted an event that
+    ///   cannot follow the current state. The session state is left
+    ///   untouched. The caller SHOULD terminate the session.
     #[cfg(feature = "consent")]
-    pub fn observe_consent(&mut self, event: ConsentEvent) -> crate::consent::ConsentState {
-        use crate::consent::ConsentState;
-        self.consent_state = match (self.consent_state, event) {
-            // LegacyBypass is sticky — unsolicited events don't auto-
-            // promote out. Caller opts into ceremony mode at
-            // construction.
-            (ConsentState::LegacyBypass, _) => ConsentState::LegacyBypass,
-            (ConsentState::AwaitingRequest, ConsentEvent::Request) => ConsentState::Requested,
-            (ConsentState::Requested, ConsentEvent::ResponseApproved) => ConsentState::Approved,
-            (ConsentState::Requested, ConsentEvent::ResponseDenied) => ConsentState::Denied,
-            (ConsentState::Approved, ConsentEvent::Revocation) => ConsentState::Revoked,
-            (state, _) => state,
-        };
-        self.consent_state
+    pub fn observe_consent(
+        &mut self,
+        event: ConsentEvent,
+    ) -> Result<crate::consent::ConsentState, crate::consent::ConsentViolation> {
+        use crate::consent::{ConsentState, ConsentViolation};
+
+        // LegacyBypass is sticky — all events are no-ops.
+        if self.consent_state == ConsentState::LegacyBypass {
+            return Ok(self.consent_state);
+        }
+
+        let event_id = event.request_id();
+
+        match (self.consent_state, event) {
+            // ─── AwaitingRequest ───────────────────────────────────
+            (ConsentState::AwaitingRequest, ConsentEvent::Request { request_id }) => {
+                self.consent_state = ConsentState::Requested;
+                self.active_request_id = Some(request_id);
+                self.last_response_approved = None;
+            }
+            (ConsentState::AwaitingRequest, ConsentEvent::ResponseApproved { .. })
+            | (ConsentState::AwaitingRequest, ConsentEvent::ResponseDenied { .. }) => {
+                return Err(ConsentViolation::StaleResponseForUnknownRequest {
+                    request_id: event_id,
+                });
+            }
+            (ConsentState::AwaitingRequest, ConsentEvent::Revocation { .. }) => {
+                return Err(ConsentViolation::RevocationBeforeApproval {
+                    request_id: event_id,
+                });
+            }
+
+            // ─── Requested ─────────────────────────────────────────
+            (ConsentState::Requested, ConsentEvent::Request { request_id }) => {
+                match self.active_request_id {
+                    Some(active) if request_id > active => {
+                        self.active_request_id = Some(request_id);
+                        self.last_response_approved = None;
+                    }
+                    _ => { /* stale / equal — drop */ }
+                }
+            }
+            (ConsentState::Requested, ConsentEvent::ResponseApproved { request_id }) => {
+                if self.active_request_id != Some(request_id) {
+                    return Err(ConsentViolation::StaleResponseForUnknownRequest {
+                        request_id,
+                    });
+                }
+                self.consent_state = ConsentState::Approved;
+                self.last_response_approved = Some(true);
+            }
+            (ConsentState::Requested, ConsentEvent::ResponseDenied { request_id }) => {
+                if self.active_request_id != Some(request_id) {
+                    return Err(ConsentViolation::StaleResponseForUnknownRequest {
+                        request_id,
+                    });
+                }
+                self.consent_state = ConsentState::Denied;
+                self.last_response_approved = Some(false);
+            }
+            (ConsentState::Requested, ConsentEvent::Revocation { .. }) => {
+                return Err(ConsentViolation::RevocationBeforeApproval {
+                    request_id: event_id,
+                });
+            }
+
+            // ─── Approved ──────────────────────────────────────────
+            (ConsentState::Approved, ConsentEvent::Request { request_id }) => {
+                match self.active_request_id {
+                    Some(active) if request_id > active => {
+                        // New ceremony starting after approval.
+                        self.consent_state = ConsentState::Requested;
+                        self.active_request_id = Some(request_id);
+                        self.last_response_approved = None;
+                    }
+                    _ => { /* stale — drop */ }
+                }
+            }
+            (ConsentState::Approved, ConsentEvent::ResponseApproved { request_id }) => {
+                match self.active_request_id {
+                    Some(active) if active == request_id => { /* idempotent */ }
+                    _ => {
+                        return Err(ConsentViolation::StaleResponseForUnknownRequest {
+                            request_id,
+                        });
+                    }
+                }
+            }
+            (ConsentState::Approved, ConsentEvent::ResponseDenied { request_id }) => {
+                if self.active_request_id == Some(request_id) {
+                    return Err(ConsentViolation::ContradictoryResponse {
+                        request_id,
+                        prior_approved: true,
+                        new_approved: false,
+                    });
+                }
+                return Err(ConsentViolation::StaleResponseForUnknownRequest { request_id });
+            }
+            (ConsentState::Approved, ConsentEvent::Revocation { request_id }) => {
+                if self.active_request_id == Some(request_id) {
+                    self.consent_state = ConsentState::Revoked;
+                }
+                // Stale revocation (different request_id) is a no-op.
+            }
+
+            // ─── Denied ────────────────────────────────────────────
+            (ConsentState::Denied, ConsentEvent::Request { request_id }) => {
+                match self.active_request_id {
+                    Some(active) if request_id > active => {
+                        self.consent_state = ConsentState::Requested;
+                        self.active_request_id = Some(request_id);
+                        self.last_response_approved = None;
+                    }
+                    _ => { /* stale — drop */ }
+                }
+            }
+            (ConsentState::Denied, ConsentEvent::ResponseDenied { request_id }) => {
+                match self.active_request_id {
+                    Some(active) if active == request_id => { /* idempotent */ }
+                    _ => {
+                        return Err(ConsentViolation::StaleResponseForUnknownRequest {
+                            request_id,
+                        });
+                    }
+                }
+            }
+            (ConsentState::Denied, ConsentEvent::ResponseApproved { request_id }) => {
+                if self.active_request_id == Some(request_id) {
+                    return Err(ConsentViolation::ContradictoryResponse {
+                        request_id,
+                        prior_approved: false,
+                        new_approved: true,
+                    });
+                }
+                return Err(ConsentViolation::StaleResponseForUnknownRequest { request_id });
+            }
+            (ConsentState::Denied, ConsentEvent::Revocation { .. }) => {
+                // Nothing to revoke; no-op.
+            }
+
+            // ─── Revoked ───────────────────────────────────────────
+            (ConsentState::Revoked, ConsentEvent::Request { request_id }) => {
+                match self.active_request_id {
+                    Some(active) if request_id > active => {
+                        self.consent_state = ConsentState::Requested;
+                        self.active_request_id = Some(request_id);
+                        self.last_response_approved = None;
+                    }
+                    _ => { /* stale — drop */ }
+                }
+            }
+            (ConsentState::Revoked, _) => { /* no-op */ }
+
+            // ─── LegacyBypass handled up top ───────────────────────
+            (ConsentState::LegacyBypass, _) => unreachable!(),
+        }
+
+        Ok(self.consent_state)
     }
 
     /// Gate predicate: is the session allowed to seal/open a `FRAME`
@@ -583,6 +928,10 @@ impl SessionBuilder {
             } else {
                 crate::consent::ConsentState::LegacyBypass
             },
+            #[cfg(feature = "consent")]
+            active_request_id: None,
+            #[cfg(feature = "consent")]
+            last_response_approved: None,
         }
     }
 }
@@ -603,6 +952,21 @@ impl Session {
     pub fn builder() -> SessionBuilder {
         SessionBuilder::new()
     }
+}
+
+/// Constant-time equality for two 32-byte arrays.
+///
+/// Avoids a data-dependent early-return in the fingerprint compare path.
+/// Kept inline here rather than reaching for `subtle` — one byte of
+/// dependency surface for a loop we can read in three lines.
+#[cfg(feature = "consent")]
+#[inline]
+fn ct_eq_32(a: &[u8; 32], b: &[u8; 32]) -> bool {
+    let mut diff: u8 = 0;
+    for i in 0..32 {
+        diff |= a[i] ^ b[i];
+    }
+    diff == 0
 }
 
 #[cfg(test)]

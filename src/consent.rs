@@ -1,7 +1,7 @@
 // Copyright (c) 2024-2026 Tristan Stoltz / Luminous Dynamics
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-//! Consent ceremony for Xenia sessions (SPEC draft-02 §12).
+//! Consent ceremony for Xenia sessions (SPEC draft-03 §12).
 //!
 //! Before any application payload flows on a session, the technician's
 //! side sends a [`ConsentRequest`] — a signed, time-limited, scoped
@@ -34,11 +34,30 @@
 //! to log the consent in an external audit system) can do so using
 //! only the plaintext + the peer's public key.
 //!
+//! ## Session binding (draft-03)
+//!
+//! Every signed consent body carries a 32-byte `session_fingerprint`
+//! derived via HKDF-SHA-256 from the current AEAD session key with
+//! `info = source_id || epoch || request_id_be` (see
+//! [`Session::session_fingerprint`][crate::Session::session_fingerprint]).
+//! The fingerprint cryptographically binds the consent message to the
+//! specific session AND ceremony in which it was signed, preventing
+//! replay of a signed `ConsentResponse` across sessions or across
+//! request_ids with the same participants.
+//!
+//! Both peers derive the same fingerprint from their own copy of the
+//! key; receivers reject signatures whose embedded fingerprint does
+//! not match local derivation. Use
+//! [`Session::sign_consent_request`][crate::Session::sign_consent_request]
+//! (and siblings) on the send path, and
+//! [`Session::verify_consent_request`][crate::Session::verify_consent_request]
+//! on the receive path to avoid manual fingerprint handling.
+//!
 //! ## Forward-compatibility
 //!
 //! [`ConsentRequestCore::causal_binding`] is reserved for a future
 //! Ricardian-contract extension (ticket-state-bound authority). In
-//! draft-02 it MUST be `None`; the wire slot is reserved so that
+//! draft-03 it MUST be `None`; the wire slot is reserved so that
 //! v1.1-aware receivers can honor it without breaking v1 peers.
 //!
 //! ## Threat model
@@ -47,11 +66,12 @@
 //!
 //! - Each peer holds an Ed25519 signing key on their device. The
 //!   binding of a device key to a human identity is out of scope here
-//!   (that's the MSP attestation chain in SPEC draft-02 §12.5).
+//!   (that's the MSP attestation chain in SPEC draft-03 §12.5).
 //! - The session's AEAD key has already been established via the outer
 //!   handshake. The consent messages flow INSIDE the sealed channel —
 //!   the signature adds a second layer of authentication specifically
-//!   for non-repudiation.
+//!   for third-party-verifiable consent records, and the
+//!   `session_fingerprint` binds each record to a specific session.
 //! - `valid_until` uses the Unix epoch in seconds. Clock skew between
 //!   peers matters for this field; callers SHOULD grant a small grace
 //!   window (the reference implementation accepts +/- 30 s).
@@ -108,6 +128,12 @@ pub struct CausalPredicate {
 /// `bincode::serialize(&ConsentRequestCore { ... })`. Canonical encoding
 /// is bincode v1 with default little-endian fixint, matching the other
 /// payloads in this crate.
+///
+/// **Field order is load-bearing** — the bincode serialization is the
+/// signed payload, so reordering fields breaks signature verification
+/// across implementations. The draft-03 canonical order is:
+/// `request_id`, `requester_pubkey`, `session_fingerprint`,
+/// `valid_until`, `scope`, `reason`, `causal_binding`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConsentRequestCore {
     /// Monotonic request identifier chosen by the requester. Used by the
@@ -115,6 +141,12 @@ pub struct ConsentRequestCore {
     pub request_id: u64,
     /// Technician's device public key (raw 32-byte Ed25519).
     pub requester_pubkey: [u8; PUBLIC_KEY_LEN],
+    /// Session binding (draft-03): HKDF-SHA-256 of the session key,
+    /// derived by the requester at sign time. See
+    /// [`Session::session_fingerprint`][crate::Session::session_fingerprint].
+    /// Prevents replay of this signed request in a different session.
+    #[serde(with = "BigArray")]
+    pub session_fingerprint: [u8; 32],
     /// Unix epoch seconds after which the request expires. Callers SHOULD
     /// grant ±30 s clock skew.
     pub valid_until: u64,
@@ -122,7 +154,7 @@ pub struct ConsentRequestCore {
     pub scope: ConsentScope,
     /// Free-text justification (ticket reference, reason).
     pub reason: String,
-    /// Reserved for v1.1 Ricardian binding. MUST be `None` in draft-02.
+    /// Reserved for v1.1 Ricardian binding. MUST be `None` in draft-03.
     pub causal_binding: Option<CausalPredicate>,
 }
 
@@ -189,12 +221,21 @@ impl Sealable for ConsentRequest {
 /// End-user's response to a consent request. Carries an approval or
 /// denial plus a signature. Sealed with
 /// [`crate::PAYLOAD_TYPE_CONSENT_RESPONSE`] (0x21).
+///
+/// **Canonical field order (draft-03):** `request_id`,
+/// `responder_pubkey`, `session_fingerprint`, `approved`, `reason`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConsentResponseCore {
     /// Matches `ConsentRequestCore::request_id` to correlate.
     pub request_id: u64,
     /// End-user's device public key (raw 32-byte Ed25519).
     pub responder_pubkey: [u8; PUBLIC_KEY_LEN],
+    /// Session binding (draft-03). Same derivation as on
+    /// [`ConsentRequestCore::session_fingerprint`]. Prevents replay
+    /// of this signed response in a different session or across
+    /// different `request_id`s.
+    #[serde(with = "BigArray")]
+    pub session_fingerprint: [u8; 32],
     /// Whether the consent is approved.
     pub approved: bool,
     /// Optional free-text denial reason (empty when approved).
@@ -258,12 +299,19 @@ impl Sealable for ConsentResponse {
 /// after a successful consent; subsequent `FRAME` payloads on the session
 /// return [`crate::WireError::ConsentRevoked`]. Sealed with
 /// [`crate::PAYLOAD_TYPE_CONSENT_REVOCATION`] (0x22).
+///
+/// **Canonical field order (draft-03):** `request_id`, `revoker_pubkey`,
+/// `session_fingerprint`, `issued_at`, `reason`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConsentRevocationCore {
     /// References the `request_id` being revoked.
     pub request_id: u64,
     /// Public key of the revoker (either party may revoke).
     pub revoker_pubkey: [u8; PUBLIC_KEY_LEN],
+    /// Session binding (draft-03). Same derivation as on
+    /// [`ConsentRequestCore::session_fingerprint`].
+    #[serde(with = "BigArray")]
+    pub session_fingerprint: [u8; 32],
     /// Unix epoch seconds at which the revocation was issued.
     pub issued_at: u64,
     /// Free-text reason (displayed to the counterparty).
@@ -390,21 +438,97 @@ pub enum ConsentState {
 /// the underlying signed message, and passes it to
 /// [`crate::Session::observe_consent`].
 ///
-/// Keeping the event type a lightweight enum — rather than passing the
-/// full `ConsentRequest`/etc. struct — lets the session stay
-/// storage-agnostic (no need to hold message bodies) and makes
-/// application-level verification policy the explicit caller
-/// responsibility.
+/// Every event carries the `request_id` of the consent message it
+/// describes (SPEC draft-03 §12.6). The session's transition table
+/// uses `request_id` to distinguish legitimate ceremony progression
+/// (e.g., a fresh `Request` with a higher id starting a new ceremony
+/// after a terminal state) from protocol violations (e.g., a
+/// `Denied` contradicting a prior `Approved` for the *same* id).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConsentEvent {
     /// A `ConsentRequest` was observed (either sent or received).
-    Request,
+    Request {
+        /// `ConsentRequestCore::request_id` of the observed request.
+        request_id: u64,
+    },
     /// A `ConsentResponse` with `approved = true` was observed.
-    ResponseApproved,
+    ResponseApproved {
+        /// `ConsentResponseCore::request_id` of the observed response.
+        request_id: u64,
+    },
     /// A `ConsentResponse` with `approved = false` was observed.
-    ResponseDenied,
+    ResponseDenied {
+        /// `ConsentResponseCore::request_id` of the observed response.
+        request_id: u64,
+    },
     /// A `ConsentRevocation` was observed.
-    Revocation,
+    Revocation {
+        /// `ConsentRevocationCore::request_id` of the observed revocation.
+        request_id: u64,
+    },
+}
+
+impl ConsentEvent {
+    /// Returns the `request_id` carried by this event.
+    pub fn request_id(&self) -> u64 {
+        match self {
+            ConsentEvent::Request { request_id }
+            | ConsentEvent::ResponseApproved { request_id }
+            | ConsentEvent::ResponseDenied { request_id }
+            | ConsentEvent::Revocation { request_id } => *request_id,
+        }
+    }
+}
+
+/// A consent-state-machine transition that is a protocol violation
+/// (SPEC draft-03 §12.6). Returned in the `Err` arm of
+/// [`crate::Session::observe_consent`] and wrapped by
+/// [`crate::WireError::ConsentProtocolViolation`].
+///
+/// The wire layer returns these values without side effects on the
+/// session state — once a violation is raised, the caller's contract
+/// is to terminate the session. The wire cannot tear down the
+/// underlying transport; that's the application's job.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum ConsentViolation {
+    /// A `Revocation` was observed while the session state is
+    /// `AwaitingRequest` or `Requested` — i.e., the peer is trying
+    /// to revoke consent that was never approved. A correct peer in
+    /// that situation would either do nothing (no consent to revoke)
+    /// or emit a `ResponseDenied`.
+    #[error("revocation observed before any approval (request_id={request_id})")]
+    RevocationBeforeApproval {
+        /// `request_id` carried by the offending `Revocation` event.
+        request_id: u64,
+    },
+    /// A `Response` was observed whose `approved` field contradicts a
+    /// prior `Response` for the same `request_id` — e.g. a
+    /// `ResponseDenied` after a `ResponseApproved`, or vice-versa.
+    ///
+    /// SPEC §12.6 REQUIRES rejecting this rather than accepting
+    /// "later wins." The correct UX primitive for "the user changed
+    /// their mind after approving" is a fresh [`ConsentRevocation`],
+    /// which has its own signature, timestamp, and wire type.
+    #[error(
+        "contradictory response for request_id={request_id}: prior approved={prior_approved}, new approved={new_approved}"
+    )]
+    ContradictoryResponse {
+        /// `request_id` of both responses (they share it by
+        /// definition of "contradictory").
+        request_id: u64,
+        /// The `approved` field recorded first for this `request_id`.
+        prior_approved: bool,
+        /// The `approved` field on the contradictory response.
+        new_approved: bool,
+    },
+    /// A `Response` was observed for a `request_id` that was never
+    /// `Requested` on this session. A correct peer would have
+    /// observed the `Request` first.
+    #[error("response for unknown request_id={request_id} (no prior Request)")]
+    StaleResponseForUnknownRequest {
+        /// `request_id` of the orphan response.
+        request_id: u64,
+    },
 }
 
 #[cfg(test)]
@@ -419,12 +543,18 @@ mod tests {
         (sk, pk_bytes)
     }
 
+    // A placeholder fingerprint for unit-level sign/verify tests that
+    // don't drive a full Session. Real callers derive this from
+    // `Session::session_fingerprint`.
+    const TEST_FP: [u8; 32] = [0xAA; 32];
+
     #[test]
     fn consent_request_signs_and_verifies() {
         let (sk, pk) = test_key_pair();
         let core = ConsentRequestCore {
             request_id: 42,
             requester_pubkey: pk,
+            session_fingerprint: TEST_FP,
             valid_until: 1_700_000_000,
             scope: ConsentScope::ScreenAndInput,
             reason: "ticket #1234 password reset".to_string(),
@@ -442,6 +572,7 @@ mod tests {
         let core = ConsentRequestCore {
             request_id: 1,
             requester_pubkey: sk.verifying_key().to_bytes(),
+            session_fingerprint: TEST_FP,
             valid_until: 1,
             scope: ConsentScope::ScreenOnly,
             reason: "".into(),
@@ -457,6 +588,7 @@ mod tests {
         let core = ConsentRequestCore {
             request_id: 1,
             requester_pubkey: pk,
+            session_fingerprint: TEST_FP,
             valid_until: 100,
             scope: ConsentScope::ScreenOnly,
             reason: "original".into(),
@@ -468,11 +600,32 @@ mod tests {
     }
 
     #[test]
+    fn consent_request_rejects_tampered_fingerprint() {
+        // A fingerprint byte-flip after signing must invalidate the
+        // signature — session-binding is load-bearing at the
+        // signed-body level.
+        let (sk, pk) = test_key_pair();
+        let core = ConsentRequestCore {
+            request_id: 1,
+            requester_pubkey: pk,
+            session_fingerprint: TEST_FP,
+            valid_until: 100,
+            scope: ConsentScope::ScreenOnly,
+            reason: "".into(),
+            causal_binding: None,
+        };
+        let mut req = ConsentRequest::sign(core, &sk);
+        req.core.session_fingerprint[0] ^= 0x01;
+        assert!(!req.verify(None));
+    }
+
+    #[test]
     fn consent_response_signs_and_verifies() {
         let (sk, pk) = test_key_pair();
         let core = ConsentResponseCore {
             request_id: 42,
             responder_pubkey: pk,
+            session_fingerprint: TEST_FP,
             approved: true,
             reason: "".into(),
         };
@@ -486,6 +639,7 @@ mod tests {
         let core = ConsentRevocationCore {
             request_id: 42,
             revoker_pubkey: pk,
+            session_fingerprint: TEST_FP,
             issued_at: 1_700_000_500,
             reason: "session complete".into(),
         };
@@ -500,6 +654,7 @@ mod tests {
             ConsentRequestCore {
                 request_id: 1,
                 requester_pubkey: pk,
+                session_fingerprint: TEST_FP,
                 valid_until: 1,
                 scope: ConsentScope::ScreenOnly,
                 reason: "".into(),

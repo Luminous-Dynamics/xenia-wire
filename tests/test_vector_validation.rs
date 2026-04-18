@@ -125,8 +125,21 @@ fn vector_07_consent_request_opens_and_verifies() {
     let plaintext = receiver.open(&envelope).expect("vector 07 must open");
     let request: ConsentRequest =
         bincode::deserialize(&plaintext).expect("vector 07 must deserialize");
+    // Raw signature verify.
     assert!(request.verify(None), "vector 07 signature must verify");
     assert_eq!(request.core.request_id, 7);
+    // Session-bound verify — fingerprint must match local HKDF derivation.
+    let expected_fp = receiver
+        .session_fingerprint(request.core.request_id)
+        .expect("derive fingerprint");
+    assert_eq!(
+        request.core.session_fingerprint, expected_fp,
+        "vector 07 session_fingerprint must match HKDF derivation"
+    );
+    assert!(
+        receiver.verify_consent_request(&request, None),
+        "vector 07 must pass session-bound verify"
+    );
 }
 
 #[cfg(feature = "consent")]
@@ -141,6 +154,10 @@ fn vector_08_consent_response_opens_and_verifies() {
     assert!(response.verify(None), "vector 08 signature must verify");
     assert_eq!(response.core.request_id, 7);
     assert!(response.core.approved);
+    assert!(
+        receiver.verify_consent_response(&response, None),
+        "vector 08 must pass session-bound verify"
+    );
 }
 
 #[cfg(feature = "consent")]
@@ -157,6 +174,34 @@ fn vector_09_consent_revocation_opens_and_verifies() {
     // Vectors 08 + 09 share the same signing seed (modelling the end-user
     // approving AND later revoking).
     assert_eq!(revocation.core.revoker_pubkey.len(), 32);
+    assert!(
+        receiver.verify_consent_revocation(&revocation, None),
+        "vector 09 must pass session-bound verify"
+    );
+}
+
+#[cfg(feature = "consent")]
+#[test]
+fn vectors_07_08_09_share_session_fingerprint() {
+    // Same session + same request_id → same fingerprint. The three
+    // vectors model one ceremony; the HKDF derivation yields the same
+    // 32 bytes embedded in all three signed bodies.
+    use xenia_wire::consent::{ConsentRequest, ConsentResponse, ConsentRevocation};
+    let env07 = read_hex(&vectors_dir().join("07_consent_request.envelope.hex"));
+    let env08 = read_hex(&vectors_dir().join("08_consent_response.envelope.hex"));
+    let env09 = read_hex(&vectors_dir().join("09_consent_revocation.envelope.hex"));
+    let mut rx = fresh_receiver();
+    let req: ConsentRequest = bincode::deserialize(&rx.open(&env07).unwrap()).unwrap();
+    let resp: ConsentResponse = bincode::deserialize(&rx.open(&env08).unwrap()).unwrap();
+    let rev: ConsentRevocation = bincode::deserialize(&rx.open(&env09).unwrap()).unwrap();
+    assert_eq!(
+        req.core.session_fingerprint, resp.core.session_fingerprint,
+        "07 and 08 must share fingerprint",
+    );
+    assert_eq!(
+        resp.core.session_fingerprint, rev.core.session_fingerprint,
+        "08 and 09 must share fingerprint",
+    );
 }
 
 #[cfg(feature = "consent")]

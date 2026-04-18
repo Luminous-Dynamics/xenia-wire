@@ -1,4 +1,4 @@
-Vector 09: consent_revocation (draft-02, feature = consent)
+Vector 09: consent_revocation (draft-03, feature = consent)
 -----------------------------------------------------------
 A ConsentRevocation signed by the end-user (same seed as
 vector 08) terminating the session approved in vector 08.
@@ -15,8 +15,12 @@ payload_type = 0x22 (CONSENT_REVOCATION)
 Ed25519 signing seed: "xenia-consent-test-vector-seed#2"
 (same as vector 08; same identity)
 
-ConsentRevocation fields:
-request_id      = 7
-revoker_pubkey  = derived Ed25519 public key
-issued_at       = 1700000700
-reason          = "session complete"
+ConsentRevocation fields (draft-03):
+request_id          = 7
+revoker_pubkey      = derived Ed25519 public key
+session_fingerprint = 5b94fb75dd4d499825c7f26f32dea7dce067d59a5200584a2c9d7d9e18dfd7d4
+issued_at           = 1700000700
+reason              = "session complete"
+
+session_fingerprint matches the value on vectors 07 and 08
+(all three reference the same session + request_id).

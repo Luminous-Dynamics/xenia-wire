@@ -35,9 +35,9 @@ All vectors share:
 | 04 | long_payload | 256-byte payload covering every byte value. |
 | 05 | nonce_structure | Three sequential seals demonstrating seq counter increment. |
 | 06 | lz4_frame | LZ4-before-AEAD (`--features lz4` only). |
-| 07 | consent_request | ConsentRequest signed with a deterministic Ed25519 seed (`--features consent` only, draft-02). |
-| 08 | consent_response | Approving ConsentResponse to vector 07 (distinct responder seed). |
-| 09 | consent_revocation | ConsentRevocation signed by the responder terminating the session. |
+| 07 | consent_request | ConsentRequest signed with a deterministic Ed25519 seed, draft-03 with mandatory session_fingerprint (`--features consent`). |
+| 08 | consent_response | Approving ConsentResponse to vector 07 (distinct responder seed; same session_fingerprint). |
+| 09 | consent_revocation | ConsentRevocation signed by the responder terminating the session (same session_fingerprint as vectors 07 + 08). |
 
 ## Regenerating
 
@@ -45,7 +45,11 @@ All vectors share:
 $ cargo run --example gen_test_vectors --all-features
 ```
 
-Vectors are version-stamped to `xenia-wire 0.1.0-alpha.1`.
+Vectors are version-stamped to `xenia-wire 0.2.0-alpha.1`
+(SPEC draft-03). The consent fixtures (07/08/09) changed
+canonically between draft-02 and draft-03 due to the addition
+of `session_fingerprint` in the signed Core — bytes will not
+match older draft-02 fixtures.
 If a version bump changes the wire format, regenerate and
 bump the spec version (SPEC.md §Version history) in the
 same commit.

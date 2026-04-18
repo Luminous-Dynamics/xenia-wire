@@ -1,11 +1,11 @@
 [package]
 name = "xenia-wire"
-version = "0.1.0-alpha.5"
+version = "0.2.0-alpha.1"
 edition = "2021"
 rust-version = "1.85"
 authors = ["Tristan Stoltz <tristan.stoltz@evolvingresonantcocreationism.com>"]
 license = "Apache-2.0 OR MIT"
-description = "PQC-sealed binary wire protocol for remote-control streams: ChaCha20-Poly1305 AEAD with epoch rotation, 64-slot sliding replay window, and optional LZ4-before-seal. Pre-alpha — do not use in production."
+description = "PQC-sealed binary wire protocol for remote-control streams: ChaCha20-Poly1305 AEAD with epoch rotation, configurable sliding replay window (64-1024 slots), optional LZ4-before-seal, and signed consent ceremony with mandatory per-session fingerprint (HKDF-SHA-256). Pre-alpha — do not use in production."
 repository = "https://github.com/Luminous-Dynamics/xenia-wire"
 homepage = "https://github.com/Luminous-Dynamics/xenia-wire"
 documentation = "https://docs.rs/xenia-wire"
@@ -28,8 +28,9 @@ reference-frame = []
 lz4 = ["dep:lz4_flex"]
 # Consent ceremony: ConsentRequest/Response/Revocation payloads + Ed25519
 # signing + session-level state machine (FRAME refused until consent;
-# revocation terminates). Corresponds to SPEC.md draft-02 §12.
-consent = ["dep:ed25519-dalek", "dep:serde-big-array"]
+# revocation terminates) + HKDF-SHA-256 session fingerprint binding.
+# Corresponds to SPEC.md draft-03 §12.
+consent = ["dep:ed25519-dalek", "dep:serde-big-array", "dep:hkdf", "dep:sha2"]
 
 [dependencies]
 chacha20poly1305 = "0.10"
@@ -41,6 +42,8 @@ rand = "0.8"
 lz4_flex = { version = "0.11", default-features = false, features = ["safe-encode", "safe-decode"], optional = true }
 ed25519-dalek = { version = "2", default-features = false, features = ["std", "zeroize", "rand_core"], optional = true }
 serde-big-array = { version = "0.5", optional = true }
+hkdf = { version = "0.12", default-features = false, optional = true }
+sha2 = { version = "0.10", default-features = false, optional = true }
 
 # wasm32 needs web-time for `Instant` (the std one panics on wasm32-unknown-unknown)
 # and getrandom's "js" feature to source entropy from crypto.getRandomValues.

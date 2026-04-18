@@ -1,4 +1,4 @@
-Vector 08: consent_response (draft-02, feature = consent)
+Vector 08: consent_response (draft-03, feature = consent)
 ---------------------------------------------------------
 An approving ConsentResponse to vector 07. Signed with a
 DIFFERENT Ed25519 seed than the request, modelling the
@@ -13,11 +13,16 @@ payload_type = 0x21 (CONSENT_RESPONSE)
 
 Ed25519 signing seed: "xenia-consent-test-vector-seed#2"
 
-ConsentResponse fields:
-request_id       = 7  (matches vector 07)
-responder_pubkey = derived Ed25519 public key
-approved         = true
-reason           = ""
+ConsentResponse fields (draft-03):
+request_id          = 7  (matches vector 07)
+responder_pubkey    = derived Ed25519 public key
+session_fingerprint = 5b94fb75dd4d499825c7f26f32dea7dce067d59a5200584a2c9d7d9e18dfd7d4
+approved            = true
+reason              = ""
+
+session_fingerprint is the SAME value embedded in vector 07
+— both peers derive it from the same session key with the
+same `info` (request_id=7).
 
 Signature is Ed25519 over bincode v1 of core. See SPEC
 §12.3 for the canonical-encoding requirement.

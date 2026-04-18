@@ -310,7 +310,7 @@ fn emit_06_lz4_frame(out: &Path) -> std::io::Result<()> {
 #[cfg(feature = "consent")]
 fn emit_07_consent_request(out: &Path) -> std::io::Result<()> {
     use ed25519_dalek::SigningKey;
-    use xenia_wire::consent::{ConsentRequest, ConsentRequestCore, ConsentScope};
+    use xenia_wire::consent::{ConsentRequestCore, ConsentScope};
     use xenia_wire::PAYLOAD_TYPE_CONSENT_REQUEST;
 
     // Ed25519 seed: 32 bytes derived from the fixture label.
@@ -319,16 +319,24 @@ fn emit_07_consent_request(out: &Path) -> std::io::Result<()> {
     let pk = sk.verifying_key().to_bytes();
 
     let mut session = deterministic_session();
+    let request_id = 7u64;
 
+    // Session::sign_consent_request derives the fingerprint from the
+    // session key + source_id + epoch + request_id and injects it
+    // before signing. The placeholder we pass here is overwritten.
     let core = ConsentRequestCore {
-        request_id: 7,
+        request_id,
         requester_pubkey: pk,
+        session_fingerprint: [0; 32],
         valid_until: 1_700_000_300,
         scope: ConsentScope::ScreenAndInput,
         reason: "xenia test vector".to_string(),
         causal_binding: None,
     };
-    let request = ConsentRequest::sign(core, &sk);
+    let request = session
+        .sign_consent_request(core, &sk)
+        .expect("sign consent request");
+    let fingerprint_hex = hex_string(&request.core.session_fingerprint);
 
     let plaintext = request.to_bin_via_trait();
     let envelope = session
@@ -339,32 +347,49 @@ fn emit_07_consent_request(out: &Path) -> std::io::Result<()> {
     write_hex(&out.join("07_consent_request.envelope.hex"), &envelope)?;
     fs::write(
         out.join("07_consent_request.txt"),
-        "Vector 07: consent_request (draft-02, feature = consent)\n\
-         --------------------------------------------------------\n\
-         A ConsentRequest for ScreenAndInput scope, signed with a\n\
-         deterministic Ed25519 seed. An alternate-language\n\
-         implementation can reproduce every byte from the fixture\n\
-         seed + the fixed session parameters.\n\n\
-         Fixture parameters:\n\
-           source_id  = \"XENIATST\"\n\
-           epoch      = 0x42\n\
-           key        = fixture-key (shared with vectors 01-05)\n\
-           payload_type = 0x20 (CONSENT_REQUEST)\n\n\
-         Ed25519 signing seed: \"xenia-consent-test-vector-seed!!\" (32 bytes)\n\n\
-         ConsentRequest fields:\n\
-           request_id     = 7\n\
-           requester_pubkey = derived Ed25519 public key\n\
-           valid_until    = 1700000300\n\
-           scope          = ScreenAndInput (= 1)\n\
-           reason         = \"xenia test vector\"\n\
-           causal_binding = None (draft-02 MUST be None)\n\n\
-         .input.hex is the bincode-encoded ConsentRequest (including\n\
-         the 64-byte signature). .envelope.hex is the AEAD-sealed\n\
-         form sealed under the fixture key.\n\n\
-         To validate: decrypt envelope with fixture key + extracted\n\
-         nonce; bincode-deserialize; verify Ed25519 signature over\n\
-         bincode(core).\n",
+        format!(
+            "Vector 07: consent_request (draft-03, feature = consent)\n\
+             --------------------------------------------------------\n\
+             A ConsentRequest for ScreenAndInput scope, signed with a\n\
+             deterministic Ed25519 seed. An alternate-language\n\
+             implementation can reproduce every byte from the fixture\n\
+             seed + the fixed session parameters.\n\n\
+             Fixture parameters:\n\
+               source_id  = \"XENIATST\"\n\
+               epoch      = 0x42\n\
+               key        = fixture-key (shared with vectors 01-05)\n\
+               payload_type = 0x20 (CONSENT_REQUEST)\n\n\
+             Ed25519 signing seed: \"xenia-consent-test-vector-seed!!\" (32 bytes)\n\n\
+             ConsentRequest fields (draft-03):\n\
+               request_id          = 7\n\
+               requester_pubkey    = derived Ed25519 public key\n\
+               session_fingerprint = {fingerprint_hex}\n\
+               valid_until         = 1700000300\n\
+               scope               = ScreenAndInput (= 1)\n\
+               reason              = \"xenia test vector\"\n\
+               causal_binding      = None (draft-03 MUST be None)\n\n\
+             session_fingerprint is HKDF-SHA-256(session_key, info =\n\
+             source_id || epoch || request_id_be). Both peers derive it\n\
+             locally from their own copy of the session key; receivers\n\
+             reject requests whose embedded fingerprint does not match.\n\
+             See SPEC §12.3.1 for the derivation.\n\n\
+             .input.hex is the bincode-encoded ConsentRequest (including\n\
+             the 64-byte signature). .envelope.hex is the AEAD-sealed\n\
+             form sealed under the fixture key.\n\n\
+             To validate: decrypt envelope with fixture key + extracted\n\
+             nonce; bincode-deserialize; derive session_fingerprint\n\
+             locally from the fixture key and compare; verify Ed25519\n\
+             signature over bincode(core).\n"
+        ),
     )
+}
+
+fn hex_string(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        s.push_str(&format!("{:02x}", b));
+    }
+    s
 }
 
 // Trait method used only by the generator example — we can't call
@@ -385,7 +410,7 @@ impl<T: xenia_wire::Sealable> SealableExt for T {}
 #[cfg(feature = "consent")]
 fn emit_08_consent_response(out: &Path) -> std::io::Result<()> {
     use ed25519_dalek::SigningKey;
-    use xenia_wire::consent::{ConsentResponse, ConsentResponseCore};
+    use xenia_wire::consent::ConsentResponseCore;
     use xenia_wire::PAYLOAD_TYPE_CONSENT_RESPONSE;
 
     // Distinct seed from vector 07 — same fixture scheme.
@@ -394,13 +419,19 @@ fn emit_08_consent_response(out: &Path) -> std::io::Result<()> {
     let pk = sk.verifying_key().to_bytes();
 
     let mut session = deterministic_session();
+    let request_id = 7u64; // matches vector 07
+
     let core = ConsentResponseCore {
-        request_id: 7, // matches vector 07's request_id
+        request_id,
         responder_pubkey: pk,
+        session_fingerprint: [0; 32],
         approved: true,
         reason: "".to_string(),
     };
-    let response = ConsentResponse::sign(core, &sk);
+    let response = session
+        .sign_consent_response(core, &sk)
+        .expect("sign consent response");
+    let fingerprint_hex = hex_string(&response.core.session_fingerprint);
 
     let plaintext = response.to_bin_via_trait();
     let envelope = session
@@ -411,25 +442,31 @@ fn emit_08_consent_response(out: &Path) -> std::io::Result<()> {
     write_hex(&out.join("08_consent_response.envelope.hex"), &envelope)?;
     fs::write(
         out.join("08_consent_response.txt"),
-        "Vector 08: consent_response (draft-02, feature = consent)\n\
-         ---------------------------------------------------------\n\
-         An approving ConsentResponse to vector 07. Signed with a\n\
-         DIFFERENT Ed25519 seed than the request, modelling the\n\
-         requester/responder split (technician + end-user as\n\
-         distinct identities).\n\n\
-         Fixture parameters:\n\
-           source_id  = \"XENIATST\"\n\
-           epoch      = 0x42\n\
-           key        = fixture-key (shared)\n\
-           payload_type = 0x21 (CONSENT_RESPONSE)\n\n\
-         Ed25519 signing seed: \"xenia-consent-test-vector-seed#2\"\n\n\
-         ConsentResponse fields:\n\
-           request_id       = 7  (matches vector 07)\n\
-           responder_pubkey = derived Ed25519 public key\n\
-           approved         = true\n\
-           reason           = \"\"\n\n\
-         Signature is Ed25519 over bincode v1 of core. See SPEC\n\
-         §12.3 for the canonical-encoding requirement.\n",
+        format!(
+            "Vector 08: consent_response (draft-03, feature = consent)\n\
+             ---------------------------------------------------------\n\
+             An approving ConsentResponse to vector 07. Signed with a\n\
+             DIFFERENT Ed25519 seed than the request, modelling the\n\
+             requester/responder split (technician + end-user as\n\
+             distinct identities).\n\n\
+             Fixture parameters:\n\
+               source_id  = \"XENIATST\"\n\
+               epoch      = 0x42\n\
+               key        = fixture-key (shared)\n\
+               payload_type = 0x21 (CONSENT_RESPONSE)\n\n\
+             Ed25519 signing seed: \"xenia-consent-test-vector-seed#2\"\n\n\
+             ConsentResponse fields (draft-03):\n\
+               request_id          = 7  (matches vector 07)\n\
+               responder_pubkey    = derived Ed25519 public key\n\
+               session_fingerprint = {fingerprint_hex}\n\
+               approved            = true\n\
+               reason              = \"\"\n\n\
+             session_fingerprint is the SAME value embedded in vector 07\n\
+             — both peers derive it from the same session key with the\n\
+             same `info` (request_id=7).\n\n\
+             Signature is Ed25519 over bincode v1 of core. See SPEC\n\
+             §12.3 for the canonical-encoding requirement.\n"
+        ),
     )
 }
 
@@ -439,7 +476,7 @@ fn emit_08_consent_response(out: &Path) -> std::io::Result<()> {
 #[cfg(feature = "consent")]
 fn emit_09_consent_revocation(out: &Path) -> std::io::Result<()> {
     use ed25519_dalek::SigningKey;
-    use xenia_wire::consent::{ConsentRevocation, ConsentRevocationCore};
+    use xenia_wire::consent::ConsentRevocationCore;
     use xenia_wire::PAYLOAD_TYPE_CONSENT_REVOCATION;
 
     // Same seed as the responder in vector 08 — the end-user is
@@ -449,13 +486,18 @@ fn emit_09_consent_revocation(out: &Path) -> std::io::Result<()> {
     let pk = sk.verifying_key().to_bytes();
 
     let mut session = deterministic_session();
+    let request_id = 7u64;
     let core = ConsentRevocationCore {
-        request_id: 7,
+        request_id,
         revoker_pubkey: pk,
+        session_fingerprint: [0; 32],
         issued_at: 1_700_000_700,
         reason: "session complete".to_string(),
     };
-    let revocation = ConsentRevocation::sign(core, &sk);
+    let revocation = session
+        .sign_consent_revocation(core, &sk)
+        .expect("sign consent revocation");
+    let fingerprint_hex = hex_string(&revocation.core.session_fingerprint);
 
     let plaintext = revocation.to_bin_via_trait();
     let envelope = session
@@ -466,25 +508,30 @@ fn emit_09_consent_revocation(out: &Path) -> std::io::Result<()> {
     write_hex(&out.join("09_consent_revocation.envelope.hex"), &envelope)?;
     fs::write(
         out.join("09_consent_revocation.txt"),
-        "Vector 09: consent_revocation (draft-02, feature = consent)\n\
-         -----------------------------------------------------------\n\
-         A ConsentRevocation signed by the end-user (same seed as\n\
-         vector 08) terminating the session approved in vector 08.\n\
-         Any party that holds the approved session's key MUST treat\n\
-         subsequent FRAME envelopes as WireError::ConsentRevoked after\n\
-         observing this message.\n\n\
-         Fixture parameters:\n\
-           source_id  = \"XENIATST\"\n\
-           epoch      = 0x42\n\
-           key        = fixture-key (shared)\n\
-           payload_type = 0x22 (CONSENT_REVOCATION)\n\n\
-         Ed25519 signing seed: \"xenia-consent-test-vector-seed#2\"\n\
-         (same as vector 08; same identity)\n\n\
-         ConsentRevocation fields:\n\
-           request_id      = 7\n\
-           revoker_pubkey  = derived Ed25519 public key\n\
-           issued_at       = 1700000700\n\
-           reason          = \"session complete\"\n",
+        format!(
+            "Vector 09: consent_revocation (draft-03, feature = consent)\n\
+             -----------------------------------------------------------\n\
+             A ConsentRevocation signed by the end-user (same seed as\n\
+             vector 08) terminating the session approved in vector 08.\n\
+             Any party that holds the approved session's key MUST treat\n\
+             subsequent FRAME envelopes as WireError::ConsentRevoked after\n\
+             observing this message.\n\n\
+             Fixture parameters:\n\
+               source_id  = \"XENIATST\"\n\
+               epoch      = 0x42\n\
+               key        = fixture-key (shared)\n\
+               payload_type = 0x22 (CONSENT_REVOCATION)\n\n\
+             Ed25519 signing seed: \"xenia-consent-test-vector-seed#2\"\n\
+             (same as vector 08; same identity)\n\n\
+             ConsentRevocation fields (draft-03):\n\
+               request_id          = 7\n\
+               revoker_pubkey      = derived Ed25519 public key\n\
+               session_fingerprint = {fingerprint_hex}\n\
+               issued_at           = 1700000700\n\
+               reason              = \"session complete\"\n\n\
+             session_fingerprint matches the value on vectors 07 and 08\n\
+             (all three reference the same session + request_id).\n"
+        ),
     )
 }
 
@@ -518,14 +565,18 @@ fn write_index(out: &Path) -> std::io::Result<()> {
          | 04 | long_payload | 256-byte payload covering every byte value. |\n\
          | 05 | nonce_structure | Three sequential seals demonstrating seq counter increment. |\n\
          | 06 | lz4_frame | LZ4-before-AEAD (`--features lz4` only). |\n\
-         | 07 | consent_request | ConsentRequest signed with a deterministic Ed25519 seed (`--features consent` only, draft-02). |\n\
-         | 08 | consent_response | Approving ConsentResponse to vector 07 (distinct responder seed). |\n\
-         | 09 | consent_revocation | ConsentRevocation signed by the responder terminating the session. |\n\n\
+         | 07 | consent_request | ConsentRequest signed with a deterministic Ed25519 seed, draft-03 with mandatory session_fingerprint (`--features consent`). |\n\
+         | 08 | consent_response | Approving ConsentResponse to vector 07 (distinct responder seed; same session_fingerprint). |\n\
+         | 09 | consent_revocation | ConsentRevocation signed by the responder terminating the session (same session_fingerprint as vectors 07 + 08). |\n\n\
          ## Regenerating\n\n\
          ```console\n\
          $ cargo run --example gen_test_vectors --all-features\n\
          ```\n\n\
-         Vectors are version-stamped to `xenia-wire 0.1.0-alpha.1`.\n\
+         Vectors are version-stamped to `xenia-wire 0.2.0-alpha.1`\n\
+         (SPEC draft-03). The consent fixtures (07/08/09) changed\n\
+         canonically between draft-02 and draft-03 due to the addition\n\
+         of `session_fingerprint` in the signed Core — bytes will not\n\
+         match older draft-02 fixtures.\n\
          If a version bump changes the wire format, regenerate and\n\
          bump the spec version (SPEC.md §Version history) in the\n\
          same commit.\n\n\

@@ -1,13 +1,17 @@
-# Xenia Wire Protocol — Specification draft-02r2
+# Xenia Wire Protocol — Specification draft-03
 
-> **Status**: draft-02r2 (2026-04-18 clarifying revision of draft-02r1).
-> Corresponds to `xenia-wire 0.1.0-alpha.5` on crates.io. No wire-format
-> changes from draft-02 / draft-02r1; draft-02r2 refines the consent
-> session state machine (§12.6 / §12.7) and adds a configurable replay
-> window size (§5). Both are receiver-local; two draft-02r2 peers and
-> two draft-02r1 peers interoperate at the wire level so long as they
-> agree on window size (default 64 slots). See Appendix B for the full
-> change list.
+> **Status**: draft-03 (2026-04-18). Corresponds to `xenia-wire
+> 0.2.0-alpha.1` on crates.io. **Breaking wire change** — the signed
+> canonical bodies of `ConsentRequest`, `ConsentResponse`, and
+> `ConsentRevocation` all gained a mandatory 32-byte
+> `session_fingerprint` field. draft-02r2 and draft-03 peers cannot
+> verify each other's signed consent messages. The underlying envelope
+> layout (§1–§11) is unchanged.
+>
+> draft-03 closes the last two items flagged at the end of draft-02r1:
+> mandatory session binding on signed consent bodies (§12.3.1) and a
+> normative duplicate/conflict transition table for the consent state
+> machine (§12.6). See Appendix B for the full change list.
 >
 > Pre-alpha — the format is subject to breaking change in subsequent
 > drafts. Reviewers: please open an issue for any remaining ambiguity;
@@ -70,26 +74,22 @@ protocol codifies the terms of that hospitality cryptographically.
 
 ### 1.4 Version
 
-This document specifies **draft-02r2** of the wire protocol — a
-clarifying revision of draft-02r1 that adds no wire-format changes.
-draft-02r2 splits the former `Pending` consent state into `LegacyBypass`
-+ `AwaitingRequest` (receiver-local; see §12.6) and exposes a
-configurable per-stream replay window size of 64 to 1024 bits
-(receiver-local; see §5). Peers agree on the window size out-of-band;
-the default remains 64. The spec version is independent of the
-`xenia-wire` crate version; the mapping from crate version to wire
-draft is recorded in Appendix B.
+This document specifies **draft-03** of the wire protocol — a breaking
+revision of draft-02r2 at the signed-consent-body layer. The envelope
+layout (§2) and nonce construction (§3) are unchanged. draft-03 adds
+a mandatory 32-byte `session_fingerprint` field to all three signed
+consent bodies (§12.3 / §12.3.1) and pins a normative transition
+table for the consent state machine (§12.6). The spec version is
+independent of the `xenia-wire` crate version; the mapping from crate
+version to wire draft is recorded in Appendix B.
 
 ### 1.4.1 Draft compatibility
 
-Draft-02 is **additive** over draft-01: sections 1–11 describe the
-same wire as draft-01 with clarifying edits only; section 12 is
-new in draft-02 and introduces the consent ceremony.
-
-| Range of sections | Wire-level compatibility |
-|-------------------|-------------------------|
-| §1 – §11 (core wire) | Unchanged from draft-01. A draft-01 receiver and a draft-02 sender interoperate for application `FRAME` / `INPUT` / `FRAME_LZ4` payloads. |
-| §12 (consent ceremony) | New in draft-02. A draft-01 receiver that encounters payload types `0x20`/`0x21`/`0x22` treats them as unknown-reserved per §4.3 — the wire accepts them, but the application layer above draft-01 will not process them meaningfully. |
+| Range of sections | Wire-level compatibility (draft-03) |
+|-------------------|-------------------------------------|
+| §1 – §11 (core wire) | Unchanged from draft-01 / draft-02 / draft-02r1 / draft-02r2. Any draft's receiver and sender interoperate for application `FRAME` / `INPUT` / `FRAME_LZ4` payloads. |
+| §12 (consent ceremony) | **draft-03 is NOT wire-compatible with earlier drafts at the signed-body layer.** draft-03 adds a mandatory 32-byte `session_fingerprint` field to `ConsentRequestCore`, `ConsentResponseCore`, and `ConsentRevocationCore` (§12.3 / §12.3.1). A draft-02r2 receiver cannot bincode-deserialize a draft-03 consent body (and vice-versa). The envelope sealing remains identical; only the inner signed structures changed. |
+| Payload types `0x20`/`0x21`/`0x22` | Same wire codes as draft-02. A draft-01 receiver that encounters these types still treats them as unknown-reserved per §4.3 (no change). |
 
 ### 1.4.2 When to bump the draft
 
@@ -788,7 +788,7 @@ All three are sealed via the normal AEAD path (§3) and are subject
 to the replay window (§5) on their own `(source_id, pld_type)`
 keys — independent from application `FRAME` / `INPUT`.
 
-### 12.3 Message structure
+### 12.3 Message structure (draft-03)
 
 #### ConsentRequest
 
@@ -799,14 +799,20 @@ ConsentRequest {
   core: ConsentRequestCore {
     request_id: u64,                       // correlation id
     requester_pubkey: [u8; 32],            // Ed25519 public key
+    session_fingerprint: [u8; 32],         // draft-03: session binding, see §12.3.1
     valid_until: u64,                      // Unix epoch seconds
     scope: ConsentScope,                   // enum, see §12.4
     reason: String,                        // free-text justification
-    causal_binding: Option<CausalPredicate>, // MUST be None in draft-02
+    causal_binding: Option<CausalPredicate>, // MUST be None in draft-03
   },
   signature: [u8; 64],                     // Ed25519 over bincode(core)
 }
 ```
+
+**Canonical field order is normative.** The bincode serialization is
+the signed payload; reordering fields breaks signature verification
+across implementations. The order above is the draft-03 canonical
+layout.
 
 The signature covers `bincode::serialize(&core)` — NOT the sealed
 envelope. This lets a third-party auditor verify the consent using
@@ -815,18 +821,91 @@ only the plaintext and the public key, without the session key.
 **Verification contract**: to verify `ConsentRequest.signature`, the
 verifier MUST (a) deserialize `core` from the received plaintext,
 (b) re-serialize `core` using the exact same canonical encoding
-(§12.3.1), (c) verify the Ed25519 signature over that re-serialized
-byte sequence using `core.requester_pubkey`. Any deviation in the
-re-encoding — byte order, integer width, string length prefix
-format — will produce a signature mismatch.
+(§12.3.2), (c) verify the Ed25519 signature over that re-serialized
+byte sequence using `core.requester_pubkey`, AND (d) re-derive
+`session_fingerprint` locally per §12.3.1 and compare to
+`core.session_fingerprint`. Any failure in (a-d) MUST produce a
+verification failure; callers SHOULD react identically to all
+sub-cases (per §11, do not leak sub-case detail).
 
-#### 12.3.1 Canonical encoding requirement (load-bearing)
+#### 12.3.1 Session fingerprint (draft-03, mandatory)
+
+Every signed consent body carries a 32-byte `session_fingerprint`
+derived locally by each peer from the current AEAD session key. It
+cryptographically binds the signed body to a specific session AND a
+specific ceremony, preventing replay of a captured `ConsentRequest`
+/ `ConsentResponse` / `ConsentRevocation` into a different session
+or a different `request_id` with the same participants.
+
+Derivation (HKDF-SHA-256 per RFC 5869):
+
+```text
+salt = b"xenia-session-fingerprint-v1"      (28 bytes ASCII)
+ikm  = current AEAD session_key              (32 bytes)
+info = source_id || epoch || request_id_be   (8 + 1 + 8 = 17 bytes)
+  source_id      : 8 bytes, same as stored on the Session
+                   (bytes [0..6] project into the nonce — see §3)
+  epoch          : 1 byte
+  request_id_be  : 8 bytes, the core.request_id as big-endian u64
+
+output = HKDF-SHA-256.expand(PRK(salt, ikm), info, 32)   (32 bytes)
+```
+
+Both peers derive the same fingerprint from their own copy of the
+session key. On the send side the signer MUST derive the fingerprint
+and place it in `core.session_fingerprint` before computing the
+signature. On the receive side the verifier MUST re-derive locally
+and compare in constant time; a mismatch MUST be treated the same as
+a signature failure.
+
+**Why `info` is structured this way.**
+
+- Including `source_id` + `epoch` binds each session's fingerprints
+  to its nonce domain, so two concurrent sessions that (through
+  handshake error) shared the same key would nevertheless derive
+  distinct fingerprints.
+- Including `request_id_be` as the final field ensures that each
+  ceremony in a session receives its own fingerprint. A captured
+  `ConsentResponse` signed for `request_id = 7` cannot be replayed
+  as a valid response to `request_id = 8` — the HKDF outputs differ
+  in at least one bit with overwhelming probability.
+- Big-endian is chosen deliberately against bincode's little-endian
+  default to reduce the chance of implementations accidentally using
+  the wrong byte order from their ambient serialization code path.
+
+**Constant-time comparison required.** Receivers MUST use a
+constant-time byte-string comparison (e.g. `subtle::ConstantTimeEq`
+in Rust, `crypto_verify_32` in libsodium-flavored crypto, an XOR-
+OR loop in an audited implementation) when comparing the derived
+fingerprint to `core.session_fingerprint`. A data-dependent early-
+return leaks timing information about the fingerprint byte-by-byte.
+The reference implementation ships such a loop in
+`src/session.rs::ct_eq_32`.
+
+**Rekey interaction.** The fingerprint binds to the *current* AEAD
+session key. On rekey the fingerprint for the same `request_id`
+changes. Consent messages signed under the old key remain
+verifiable ONLY during the previous-key grace window (§6.2), and
+ONLY against the receiver's prev-key-derived fingerprint. A
+receiver implementing fingerprint verification MUST therefore
+re-derive against both the current and previous keys when the
+AEAD tag verified under the previous key, or reject the message.
+
+**Why MANDATORY, not OPTIONAL.** draft-02r1 documented loose
+binding as a known limitation. draft-03 closes it by making the
+field mandatory rather than `Option<[u8; 32]>`. Since draft-03 is
+already a breaking change at the signed-body layer, there is no
+backwards-compatibility cost to making the field non-optional;
+optional fields would invite deployments to skip derivation and
+leave the replay-across-sessions vulnerability open.
+
+#### 12.3.2 Canonical encoding requirement (load-bearing)
 
 The signature mechanism is only as strong as the agreement between
 sender and receiver on the canonical encoding of `core`. This
 subsection specifies the canonical encoding explicitly.
 
-In draft-02, the canonical encoding of `core` is **bincode v1 with
+In draft-03, the canonical encoding of `core` is **bincode v1 with
 its default configuration**, specifically:
 
 - Little-endian byte order.
@@ -848,7 +927,7 @@ signature format to a specific Rust crate's byte layout is fragile
 over long timescales. A future draft is expected to specify a
 library-independent canonical encoding (likely a minimal fixed-
 width TLV format) that decouples verification from bincode.
-Draft-02 accepts the coupling as technical debt to ship; fixing
+Draft-03 accepts the coupling as technical debt to ship; fixing
 it is tracked as a v1.0-blocker design item.
 
 Test vectors for all three consent message types (`07_consent_request`,
@@ -864,6 +943,7 @@ ConsentResponse {
   core: ConsentResponseCore {
     request_id: u64,                // matches the request being answered
     responder_pubkey: [u8; 32],     // Ed25519 public key
+    session_fingerprint: [u8; 32],  // draft-03: session binding, §12.3.1
     approved: bool,
     reason: String,                 // empty on approval; explanation on denial
   },
@@ -878,6 +958,7 @@ ConsentRevocation {
   core: ConsentRevocationCore {
     request_id: u64,                // references the approved request
     revoker_pubkey: [u8; 32],       // either party's public key
+    session_fingerprint: [u8; 32],  // draft-03: session binding, §12.3.1
     issued_at: u64,                 // Unix epoch seconds
     reason: String,
   },
@@ -921,7 +1002,7 @@ while ticket #1234 is In-Progress") evaluated at each frame against
 a decentralized truth-source. Receivers that do not understand the
 predicate MUST reject the request as malformed.
 
-### 12.6 Session state machine (draft-02r2)
+### 12.6 Session state machine (draft-03, normative)
 
 Every session SHALL track consent state, one of six variants. Two
 *start states* disambiguate the pre-draft-02r2 `Pending` variant:
@@ -929,7 +1010,11 @@ Every session SHALL track consent state, one of six variants. Two
 - **`LegacyBypass`** — the consent system is not in use for this
   session. Application payloads flow unimpeded (corresponds to
   interpretation (1) of the former `Pending` state — see §12.7
-  below). Sticky: every observed event is a no-op.
+  below). **Sticky: every observed event is a no-op.** In
+  particular, an unsolicited `ConsentRequest` MUST NOT
+  auto-promote a LegacyBypass session into `Requested` — that
+  would let a malicious peer force a NoConsent block on a session
+  that opted out of the ceremony.
 - **`AwaitingRequest`** — the consent system IS in use; no
   `ConsentRequest` has been observed yet. Application payloads are
   blocked until a ceremony completes (interpretation (2) of the
@@ -937,80 +1022,105 @@ Every session SHALL track consent state, one of six variants. Two
 
 Deployments opt into `AwaitingRequest` via an implementation-
 specific configuration (the reference implementation exposes it
-via `SessionBuilder::require_consent(true)`). Callers that need
-draft-02 / draft-02r1 wire-level behavior use `LegacyBypass`; no
-wire-format change is required to switch between them.
+via `SessionBuilder::require_consent(true)`).
 
-```
-  ┌──────────────┐   (any event)
-  │ LegacyBypass │ ◀─────────────── LegacyBypass   (sticky)
-  └──────────────┘
+#### 12.6.1 Transition table (normative)
 
-  ┌─────────────────┐  observe Request   ┌──────────┐
-  │ AwaitingRequest │ ─────────────────▶ │ Requested │
-  └─────────────────┘                    └──────────┘
-                                              │
-                                              │ observe Response{approved=true}
-                                              ▼
-                                         ┌──────────┐
-                                         │ Approved │◀──┐
-                                         └──────────┘   │
-                                              │         │
-                                              │         │ (Approved is stable
-                                              │         │  until revocation)
-                                              │         │
-                                              │ observe Revocation
-                                              ▼
-                                         ┌──────────┐
-                                         │ Revoked  │ (terminal)
-                                         └──────────┘
+Sessions MUST additionally track an **active request_id** (the
+`request_id` of the most recent `Request` that advanced state into
+`Requested`, or carried forward into `Approved` / `Denied` /
+`Revoked`) and — for the contradictory-response check — the
+**last observed approval** (`approved` value of the response that
+transitioned into `Approved` or `Denied`). Both are internal
+receiver-local state; the wire does not carry them.
 
-                       observe Response{approved=false}
-  AwaitingRequest ────────(via Requested)──────────────▶ Denied (terminal)
-```
+The table below is normative for every state transition. `id` is
+the `request_id` of the observed event; `active` is the session's
+current active_request_id (undefined in `LegacyBypass` /
+`AwaitingRequest`).
 
-Driven by the caller (not the wire) after verifying each message.
-Transitions not shown (e.g. `Response` from `AwaitingRequest`,
-`Revocation` from `AwaitingRequest`) MUST be no-ops. In particular,
-`LegacyBypass` is sticky — an unsolicited `Request` does NOT
-auto-promote a session out of `LegacyBypass`. Callers opt into
-ceremony-mode at session construction.
+| Current state | Event | Precondition | Next state | Side effects |
+|---|---|---|---|---|
+| `LegacyBypass` | *any* | — | `LegacyBypass` | none (sticky) |
+| `AwaitingRequest` | `Request{id}` | — | `Requested` | `active := id`; clear last_response |
+| `AwaitingRequest` | `Response*{id}` | — | **violation** `StaleResponseForUnknownRequest` | state unchanged |
+| `AwaitingRequest` | `Revocation{id}` | — | **violation** `RevocationBeforeApproval` | state unchanged |
+| `Requested` | `Request{id}` | `id > active` | `Requested` | `active := id`; clear last_response (replacement) |
+| `Requested` | `Request{id}` | `id ≤ active` | `Requested` | none (stale drop) |
+| `Requested` | `ResponseApproved{id}` | `id = active` | `Approved` | `last_response := true` |
+| `Requested` | `ResponseDenied{id}` | `id = active` | `Denied` | `last_response := false` |
+| `Requested` | `Response*{id}` | `id ≠ active` | **violation** `StaleResponseForUnknownRequest` | state unchanged |
+| `Requested` | `Revocation{id}` | — | **violation** `RevocationBeforeApproval` | state unchanged |
+| `Approved` | `Request{id}` | `id > active` | `Requested` | `active := id`; clear last_response (fresh ceremony) |
+| `Approved` | `Request{id}` | `id ≤ active` | `Approved` | none (stale) |
+| `Approved` | `ResponseApproved{id}` | `id = active` | `Approved` | none (idempotent) |
+| `Approved` | `ResponseDenied{id}` | `id = active` | **violation** `ContradictoryResponse{prior=true, new=false}` | state unchanged |
+| `Approved` | `Response*{id}` | `id ≠ active` | **violation** `StaleResponseForUnknownRequest` | state unchanged |
+| `Approved` | `Revocation{id}` | `id = active` | `Revoked` | none |
+| `Approved` | `Revocation{id}` | `id ≠ active` | `Approved` | none (stale revocation) |
+| `Denied` | `Request{id}` | `id > active` | `Requested` | `active := id`; clear last_response (fresh ceremony) |
+| `Denied` | `Request{id}` | `id ≤ active` | `Denied` | none (stale) |
+| `Denied` | `ResponseDenied{id}` | `id = active` | `Denied` | none (idempotent) |
+| `Denied` | `ResponseApproved{id}` | `id = active` | **violation** `ContradictoryResponse{prior=false, new=true}` | state unchanged |
+| `Denied` | `Response*{id}` | `id ≠ active` | **violation** `StaleResponseForUnknownRequest` | state unchanged |
+| `Denied` | `Revocation{id}` | — | `Denied` | none (nothing to revoke) |
+| `Revoked` | `Request{id}` | `id > active` | `Requested` | `active := id`; clear last_response (fresh ceremony) |
+| `Revoked` | *any other* | — | `Revoked` | none |
 
-**Duplicate and conflict handling** (draft-02r1):
+**Violation handling.** "Violation" rows MUST cause the implementation
+to surface a `ConsentProtocolViolation` error to the caller (see §12.8)
+carrying the indicated `ConsentViolation` variant. The session state
+MUST NOT be mutated on a violation. The wire does NOT own the
+transport; the caller is responsible for deciding whether to tear
+down the session. Callers SHOULD treat any `ConsentProtocolViolation`
+as a hard fault — the peer's state machine is either broken or
+compromised.
 
-- A second `ConsentRequest` observed while state is `Requested` with
-  a `request_id` strictly higher than the current one SHOULD be
-  treated as a replacement (update `request_id` / `valid_until` on
-  the receiver side). A `ConsentRequest` with a lower or equal
-  `request_id` SHOULD be dropped as stale-or-replay; the replay
-  window already catches duplicates, so this is a policy tightening
-  on top of wire-level defenses. Implementations SHOULD document
-  their chosen behavior.
-- **Consent messages themselves are NOT gated by the current consent
-  state.** A session in state `Revoked` can still receive and process
-  a fresh `ConsentRequest` (starting a new ceremony); a session in
-  `Denied` can receive a new `Request`; etc. The gate in §12.7
-  applies to application `FRAME` / `INPUT` / `FRAME_LZ4` payloads,
-  not to consent-layer messages themselves. This prevents a
-  session from deadlocking itself out of reaching `Approved` again
-  after a terminal state — a fresh ceremony at a higher `request_id`
-  is always reachable.
-- A second `ConsentResponse` for the same `request_id` that
-  confirms the already-recorded decision MUST be a no-op.
-- A second `ConsentResponse` for the same `request_id` that
-  contradicts a prior decision (e.g. a `denied=false` after an
-  `approved=true`) MUST be rejected as a protocol violation.
-  Implementations MAY treat the contradiction as a policy signal
-  to tear down the session.
-- A `ConsentRevocation` observed after an earlier revocation MUST
-  be a no-op (state already `Revoked`).
-- `request_id` uniqueness is REQUIRED to be monotonic within a
-  single `(source_id, ceremony)` pair on the requester side.
-  Receivers MAY track active `request_id`s to correlate multiple
-  concurrent requests, but the wire does not require more than
-  the standard replay-window defense.
+**Consent messages themselves are NOT gated by the current consent
+state.** A session in `Revoked` can still receive and process a fresh
+`ConsentRequest` (starting a new ceremony); a session in `Denied` can
+receive a new `Request`; etc. The gate in §12.7 applies to application
+`FRAME` / `INPUT` / `FRAME_LZ4` payloads, not to consent-layer messages.
+This prevents a session from deadlocking out of reaching `Approved`
+again after a terminal state — a fresh ceremony at a higher
+`request_id` is always reachable.
 
-### 12.7 FRAME gating (draft-02r2)
+**`request_id` monotonicity is REQUIRED** to be strictly increasing
+within a single `(source_id, ceremony)` pair on the requester side.
+The transition table relies on this: replacement / fresh-ceremony
+rows only trigger on strictly higher ids. A requester that emits a
+lower id after a higher one will find its message dropped as stale.
+
+#### 12.6.2 UI guidance: "change of mind" after approving
+
+It is tempting to treat a late-arriving `ResponseDenied` after a
+prior `ResponseApproved` (for the same `request_id`) as a
+"later-wins" signal from a user who clicked Approve and then
+changed their mind. draft-03 **rejects this design**:
+
+- The `ConsentResponseCore` signed body carries no timestamp, so a
+  verifier has no cryptographic way to know which `approved` value
+  was signed later.
+- A captured `ResponseDenied` from a prior session (whether
+  replayed at the same `request_id` via session_binding bypass, or
+  at a reused `request_id` across sessions without
+  `session_fingerprint`) would otherwise let an attacker force
+  session teardown on any Approved session whose participants the
+  attacker once observed.
+- The protocol already has a correct "change of mind" primitive:
+  `ConsentRevocation`. It carries its own `issued_at` timestamp,
+  its own signed core, its own payload type, and is session-bound
+  via `session_fingerprint`.
+
+UI implementations whose flow includes a "change mind" button
+after approval SHOULD emit a fresh `ConsentRevocation` — not a
+contradictory `ConsentResponse`. The button can still read "Deny"
+to the user; only the wire emission differs. Implementations that
+observe a contradictory `ConsentResponse` anyway MUST raise
+`ConsentViolation::ContradictoryResponse` per the transition
+table.
+
+### 12.7 FRAME gating (draft-03)
 
 When a session's consent state is `AwaitingRequest`, `Requested`,
 `Denied`, or `Revoked`, the receiver MUST NOT accept, and the
@@ -1036,18 +1146,9 @@ operationally different situations:
    A security-conscious deployment wants to block traffic until
    the ceremony completes. This becomes `AwaitingRequest`.
 
-draft-02r2 gives each interpretation its own variant. The choice is
+draft-03 gives each interpretation its own variant. The choice is
 made at session construction (it cannot be inferred from the wire),
 and the two variants behave symmetrically across seal / open.
-
-**Backwards compatibility with draft-02r1.** The wire format is
-unchanged. The two new states are purely receiver-local
-classification; they don't appear in any on-wire structure.
-Existing deployments that used `Pending == allow` can keep that
-semantics by constructing sessions in `LegacyBypass` (the
-reference implementation's default). Deployments that want
-traffic blocked until the ceremony completes opt into
-`AwaitingRequest`.
 
 ### 12.8 Security properties
 
@@ -1060,22 +1161,24 @@ traffic blocked until the ceremony completes opt into
   legal non-repudiation, which also requires a binding between
   the signing pubkey and a human identity; that binding is out
   of scope for this wire (see §12.10).
-- **Binding to session is currently LOOSE** (draft-02r1): the
-  consent signature does NOT cover the AEAD session key, nonce,
-  or any session-unique material. A consent signed in session A
-  is, by default, replayable as a valid signed artifact in
-  session B with the same participants.
-
-  This is a known design limitation, not a desired property.
-  Deployments requiring session-binding SHOULD include a session
-  fingerprint (e.g. HKDF-derived from the session key, or the
-  first envelope's nonce) in `ConsentRequestCore.reason` as a
-  free-text workaround. A future draft will add an explicit
-  `session_binding: Option<[u8; 32]>` field to
-  `ConsentRequestCore` so deployments don't have to smuggle
-  binding material through the reason string.
-
-  Tracked as a post-draft-02 design item.
+- **Session binding is TIGHT** (draft-03): every signed consent
+  body carries a mandatory `session_fingerprint` derived per
+  §12.3.1 from the session key + source_id + epoch +
+  `request_id`. A consent signed in session A is NOT replayable
+  in session B — the fingerprint differs (different session key
+  or different source_id/epoch). A consent signed for
+  `request_id=7` is NOT replayable at `request_id=8` — the
+  fingerprint's HKDF `info` field differs. Closes the
+  replay-across-sessions gap known as "loose binding" in
+  draft-02r1.
+- **Protocol-violation detection** (draft-03): illegal state
+  transitions (Revocation-before-approval, contradictory
+  Response, stale Response for unknown `request_id`) surface as
+  `ConsentProtocolViolation` errors carrying a `ConsentViolation`
+  variant. The wire does NOT tear down the transport — that's
+  the application's responsibility — but the error signal is
+  unambiguous. See the transition table in §12.6.1 for the full
+  set of violations.
 - **No identity binding to humans**: the pubkey-to-human binding
   is out of scope. An MSP attestation chain (key signing by the
   employer) is a forthcoming extension.
@@ -1098,7 +1201,7 @@ traffic blocked until the ceremony completes opt into
   as asynchronous best-effort and rely on transport teardown for
   hard termination.
 
-### 12.10 Threats explicitly out of scope (draft-02)
+### 12.10 Threats explicitly out of scope (draft-03)
 
 - **Human-identity fraud**: a technician who controls an approved
   device key can act as that technician. Device-key-to-human binding
@@ -1152,6 +1255,7 @@ from a non-Rust implementation.
 | draft-02 | 2026-04-18 | `0.1.0-alpha.3` | Adds §12 Consent Ceremony (payload types `0x20`/`0x21`/`0x22`). Requires Ed25519 signing. No breaking change to existing wire format — §1–§11 are unchanged. |
 | **draft-02r1** | 2026-04-18 | `0.1.0-alpha.3` → `alpha.4` (no wire change; alpha.4 only closes a reference-impl gap) | Clarifying revision in response to first round of informal cryptographic review. No wire-format changes. Highlights: (a) §1.4 version-consistency fix; (b) explicit AAD=empty statement in §2; (c) `epch` → `epoch` naming cleanup; (d) `source_id` "6 bytes on wire, label may derive from 8-byte fixture" clarification; (e) explicit session-global counter semantics + tightened sequence-exhaustion boundary in §3; (f) per-key-epoch replay state in §5.3 (flags a reference-implementation gap to close); (g) compression side-channel subsection §7.5; (h) observability-local-vs-remote split in §9.1; (i) Poly1305 bound precision in §10.2; (j) canonical-encoding subsection §12.3.1; (k) third-party-verifiable-signed-consent terminology instead of "non-repudiation" throughout §12; (l) `ConsentScope` per-frame enforcement note; (m) duplicate/conflict handling on the consent state machine; (n) explicit discussion of the `Pending`-state dual-meaning design gap; (o) session-binding known-limitation flag. Four design-level items (session_binding field, richer consent states, duplicate semantics decision, configurable replay window size) tracked as post-draft-02 design issues. |
 | **draft-02r2** | 2026-04-18 | `0.1.0-alpha.5` | Clarifying revision; no wire-format changes. Closes two of the four design items flagged at the end of draft-02r1: (i) splits the former `Pending` consent state into `LegacyBypass` (consent handled out-of-band; FRAME flows) and `AwaitingRequest` (ceremony required; FRAME blocked until `Approved`) — see §12.6 / §12.7. Receiver-local; opt-in at session construction; interoperable with draft-02r1 peers. (ii) Generalizes the replay window from fixed 64 bits to a receiver-configurable `W ∈ {64, 128, 256, 512, 1024}` — see §5.1. Receiver-local; peers agree on `W` out-of-band; default remains 64. Two design items remain for a future breaking draft (draft-03 / `0.2.0`): explicit `session_binding` field on `ConsentRequestCore`, and a normative duplicate/conflict transition table for the consent state machine. |
+| **draft-03** | 2026-04-18 | `0.2.0-alpha.1` | **Breaking wire change at the signed-consent-body layer.** Closes the remaining two open-issue items. (i) Mandatory 32-byte `session_fingerprint` field on `ConsentRequestCore`, `ConsentResponseCore`, and `ConsentRevocationCore` (§12.3.1). Derived locally via HKDF-SHA-256 with `salt = "xenia-session-fingerprint-v1"`, `ikm = session_key`, `info = source_id \|\| epoch \|\| request_id_be`. Closes the "loose session binding" gap from draft-02r1 — a signed consent body now binds cryptographically to one session AND one `request_id`. (ii) Normative consent state-machine transition table (§12.6.1) covering all (state, event, request_id) combinations, with three defined protocol violations surfaced as `ConsentViolation::{RevocationBeforeApproval, ContradictoryResponse, StaleResponseForUnknownRequest}` carried by a new `WireError::ConsentProtocolViolation`. (iii) §12.6.2 UI guidance for "change of mind" flows: use `ConsentRevocation`, not a contradictory `ConsentResponse`. The envelope layout (§1–§11) is unchanged; draft-03 consent messages cannot be verified by pre-draft-03 peers because the canonical signed bytes differ. |
 
 ---
 

@@ -7,6 +7,144 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0-alpha.1] — 2026-04-18
+
+Tracks **SPEC draft-03**. **Breaking wire change at the signed-
+consent-body layer.** The envelope layout (SPEC §1–§11) is unchanged;
+FRAME / INPUT / FRAME_LZ4 traffic remains interoperable with any
+0.1.x peer. The breaking change is the canonical bytes of the three
+signed consent bodies — a 0.1.x peer cannot verify a 0.2.x consent
+signature (and vice-versa).
+
+Closes the remaining two open-issue items from the round-2 review:
+
+### Added
+
+- **Mandatory session fingerprint on signed consent bodies**
+  ([SPEC §12.3.1]; closes
+  [#1](https://github.com/Luminous-Dynamics/xenia-wire/issues/1)) —
+  every `ConsentRequestCore`, `ConsentResponseCore`, and
+  `ConsentRevocationCore` now carries a 32-byte
+  `session_fingerprint`. Derived locally per peer:
+  ```
+  fingerprint = HKDF-SHA-256(
+    salt = b"xenia-session-fingerprint-v1",
+    ikm  = current session_key,
+    info = source_id || epoch || request_id_be,
+    L    = 32,
+  )
+  ```
+  Both peers derive the same value from their own copy of the key.
+  On verify, receivers re-derive locally and compare in constant time;
+  a mismatch fails verification the same as a bad signature. This
+  closes the "loose session binding" replay-across-sessions gap that
+  draft-02r1 documented as a known limitation.
+  - `Session::session_fingerprint(request_id)` — new public method.
+  - `Session::sign_consent_request` / `_response` / `_revocation`
+    — convenience methods that derive the fingerprint AND sign.
+  - `Session::verify_consent_request` / `_response` / `_revocation`
+    — convenience methods that check signature + fingerprint +
+    optional pubkey match.
+  - Test vectors 07/08/09 regenerated (shared fingerprint
+    `5b94fb75…d7d4` — same session + same `request_id=7`).
+  - Pure Rust, constant-time 32-byte compare (no new runtime deps
+    beyond `hkdf` + `sha2`).
+
+- **Normative consent state-machine transition table + violation
+  detection** ([SPEC §12.6.1]; closes
+  [#3](https://github.com/Luminous-Dynamics/xenia-wire/issues/3)) —
+  the consent state machine is now fully normative: every (state,
+  event, `request_id`) tuple maps to a specific next state or a
+  specific protocol violation. Three violation variants surface as
+  `WireError::ConsentProtocolViolation(ConsentViolation)`:
+  - `RevocationBeforeApproval` — a `ConsentRevocation` observed
+    while state is `AwaitingRequest` or `Requested` (revoking
+    something that was never approved). The peer's state machine
+    is broken or compromised.
+  - `ContradictoryResponse{prior_approved, new_approved}` — a
+    `ConsentResponse` whose `approved` contradicts a prior response
+    for the same `request_id`. Rejected rather than accepted as
+    "later wins"; the correct wire-level primitive for mind-changes
+    is a fresh `ConsentRevocation` (SPEC §12.6.2 records the UI
+    guidance explicitly).
+  - `StaleResponseForUnknownRequest` — a `ConsentResponse` whose
+    `request_id` was never `Requested`.
+  - The wire does NOT tear down the transport on violation. The
+    caller receives the error and decides. On a violation the
+    session state is NOT mutated.
+
+- **`ConsentEvent` carries `request_id`** — each variant is now a
+  struct-shape:
+  ```rust
+  pub enum ConsentEvent {
+      Request { request_id: u64 },
+      ResponseApproved { request_id: u64 },
+      ResponseDenied { request_id: u64 },
+      Revocation { request_id: u64 },
+  }
+  ```
+  Enables the request_id-sensitive transition rules above.
+
+- **`ConsentViolation` enum** (in `xenia_wire::consent`) with the
+  three variants described above. `thiserror::Error` so it formats
+  cleanly in logs.
+
+- **`WireError::ConsentProtocolViolation(ConsentViolation)`** — new
+  variant surfaced by `Session::observe_consent`.
+
+### Changed
+
+- **`Session::observe_consent` signature**: now returns
+  `Result<ConsentState, ConsentViolation>`. Legal transitions and
+  benign no-ops return `Ok(state)`; protocol violations return
+  `Err(violation)` with state unmutated. Callers MUST handle the
+  `Result`.
+
+- **`ConsentState`** no longer has a `Pending` variant (removed in
+  0.1.0-alpha.5's rename to `LegacyBypass` / `AwaitingRequest`).
+  0.2.0 retains those names.
+
+- **SPEC draft-03**: §1.4, §1.4.1, §12.3, §12.3.1 (new, mandatory
+  fingerprint), §12.3.2 (renumbered canonical encoding), §12.6
+  (normative table), §12.6.2 (new UI-guidance subsection), §12.7
+  (updated). Appendix B draft-03 row.
+
+- Dependencies added: `hkdf = "0.12"`, `sha2 = "0.10"` (both under
+  the `consent` feature). No new runtime dependencies when `consent`
+  is off.
+
+- `xenia-viewer-web` updated to use `Session::sign_consent_*` helpers;
+  the consent walkthrough demo continues to work end-to-end.
+
+### Migration
+
+**Updating from 0.1.0-alpha.5 → 0.2.0-alpha.1:**
+
+1. Existing `Session::new` / `Session::builder` callers — no change.
+   `Session::new` still defaults to `LegacyBypass`; the sticky rule
+   still holds.
+2. Code that constructs `ConsentRequestCore` / `ConsentResponseCore`
+   / `ConsentRevocationCore` gains a new field
+   `session_fingerprint: [u8; 32]`. Set it to `[0; 32]` and sign via
+   `Session::sign_consent_request` (etc.) — the helper overwrites
+   the placeholder with the HKDF-derived value before signing. Or:
+   derive manually via `Session::session_fingerprint(request_id)`
+   and plug the result in before calling `ConsentRequest::sign`.
+3. Every `ConsentEvent::*` pattern match gains a `{ request_id }`
+   struct binding. The event's request_id can be pulled from the
+   corresponding consent message you just opened.
+4. Every `session.observe_consent(...)` call returns a `Result` now.
+   Handle violations — the most common pattern is to propagate them
+   up as session-teardown signals.
+5. Cross-implementation interop: draft-03 consent bodies will not
+   verify against 0.1.x peers and vice-versa. Bump both sides.
+
+### Plan status
+
+- `#1 session_binding field` — **closed** in this release (mandatory).
+- `#3 duplicate/conflict transition table` — **closed** in this release.
+- All four originally-tracked design items are now closed.
+
 ## [0.1.0-alpha.5] — 2026-04-18
 
 Tracks **SPEC draft-02r2**. No wire-format change from alpha.4 /
