@@ -4,7 +4,7 @@
 [![Docs.rs](https://docs.rs/xenia-wire/badge.svg)](https://docs.rs/xenia-wire)
 [![CI](https://github.com/Luminous-Dynamics/xenia-wire/actions/workflows/ci.yml/badge.svg)](https://github.com/Luminous-Dynamics/xenia-wire/actions/workflows/ci.yml)
 [![License: Apache-2.0 OR MIT](https://img.shields.io/badge/license-Apache--2.0_OR_MIT-blue.svg)](#license)
-[![MSRV: 1.75](https://img.shields.io/badge/MSRV-1.75-blue.svg)](Cargo.toml)
+[![MSRV: 1.85](https://img.shields.io/badge/MSRV-1.85-blue.svg)](Cargo.toml)
 
 PQC-sealed binary wire protocol for remote-control streams.
 

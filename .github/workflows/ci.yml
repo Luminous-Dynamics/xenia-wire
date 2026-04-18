@@ -62,11 +62,11 @@ jobs:
       - run: cargo test --doc ${{ matrix.features }}
 
   msrv:
-    name: MSRV (Rust 1.75)
+    name: MSRV (Rust 1.85)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.75
+      - uses: dtolnay/rust-toolchain@1.85
       - uses: Swatinem/rust-cache@v2
       - name: Build (default features)
         run: cargo build --all-targets
@@ -103,6 +103,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: rustsec/audit-check@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Library crate: Cargo.lock is gitignored. Generate it for the
+      # audit run against the current registry rather than committing a
+      # checked-in lockfile that would drift.
+      - name: Generate Cargo.lock
+        run: cargo generate-lockfile
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: Run cargo audit
+        run: cargo audit --deny warnings
