@@ -55,5 +55,5 @@ is still to come (Week 2). Published early to enable design feedback.
 - `SPEC.md` is not yet published (target: Week 2).
 - Test-vector suite is not yet populated (target: Week 2).
 
-[Unreleased]: https://github.com/luminousdynamics/xenia-wire/compare/v0.1.0-alpha.1...HEAD
-[0.1.0-alpha.1]: https://github.com/luminousdynamics/xenia-wire/releases/tag/v0.1.0-alpha.1
+[Unreleased]: https://github.com/Luminous-Dynamics/xenia-wire/compare/v0.1.0-alpha.1...HEAD
+[0.1.0-alpha.1]: https://github.com/Luminous-Dynamics/xenia-wire/releases/tag/v0.1.0-alpha.1

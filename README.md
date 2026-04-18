@@ -191,6 +191,6 @@ or conditions.
 
 - [Luminous Dynamics](https://luminousdynamics.io) — the research
   organization publishing this crate.
-- [Holon-Soma roadmap](https://github.com/luminousdynamics/symthaea)
+- [Holon-Soma roadmap](https://github.com/Luminous-Dynamics/symthaea)
   (private) — the upstream research roadmap from which this crate
   extracts the wire format.
