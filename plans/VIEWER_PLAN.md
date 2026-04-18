@@ -1,4 +1,4 @@
-# xenia-server + native viewer — plan (draft 1)
+# xenia-peer + native viewer — plan (draft 1)
 
 **Status**: research + planning complete; **no code written yet**.
 Draft for user review before execution starts in a fresh session.
@@ -92,10 +92,10 @@ That's ~5,150 lines of existing code with a clean architecture.
 ```
 Luminous-Dynamics/
 ├── xenia-wire              # already exists — the wire protocol
-├── xenia-server            # NEW — this plan's target
+├── xenia-peer            # NEW — this plan's target
 │   ├── crates/
-│   │   ├── xenia-server            # the binary
-│   │   ├── xenia-server-core       # transport + session (ex-Symthaea extraction)
+│   │   ├── xenia-peer            # the binary
+│   │   ├── xenia-peer-core       # transport + session (ex-Symthaea extraction)
 │   │   ├── xenia-capture           # screen capture abstraction + backends
 │   │   ├── xenia-inject            # input injection abstraction + backends
 │   │   ├── xenia-video             # codec wrapper (ffmpeg-next)
@@ -112,7 +112,7 @@ Luminous-Dynamics/
   materially larger dependency surface (`ffmpeg-next`, `x11rb`,
   `wayland-*`, `windows-rs`, `objc2-*`) that would taint the
   small, clean `xenia-wire` crate's ecosystem footprint.
-- Split into sub-crates inside `xenia-server` so `xenia-capture`
+- Split into sub-crates inside `xenia-peer` so `xenia-capture`
   and `xenia-inject` can be reused by other viewers and so
   platform-specific build failures don't cascade.
 - `xenia-viewer-native` is a separate repo because it targets
@@ -204,14 +204,14 @@ review" — pick something binary.
 
 ### M0 — Extract + de-Symthaea-ify (1–2 weeks)
 
-**Scope**: create `Luminous-Dynamics/xenia-server` repo. Copy the
-11 files from §0.1 into `crates/xenia-server-core/`. Swap
+**Scope**: create `Luminous-Dynamics/xenia-peer` repo. Copy the
+11 files from §0.1 into `crates/xenia-peer-core/`. Swap
 `rdp_codec.rs` (HDC) for a stub codec that passes RGBA bytes
 through unchanged (no compression). Strip consciousness gating
 from `rdp_session.rs`; replace with `xenia-wire` consent state.
 Drop the `symthaea_core` import entirely.
 
-**Exit criterion**: `cargo test -p xenia-server-core` green, and
+**Exit criterion**: `cargo test -p xenia-peer-core` green, and
 a `RawServer`/`RawViewer` integration test exchanges 100 RGBA
 frames through the sealed wire over QUIC on localhost.
 
@@ -393,7 +393,7 @@ user with a short written rationale.
 ### 4.8 Handshake: extract `pqc_handshake.rs` as-is
 
 - ML-KEM-768 + Ed25519 hybrid is production-quality and already
-  tested in Symthaea. Carry it into `xenia-server-core` with no
+  tested in Symthaea. Carry it into `xenia-peer-core` with no
   changes except the zeroization path.
 - **Do not** re-derive — this is exactly the kind of code that
   should not be re-invented.
@@ -448,7 +448,7 @@ research use (observing what content technicians are viewing,
 privacy masking per the paper's §7.4) it matters. A resolution:
 
 - Keep `rdp_codec.rs` in Symthaea's tree unchanged (already there).
-- `xenia-server` uses standard video codecs only.
+- `xenia-peer` uses standard video codecs only.
 - Future `xenia-research-bridge` crate (if warranted) can plug
   Symthaea's HDC codec in behind a feature flag.
 
@@ -473,7 +473,7 @@ deliverables usable in outreach even if we don't go past it.
 
 ### 5.6 License question for native viewer
 
-`xenia-server` clearly should match `xenia-wire` at Apache/MIT.
+`xenia-peer` clearly should match `xenia-wire` at Apache/MIT.
 `xenia-viewer-native`'s license is less obvious — if Track B/C
 commercial licensing ever happens (see FOLLOW_UPS.md), the native
 client is the natural entry point. Leaving it Apache/MIT means
@@ -485,7 +485,7 @@ decision before M4**, not an automatic carry-forward.
 
 Splitting into 3+ repos means 3+ CI pipelines, 3+ release cycles,
 3+ issue trackers. Each saves a design problem but costs an ops
-problem. A monorepo with sub-crates under `xenia-server/` is the
+problem. A monorepo with sub-crates under `xenia-peer/` is the
 cheapest alternative. I've proposed the split because of the
 dependency-footprint reasoning in §1; an honest counter-argument
 is "just use one repo with good feature flags."
@@ -496,9 +496,9 @@ is "just use one repo with good feature flags."
 
 These block the first line of code:
 
-1. **Repo structure**: new `xenia-server` repo, or embed as a
+1. **Repo structure**: new `xenia-peer` repo, or embed as a
    top-level subcrate in a `xenia-platform` monorepo, or carry
-   it as `xenia-server/` inside `xenia-wire` for now?
+   it as `xenia-peer/` inside `xenia-wire` for now?
 2. **License posture**: Apache/MIT for the server assumed; confirm.
 3. **Wayland policy** (§5.1): X11-only for unattended,
    portal-prompted for attended, or libei-only on wlroots?
@@ -512,7 +512,7 @@ side.
 
 ---
 
-## 7. What `xenia-server` is deliberately NOT
+## 7. What `xenia-peer` is deliberately NOT
 
 Captured here so scope creep has something to bounce off:
 
