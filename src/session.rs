@@ -196,6 +196,17 @@ impl Session {
 
         let key = self.session_key.as_ref().ok_or(WireError::NoSessionKey)?;
         let key_bytes: [u8; 32] = **key;
+
+        // The nonce embeds only the low 32 bits of the counter. Once the
+        // counter reaches 2^32, the next seal would wrap to sequence 0
+        // under the same key — catastrophic AEAD failure (nonce reuse
+        // reveals the keystream XOR of the two plaintexts). Refuse rather
+        // than wrap. Caller must rekey via install_key() before sealing
+        // more. See SPEC.md §3.1.
+        if self.nonce_counter >= (1u64 << 32) {
+            return Err(WireError::SequenceExhausted);
+        }
+
         let seq = (self.next_nonce() & 0xFFFF_FFFF) as u32;
 
         let mut nonce_bytes = [0u8; 12];
@@ -358,10 +369,59 @@ mod tests {
 
     #[test]
     fn nonce_counter_wraps_without_panic() {
+        // `next_nonce` uses wrapping_add internally; the guard against
+        // catastrophic nonce reuse lives in `seal` (see
+        // `seal_refuses_at_sequence_exhaustion` below), not here.
         let mut s = Session::new();
         s.nonce_counter = u64::MAX;
         assert_eq!(s.next_nonce(), u64::MAX);
         assert_eq!(s.next_nonce(), 0);
+    }
+
+    #[test]
+    fn seal_refuses_at_sequence_exhaustion() {
+        // After 2^32 successful seals, the low-32-bit sequence embedded in
+        // the AEAD nonce would wrap to 0 on the next seal — catastrophic
+        // nonce reuse under the same key. `seal` must refuse instead.
+        let mut s = Session::with_source_id([0; 8], 0);
+        s.install_key([0x77; 32]);
+        // Seed the counter at the boundary. The 2^32-th seal completed
+        // with seq = 2^32 - 1; the next seal would wrap.
+        s.nonce_counter = 1u64 << 32;
+        assert!(matches!(
+            s.seal(b"must-refuse", 0x10),
+            Err(WireError::SequenceExhausted)
+        ));
+    }
+
+    #[test]
+    fn seal_allows_last_valid_sequence_before_exhaustion() {
+        // The 2^32 - 1 value (u32::MAX) is a legitimate sequence — it's
+        // the final seal before the boundary kicks in. Verify it succeeds.
+        let mut s = Session::with_source_id([0; 8], 0);
+        s.install_key([0x77; 32]);
+        s.nonce_counter = (1u64 << 32) - 1; // = u32::MAX as u64
+        let sealed = s.seal(b"last-valid", 0x10).expect("seal at boundary - 1");
+        assert_eq!(sealed.len(), 12 + 10 + 16); // nonce + plaintext + tag
+                                                // Counter is now at the boundary — next seal must refuse.
+        assert!(matches!(
+            s.seal(b"over-the-edge", 0x10),
+            Err(WireError::SequenceExhausted)
+        ));
+    }
+
+    #[test]
+    fn rekey_resets_sequence_after_exhaustion() {
+        // The caller's only escape from `SequenceExhausted` is to rekey.
+        // Verify that install_key resets the counter so seals resume.
+        let mut s = Session::with_source_id([0; 8], 0);
+        s.install_key([0x77; 32]);
+        s.nonce_counter = 1u64 << 32;
+        assert!(s.seal(b"blocked", 0x10).is_err());
+        // Rekey.
+        s.install_key([0x88; 32]);
+        // Counter reset to 0, sealing works again.
+        assert!(s.seal(b"unblocked", 0x10).is_ok());
     }
 
     #[test]

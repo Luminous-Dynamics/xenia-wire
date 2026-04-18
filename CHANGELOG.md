@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Sequence-wraparound guard** — `Session::seal` now returns the new
+  `WireError::SequenceExhausted` when the nonce counter reaches `2^32`,
+  rather than silently wrapping to `0` under the same key. Silent wrap
+  would cause catastrophic nonce reuse under ChaCha20-Poly1305.
+  Callers who disabled or failed to trigger rekey previously ran a
+  latent time-bomb (~4.5 years at 30 fps, ~40 hours at 30 kHz); now
+  they get an actionable error forcing a rekey. Wire format unchanged.
+
 ### Added
 
 - `SPEC.md` draft-01 — full wire-format specification corresponding

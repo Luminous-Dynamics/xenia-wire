@@ -42,6 +42,19 @@ pub enum WireError {
     /// keep the session alive.
     #[error("xenia wire: AEAD open failed")]
     OpenFailed,
+
+    /// The 32-bit nonce sequence space is exhausted. The caller must
+    /// rekey before sealing more envelopes; continuing would wrap the
+    /// sequence counter and cause nonce reuse, which catastrophically
+    /// breaks ChaCha20-Poly1305 confidentiality and integrity.
+    ///
+    /// Reached after `2^32` seals on a single installed key — approximately
+    /// 4.5 years at 30 fps, or ~40 hours at 30 kHz. Any production deployment
+    /// should rekey on a much shorter cadence (the reference default is 30
+    /// minutes), so this variant surfaces a programming error: the caller
+    /// disabled or failed to trigger rekey.
+    #[error("xenia wire: sequence space exhausted — rekey required")]
+    SequenceExhausted,
 }
 
 impl WireError {

@@ -152,9 +152,16 @@ The nonce layout ensures uniqueness as long as:
    `source_id` collision).
 3. `sequence` is monotonic per `(source_id, pld_type)` stream on the
    sender side.
-4. The 32-bit sequence does not wrap before rekey. At 30 frames per
-   second this wraps in ~4.5 years; real sessions rekey every ~30
-   minutes, so wraparound is not a practical concern.
+4. The 32-bit sequence does not wrap before rekey. Implementations
+   MUST enforce this by refusing to seal once the sender's counter
+   reaches `2^32` — the very next seal would wrap to `0` under the
+   same key, causing catastrophic nonce reuse. The reference
+   implementation returns a `SequenceExhausted` error from `seal()`
+   at that boundary; see §9.
+   At 30 frames per second the boundary is ~4.5 years; at 30 kHz it
+   is ~40 hours. Real sessions rekey every ~30 minutes, so the
+   boundary is only reachable by a caller that has disabled or
+   failed to trigger rekey.
 
 ### 3.2 Worked example
 
@@ -418,6 +425,7 @@ this taxonomy.
 | `NoSessionKey` | Seal or open attempted before a key was installed. | Install a key before retrying. Programming error if it occurs on an active session. |
 | `SealFailed` | The underlying AEAD implementation rejected the seal inputs. Should not occur with a valid 32-byte key. | Treat as a bug; investigate. |
 | `OpenFailed` | AEAD verification failed (wrong key, tampered ciphertext, truncated envelope, or the replay window rejected a valid-ciphertext duplicate). | **Drop the envelope and keep the session alive.** Do NOT distinguish sub-cases in production — finer diagnosis leaks timing or structure to an attacker. |
+| `SequenceExhausted` | Sender's nonce counter has reached `2^32`. The next seal would cause catastrophic nonce reuse. | **Rekey before sealing again.** Install a new session key (which resets the counter to `0`); any envelopes still in flight under the old key continue to open during the grace period (§6.2). Failing here is a programming error: the caller disabled or failed to trigger rekey on the configured cadence. |
 
 ### 9.1 Important: don't leak sub-case distinctions
 
