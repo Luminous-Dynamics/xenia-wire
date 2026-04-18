@@ -93,7 +93,7 @@ dependency.
 ### v1.1 — Ricardian causal-binding on ConsentRequest
 
 - **Placeholder**: `causal_binding: Option<CausalPredicate>` field
-  already in the draft-02 wire format.
+  already in the draft-03 wire format (MUST be `None` in draft-03).
 - **What**: authority binding ("valid while ticket #1234 is
   In-Progress") evaluated against an external truth source.
 - **Blocker**: decentralized-identity layer on Holochain must have
@@ -157,18 +157,21 @@ dependency.
 
 ## Decisions being deferred
 
-### When to bump to 0.1.0 stable
+### When to bump to 0.2.0 stable
 
-The original Track A plan targeted `0.1.0` at Week 6. We are at
-Week 6 without external crypto review. Bumping stable now would be
-a discipline failure — the spec is unreviewed, the wire format is
-still subject to change, and the consent ceremony has seven days of
-in-repo history.
+**Updated 2026-04-18 (post-Phase-B).** The 0.1.0 target became a
+0.2.0 target once draft-03 added mandatory `session_fingerprint` (a
+breaking wire change at the signed-consent-body layer). Published
+state: `0.2.0-alpha.2`, SPEC draft-03, all four round-2 review
+issues closed.
 
-**Current policy**: stay at `0.1.0-alpha.x` until at least one
-independent cryptographer has signed off on SPEC §3 + §5 + §12.
-If review finds issues, iterate alpha.4+. If review is clean, bump
-to `0.1.0-rc.1` as a test run before `0.1.0` stable.
+**Current policy**: stay at `0.2.0-alpha.x` until a round-3
+independent cryptographer review signs off on the draft-03-specific
+additions — specifically SPEC §12.3.1 (session_fingerprint HKDF
+construction), §12.6.1 (normative transition table), and §12.8
+(timing-channel assumption). A scoped delta doc for the reviewer
+is at `plans/REVIEW_DELTA_DRAFT_03.md`. If review finds issues,
+iterate alpha.3+. If review is clean, bump to `0.2.0-rc.1`.
 
 ### Whether to host a live demo
 
@@ -188,8 +191,18 @@ main track.
 
 ## Closed items
 
-*(None yet — this file was created at Week 6 launch. Closed items
-move here with a one-line note.)*
+- **Round-2 review issues #1-#4** (2026-04-18). All four items
+  flagged by the round-2 cryptographic review are now closed. #2
+  split `Pending` + #4 configurable replay window shipped as
+  `0.1.0-alpha.5` (SPEC draft-02r2, receiver-local). #1 mandatory
+  `session_fingerprint` + #3 normative transition table shipped as
+  `0.2.0-alpha.1` (SPEC draft-03, breaking at the signed-body
+  layer). Receiver hardening (rekey-aware verify, timing-channel
+  note, violation vectors, fuzz harness, MIGRATION.md) shipped as
+  `0.2.0-alpha.2`.
+- **Per-key-epoch replay bug** (#5) (2026-04-18). Closed in
+  `0.1.0-alpha.4`. `ReplayWindow` keyed by `(source_id, pld_type,
+  key_epoch)` per SPEC §5.3.
 
 ---
 

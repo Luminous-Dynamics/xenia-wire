@@ -65,14 +65,17 @@ caller's), and no opinion about handshake. Those live at higher layers.
 
 ## Install
 
-Because `0.1.0-alpha.1` is a pre-release, add it with the `@` form —
+Because `0.2.0-alpha.2` is a pre-release, add it with the `@` form —
 `cargo add --version ...` rejects pre-release specifiers:
 
 ```console
-$ cargo add 'xenia-wire@0.1.0-alpha.1'
+$ cargo add 'xenia-wire@0.2.0-alpha.2'
 ```
 
-Once a stable `0.1.0` ships, `cargo add xenia-wire` will just work.
+Once a stable `0.2.0` ships, `cargo add xenia-wire` will just work.
+Earlier `0.1.x` alphas are still on crates.io but are wire-incompatible
+at the signed-consent-body layer (see SPEC Appendix B for the draft
+matrix); new integrations should start on `0.2.x`.
 
 ## Quick start
 
@@ -186,7 +189,7 @@ exposition; [`SPEC.md`](SPEC.md) is the normative reference.
 
 ## Specification
 
-Reading [`SPEC.md`](SPEC.md) (**draft-01**) should be sufficient to
+Reading [`SPEC.md`](SPEC.md) (**draft-03**, current) should be sufficient to
 write an interoperable implementation in any language. Reading the
 source of this crate should NOT be necessary. If you find gaps in
 the spec, please file an issue — the spec is the normative reference,
