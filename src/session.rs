@@ -190,8 +190,8 @@ impl Session {
     /// Call periodically (e.g. once per tick, or lazily before seal/open)
     /// to expire the previous key once the grace period has elapsed.
     pub fn tick(&mut self) {
-        if let Some(expires) = self.prev_key_expires_at {
-            if Instant::now() > expires {
+        match self.prev_key_expires_at {
+            Some(expires) if Instant::now() > expires => {
                 self.prev_session_key = None;
                 self.prev_key_expires_at = None;
                 // Drop replay state for the old epoch — its envelopes
@@ -201,6 +201,7 @@ impl Session {
                     self.replay_window.drop_epoch(old_epoch);
                 }
             }
+            _ => {}
         }
     }
 

@@ -384,6 +384,7 @@ fn emit_07_consent_request(out: &Path) -> std::io::Result<()> {
     )
 }
 
+#[allow(dead_code)] // Reserved for explicit hex-vector diagnostics.
 fn hex_string(bytes: &[u8]) -> String {
     let mut s = String::with_capacity(bytes.len() * 2);
     for b in bytes {
