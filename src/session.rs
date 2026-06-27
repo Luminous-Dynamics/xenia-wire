@@ -349,7 +349,7 @@ impl Session {
         current_match | prev_match
     }
 
-    /// Sign a [`ConsentRequestCore`] after injecting the session
+    /// Sign a [`crate::consent::ConsentRequestCore`] after injecting the session
     /// fingerprint derived from this session's state and the core's
     /// `request_id` (SPEC draft-03 §12.3 / §12.3.1).
     ///
@@ -367,7 +367,7 @@ impl Session {
         Ok(crate::consent::ConsentRequest::sign(core, signing_key))
     }
 
-    /// Sign a [`ConsentResponseCore`] after injecting the session
+    /// Sign a [`crate::consent::ConsentResponseCore`] after injecting the session
     /// fingerprint for the core's `request_id`. See
     /// [`Self::sign_consent_request`].
     #[cfg(feature = "consent")]
@@ -380,7 +380,7 @@ impl Session {
         Ok(crate::consent::ConsentResponse::sign(core, signing_key))
     }
 
-    /// Sign a [`ConsentRevocationCore`] after injecting the session
+    /// Sign a [`crate::consent::ConsentRevocationCore`] after injecting the session
     /// fingerprint for the core's `request_id`. See
     /// [`Self::sign_consent_request`].
     #[cfg(feature = "consent")]
@@ -393,7 +393,7 @@ impl Session {
         Ok(crate::consent::ConsentRevocation::sign(core, signing_key))
     }
 
-    /// Verify a [`ConsentRequest`] against this session's fingerprint
+    /// Verify a [`crate::consent::ConsentRequest`] against this session's fingerprint
     /// AND the requester's public key (SPEC draft-03 §12.3.1).
     ///
     /// Returns `true` iff:
@@ -423,7 +423,7 @@ impl Session {
         self.verify_fingerprint_either_epoch(req.core.request_id, &req.core.session_fingerprint)
     }
 
-    /// Verify a [`ConsentResponse`] against this session's fingerprint
+    /// Verify a [`crate::consent::ConsentResponse`] against this session's fingerprint
     /// AND the responder's public key. See
     /// [`Self::verify_consent_request`] — same both-epochs probing
     /// behavior for the rekey grace window.
@@ -439,7 +439,7 @@ impl Session {
         self.verify_fingerprint_either_epoch(resp.core.request_id, &resp.core.session_fingerprint)
     }
 
-    /// Verify a [`ConsentRevocation`] against this session's fingerprint
+    /// Verify a [`crate::consent::ConsentRevocation`] against this session's fingerprint
     /// AND the revoker's public key. See
     /// [`Self::verify_consent_request`] — same both-epochs probing
     /// behavior for the rekey grace window.
