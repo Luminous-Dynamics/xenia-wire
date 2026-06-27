@@ -21,7 +21,7 @@
 
 use proptest::prelude::*;
 use xenia_wire::consent::{ConsentEvent, ConsentState};
-use xenia_wire::{seal_frame, Frame, Session, WireError};
+use xenia_wire::{Frame, Session, WireError, seal_frame};
 
 fn session_with_key() -> Session {
     let mut s = Session::builder().require_consent(true).build();

@@ -15,7 +15,7 @@
 
 use std::time::Duration;
 
-use xenia_wire::{open_frame, seal_frame, Frame, Session, WireError};
+use xenia_wire::{Frame, Session, WireError, open_frame, seal_frame};
 
 fn sample_frame(id: u64) -> Frame {
     Frame {

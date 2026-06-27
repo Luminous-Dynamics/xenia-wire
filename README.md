@@ -4,7 +4,7 @@
 [![Docs.rs](https://docs.rs/xenia-wire/badge.svg)](https://docs.rs/xenia-wire)
 [![CI](https://github.com/Luminous-Dynamics/xenia-wire/actions/workflows/ci.yml/badge.svg)](https://github.com/Luminous-Dynamics/xenia-wire/actions/workflows/ci.yml)
 [![License: Apache-2.0 OR MIT](https://img.shields.io/badge/license-Apache--2.0_OR_MIT-blue.svg)](#license)
-[![MSRV: 1.85](https://img.shields.io/badge/MSRV-1.85-blue.svg)](Cargo.toml)
+[![MSRV: 1.94](https://img.shields.io/badge/MSRV-1.94-blue.svg)](Cargo.toml)
 
 PQC-sealed binary wire protocol for remote-control streams.
 
@@ -12,15 +12,15 @@ PQC-sealed binary wire protocol for remote-control streams.
   ╔═══════════════════════════════════════════════════════════╗
   ║  PRE-ALPHA — DO NOT USE IN PRODUCTION                     ║
   ║                                                           ║
-  ║  The wire format is not yet frozen. Breaking changes will ║
-  ║  land between 0.1.x releases. The handshake layer ships   ║
-  ║  a placeholder key-establishment path; real ML-KEM-768    ║
-  ║  integration is deferred (see SPEC.md §Handshake).        ║
+  ║  The wire format is not yet frozen. Breaking changes may   ║
+  ║  land between alpha releases. This crate does not perform ║
+  ║  peer authentication or key establishment; product layers  ║
+  ║  use xenia-handshake.                                     ║
   ║                                                           ║
   ║  This crate is an early research artifact. It will be     ║
-  ║  ready for production use at 0.2.0 or later, after the    ║
-  ║  specification is reviewed and the test-vector suite is   ║
-  ║  cross-validated against an independent implementation.   ║
+  ║  ready for production use only after the specification is   ║
+  ║  independently reviewed and the test-vector suite is       ║
+  ║  cross-validated against another implementation.           ║
   ╚═══════════════════════════════════════════════════════════╝
 ```
 
@@ -65,11 +65,11 @@ caller's), and no opinion about handshake. Those live at higher layers.
 
 ## Install
 
-Because `0.2.0-alpha.2` is a pre-release, add it with the `@` form —
+Because `0.2.0-alpha.3` is a pre-release, add it with the `@` form —
 `cargo add --version ...` rejects pre-release specifiers:
 
 ```console
-$ cargo add 'xenia-wire@0.2.0-alpha.2'
+$ cargo add 'xenia-wire@0.2.0-alpha.3'
 ```
 
 Once a stable `0.2.0` ships, `cargo add xenia-wire` will just work.

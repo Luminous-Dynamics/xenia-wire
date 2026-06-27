@@ -1,8 +1,8 @@
 [package]
 name = "xenia-wire"
 version = "0.2.0-alpha.3"
-edition = "2021"
-rust-version = "1.85"
+edition = "2024"
+rust-version = "1.94"
 authors = ["Tristan Stoltz <tristan.stoltz@evolvingresonantcocreationism.com>"]
 license = "Apache-2.0 OR MIT"
 description = "PQC-sealed binary wire protocol for remote-control streams: ChaCha20-Poly1305 AEAD with epoch rotation, configurable sliding replay window (64-1024 slots), optional LZ4-before-seal, and signed consent ceremony with mandatory per-session fingerprint (HKDF-SHA-256). Pre-alpha — do not use in production."
@@ -12,7 +12,7 @@ documentation = "https://docs.rs/xenia-wire"
 readme = "README.md"
 keywords = ["aead", "chacha20poly1305", "remote-desktop", "replay-protection", "wire-protocol"]
 categories = ["cryptography", "network-programming", "no-std::no-alloc"]
-exclude = ["test-vectors/*.generated", ".github/**", "CHANGELOG.md", "fuzz/**"]
+exclude = ["test-vectors/*.generated", ".github/**", "CHANGELOG.md", "fuzz/**", "target/**", "*.tar.gz", "*.tgz", "*.zip"]
 
 [workspace]
 exclude = ["fuzz", "xenia-viewer-web"]

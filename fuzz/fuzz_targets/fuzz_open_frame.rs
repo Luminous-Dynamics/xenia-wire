@@ -7,7 +7,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use xenia_wire::{open_frame, Session};
+use xenia_wire::{Session, open_frame};
 
 fuzz_target!(|data: &[u8]| {
     let mut session = Session::with_source_id([0; 8], 0);

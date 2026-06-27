@@ -5,8 +5,8 @@
 //!
 //! Run with: `cargo bench --bench seal_open_throughput`
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
-use xenia_wire::{open_frame, seal_frame, Frame, Session};
+use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
+use xenia_wire::{Frame, Session, open_frame, seal_frame};
 
 fn make_frame(size: usize) -> Frame {
     Frame {

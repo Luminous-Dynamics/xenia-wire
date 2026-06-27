@@ -26,9 +26,9 @@ use xenia_wire::consent::{
     ConsentState,
 };
 use xenia_wire::{
-    open_consent_request, open_consent_response, open_consent_revocation, open_frame,
-    open_input, seal_consent_request, seal_consent_response, seal_consent_revocation,
-    seal_frame, seal_input, Frame, Input, Session,
+    Frame, Input, Session, open_consent_request, open_consent_response, open_consent_revocation,
+    open_frame, open_input, seal_consent_request, seal_consent_response, seal_consent_revocation,
+    seal_frame, seal_input,
 };
 
 /// Install the panic hook so Rust panics surface in the browser console
@@ -108,10 +108,15 @@ pub fn seal_frame_js(
 /// Open a sealed envelope.
 #[wasm_bindgen(js_name = openFrame)]
 pub fn open_frame_js(session: &mut WasmSession, envelope: &[u8]) -> Result<JsValue, JsError> {
-    let frame = open_frame(envelope, &mut session.inner).map_err(|e| JsError::new(&e.to_string()))?;
+    let frame =
+        open_frame(envelope, &mut session.inner).map_err(|e| JsError::new(&e.to_string()))?;
     let obj = js_sys::Object::new();
     set_field(&obj, "frame_id", JsValue::from(frame.frame_id as f64))?;
-    set_field(&obj, "timestamp_ms", JsValue::from(frame.timestamp_ms as f64))?;
+    set_field(
+        &obj,
+        "timestamp_ms",
+        JsValue::from(frame.timestamp_ms as f64),
+    )?;
     let arr = js_sys::Uint8Array::from(&frame.payload[..]);
     set_field(&obj, "payload", arr.into())?;
     Ok(obj.into())
@@ -197,7 +202,9 @@ pub fn open_daemon_frame_js(
     //    pix_fmt, reserved, width LE u32, height LE u32), then take
     //    the raw pixel bytes.
     if raw.pixels.len() < 12 {
-        return Err(JsError::new("passthrough payload shorter than 12-byte header"));
+        return Err(JsError::new(
+            "passthrough payload shorter than 12-byte header",
+        ));
     }
     if raw.pixels[0] != 0x58 {
         return Err(JsError::new("passthrough bad magic"));
@@ -208,7 +215,9 @@ pub fn open_daemon_frame_js(
     // Only RGBA (0) is wired in the browser path; BGRA would need a swizzle
     // in JS which we skip for MVP.
     if raw.pixels[2] != 0 {
-        return Err(JsError::new("passthrough: only RGBA pixel-format supported in browser"));
+        return Err(JsError::new(
+            "passthrough: only RGBA pixel-format supported in browser",
+        ));
     }
     let width = u32::from_le_bytes([raw.pixels[4], raw.pixels[5], raw.pixels[6], raw.pixels[7]]);
     let height = u32::from_le_bytes([raw.pixels[8], raw.pixels[9], raw.pixels[10], raw.pixels[11]]);
@@ -328,8 +337,8 @@ impl WasmConsentCeremony {
             .tech
             .sign_consent_request(core, &self.tech_sk)
             .map_err(|e| JsError::new(&e.to_string()))?;
-        let envelope = seal_consent_request(&req, &mut self.tech)
-            .map_err(|e| JsError::new(&e.to_string()))?;
+        let envelope =
+            seal_consent_request(&req, &mut self.tech).map_err(|e| JsError::new(&e.to_string()))?;
         self.tech
             .observe_consent(ConsentEvent::Request { request_id })
             .map_err(|v| JsError::new(&v.to_string()))?;
@@ -354,7 +363,11 @@ impl WasmConsentCeremony {
             .map_err(|v| JsError::new(&v.to_string()))?;
 
         let obj = js_sys::Object::new();
-        set_field(&obj, "request_id", JsValue::from(req.core.request_id as f64))?;
+        set_field(
+            &obj,
+            "request_id",
+            JsValue::from(req.core.request_id as f64),
+        )?;
         set_field(
             &obj,
             "requester_pubkey_hex",
@@ -430,7 +443,11 @@ impl WasmConsentCeremony {
             .map_err(|v| JsError::new(&v.to_string()))?;
 
         let obj = js_sys::Object::new();
-        set_field(&obj, "request_id", JsValue::from(resp.core.request_id as f64))?;
+        set_field(
+            &obj,
+            "request_id",
+            JsValue::from(resp.core.request_id as f64),
+        )?;
         set_field(
             &obj,
             "responder_pubkey_hex",
@@ -496,7 +513,11 @@ impl WasmConsentCeremony {
             .map_err(|v| JsError::new(&v.to_string()))?;
 
         let obj = js_sys::Object::new();
-        set_field(&obj, "request_id", JsValue::from(rev.core.request_id as f64))?;
+        set_field(
+            &obj,
+            "request_id",
+            JsValue::from(rev.core.request_id as f64),
+        )?;
         set_field(&obj, "issued_at", JsValue::from(rev.core.issued_at as f64))?;
         set_field(&obj, "reason", JsValue::from_str(&rev.core.reason))?;
         set_field(&obj, "verified", JsValue::from_bool(verified))?;
@@ -575,11 +596,7 @@ impl WasmViewer {
     /// then open on the loopback side. Returns the decoded payload so
     /// JS can render it to a canvas.
     #[wasm_bindgen(js_name = roundTripFrame)]
-    pub fn round_trip_frame(
-        &mut self,
-        frame_id: u64,
-        rgba: &[u8],
-    ) -> Result<Vec<u8>, JsError> {
+    pub fn round_trip_frame(&mut self, frame_id: u64, rgba: &[u8]) -> Result<Vec<u8>, JsError> {
         let now = js_sys::Date::now() as u64;
         let frame = Frame {
             frame_id,

@@ -225,7 +225,7 @@ fn vectors_08_and_09_share_signing_identity() {
 #[cfg(feature = "lz4")]
 #[test]
 fn vector_06_lz4_frame_roundtrips() {
-    use xenia_wire::{open_frame_lz4, Frame};
+    use xenia_wire::{Frame, open_frame_lz4};
     let envelope = read_hex(&vectors_dir().join("06_lz4_frame.envelope.hex"));
     let mut receiver = fresh_receiver();
     let opened: Frame = open_frame_lz4(&envelope, &mut receiver).expect("vector 06 must open");

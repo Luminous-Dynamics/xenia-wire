@@ -40,8 +40,8 @@ use web_time::Instant;
 
 use zeroize::Zeroizing;
 
-use crate::replay_window::ReplayWindow;
 use crate::WireError;
+use crate::replay_window::ReplayWindow;
 
 #[cfg(feature = "consent")]
 use crate::consent::ConsentEvent;
@@ -328,11 +328,7 @@ impl Session {
     /// Returns `true` iff either derivation matches. Returns `false`
     /// if no key is installed.
     #[cfg(feature = "consent")]
-    fn verify_fingerprint_either_epoch(
-        &self,
-        request_id: u64,
-        claimed: &[u8; 32],
-    ) -> bool {
+    fn verify_fingerprint_either_epoch(&self, request_id: u64, claimed: &[u8; 32]) -> bool {
         let current_match = match self.session_key.as_ref() {
             Some(key) => {
                 let fp = self.session_fingerprint_from_key(request_id, key);
@@ -440,10 +436,7 @@ impl Session {
         if !resp.verify(expected_pubkey) {
             return false;
         }
-        self.verify_fingerprint_either_epoch(
-            resp.core.request_id,
-            &resp.core.session_fingerprint,
-        )
+        self.verify_fingerprint_either_epoch(resp.core.request_id, &resp.core.session_fingerprint)
     }
 
     /// Verify a [`ConsentRevocation`] against this session's fingerprint
@@ -561,18 +554,14 @@ impl Session {
             }
             (ConsentState::Requested, ConsentEvent::ResponseApproved { request_id }) => {
                 if self.active_request_id != Some(request_id) {
-                    return Err(ConsentViolation::StaleResponseForUnknownRequest {
-                        request_id,
-                    });
+                    return Err(ConsentViolation::StaleResponseForUnknownRequest { request_id });
                 }
                 self.consent_state = ConsentState::Approved;
                 self.last_response_approved = Some(true);
             }
             (ConsentState::Requested, ConsentEvent::ResponseDenied { request_id }) => {
                 if self.active_request_id != Some(request_id) {
-                    return Err(ConsentViolation::StaleResponseForUnknownRequest {
-                        request_id,
-                    });
+                    return Err(ConsentViolation::StaleResponseForUnknownRequest { request_id });
                 }
                 self.consent_state = ConsentState::Denied;
                 self.last_response_approved = Some(false);
@@ -700,9 +689,9 @@ impl Session {
         match self.consent_state {
             ConsentState::LegacyBypass | ConsentState::Approved => Ok(()),
             ConsentState::Revoked => Err(WireError::ConsentRevoked),
-            ConsentState::AwaitingRequest
-            | ConsentState::Requested
-            | ConsentState::Denied => Err(WireError::NoConsent),
+            ConsentState::AwaitingRequest | ConsentState::Requested | ConsentState::Denied => {
+                Err(WireError::NoConsent)
+            }
         }
     }
 
@@ -718,7 +707,7 @@ impl Session {
     /// [`WireError::SealFailed`] if the underlying AEAD implementation
     /// rejects the input (should not happen with a valid 32-byte key).
     pub fn seal(&mut self, plaintext: &[u8], payload_type: u8) -> Result<Vec<u8>, WireError> {
-        use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, KeyInit, Nonce};
+        use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce, aead::Aead};
 
         // Consent gate — only when the consent feature is compiled in.
         // Applies only to the reference application payload types (FRAME,
@@ -788,7 +777,7 @@ impl Session {
     /// keying only — the caller is responsible for dispatching the returned
     /// plaintext to the correct deserializer.
     pub fn open(&mut self, envelope: &[u8]) -> Result<Vec<u8>, WireError> {
-        use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, KeyInit, Nonce};
+        use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce, aead::Aead};
 
         if envelope.len() < 12 + 16 {
             return Err(WireError::OpenFailed);
@@ -1128,7 +1117,7 @@ mod tests {
         s.nonce_counter = (1u64 << 32) - 1; // = u32::MAX as u64
         let sealed = s.seal(b"last-valid", 0x10).expect("seal at boundary - 1");
         assert_eq!(sealed.len(), 12 + 10 + 16); // nonce + plaintext + tag
-                                                // Counter is now at the boundary — next seal must refuse.
+        // Counter is now at the boundary — next seal must refuse.
         assert!(matches!(
             s.seal(b"over-the-edge", 0x10),
             Err(WireError::SequenceExhausted)

@@ -6,7 +6,7 @@
 //!
 //! Run with: `cargo run --example hello_xenia`
 
-use xenia_wire::{open_frame, seal_frame, Frame, Session};
+use xenia_wire::{Frame, Session, open_frame, seal_frame};
 
 fn main() {
     // In production, `key` arrives from an ML-KEM-768 handshake. Here we
