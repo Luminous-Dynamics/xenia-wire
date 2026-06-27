@@ -190,10 +190,8 @@ impl ConsentRequest {
     /// Does NOT check `valid_until` — expiry is a policy decision for
     /// the caller, not a wire property.
     pub fn verify(&self, expected_pubkey: Option<&[u8; PUBLIC_KEY_LEN]>) -> bool {
-        if let Some(exp) = expected_pubkey {
-            if exp != &self.core.requester_pubkey {
-                return false;
-            }
+        if expected_pubkey.is_some_and(|exp| exp != &self.core.requester_pubkey) {
+            return false;
         }
         let Ok(pk) = VerifyingKey::from_bytes(&self.core.requester_pubkey) else {
             return false;
@@ -267,10 +265,8 @@ impl ConsentResponse {
     /// Verify the signature against the embedded public key, optionally
     /// requiring the embedded public key to match `expected_pubkey`.
     pub fn verify(&self, expected_pubkey: Option<&[u8; PUBLIC_KEY_LEN]>) -> bool {
-        if let Some(exp) = expected_pubkey {
-            if exp != &self.core.responder_pubkey {
-                return false;
-            }
+        if expected_pubkey.is_some_and(|exp| exp != &self.core.responder_pubkey) {
+            return false;
         }
         let Ok(pk) = VerifyingKey::from_bytes(&self.core.responder_pubkey) else {
             return false;
@@ -343,10 +339,8 @@ impl ConsentRevocation {
 
     /// Verify the signature against the embedded public key.
     pub fn verify(&self, expected_pubkey: Option<&[u8; PUBLIC_KEY_LEN]>) -> bool {
-        if let Some(exp) = expected_pubkey {
-            if exp != &self.core.revoker_pubkey {
-                return false;
-            }
+        if expected_pubkey.is_some_and(|exp| exp != &self.core.revoker_pubkey) {
+            return false;
         }
         let Ok(pk) = VerifyingKey::from_bytes(&self.core.revoker_pubkey) else {
             return false;
