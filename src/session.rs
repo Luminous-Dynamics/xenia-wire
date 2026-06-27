@@ -40,8 +40,8 @@ use web_time::Instant;
 
 use zeroize::Zeroizing;
 
-use crate::replay_window::ReplayWindow;
 use crate::WireError;
+use crate::replay_window::ReplayWindow;
 
 #[cfg(feature = "consent")]
 use crate::consent::ConsentEvent;
@@ -190,8 +190,8 @@ impl Session {
     /// Call periodically (e.g. once per tick, or lazily before seal/open)
     /// to expire the previous key once the grace period has elapsed.
     pub fn tick(&mut self) {
-        if let Some(expires) = self.prev_key_expires_at {
-            if Instant::now() > expires {
+        match self.prev_key_expires_at {
+            Some(expires) if Instant::now() > expires => {
                 self.prev_session_key = None;
                 self.prev_key_expires_at = None;
                 // Drop replay state for the old epoch — its envelopes
@@ -201,6 +201,7 @@ impl Session {
                     self.replay_window.drop_epoch(old_epoch);
                 }
             }
+            _ => {}
         }
     }
 
@@ -328,11 +329,7 @@ impl Session {
     /// Returns `true` iff either derivation matches. Returns `false`
     /// if no key is installed.
     #[cfg(feature = "consent")]
-    fn verify_fingerprint_either_epoch(
-        &self,
-        request_id: u64,
-        claimed: &[u8; 32],
-    ) -> bool {
+    fn verify_fingerprint_either_epoch(&self, request_id: u64, claimed: &[u8; 32]) -> bool {
         let current_match = match self.session_key.as_ref() {
             Some(key) => {
                 let fp = self.session_fingerprint_from_key(request_id, key);
@@ -353,7 +350,7 @@ impl Session {
         current_match | prev_match
     }
 
-    /// Sign a [`ConsentRequestCore`] after injecting the session
+    /// Sign a [`crate::consent::ConsentRequestCore`] after injecting the session
     /// fingerprint derived from this session's state and the core's
     /// `request_id` (SPEC draft-03 §12.3 / §12.3.1).
     ///
@@ -371,7 +368,7 @@ impl Session {
         Ok(crate::consent::ConsentRequest::sign(core, signing_key))
     }
 
-    /// Sign a [`ConsentResponseCore`] after injecting the session
+    /// Sign a [`crate::consent::ConsentResponseCore`] after injecting the session
     /// fingerprint for the core's `request_id`. See
     /// [`Self::sign_consent_request`].
     #[cfg(feature = "consent")]
@@ -384,7 +381,7 @@ impl Session {
         Ok(crate::consent::ConsentResponse::sign(core, signing_key))
     }
 
-    /// Sign a [`ConsentRevocationCore`] after injecting the session
+    /// Sign a [`crate::consent::ConsentRevocationCore`] after injecting the session
     /// fingerprint for the core's `request_id`. See
     /// [`Self::sign_consent_request`].
     #[cfg(feature = "consent")]
@@ -397,7 +394,7 @@ impl Session {
         Ok(crate::consent::ConsentRevocation::sign(core, signing_key))
     }
 
-    /// Verify a [`ConsentRequest`] against this session's fingerprint
+    /// Verify a [`crate::consent::ConsentRequest`] against this session's fingerprint
     /// AND the requester's public key (SPEC draft-03 §12.3.1).
     ///
     /// Returns `true` iff:
@@ -427,7 +424,7 @@ impl Session {
         self.verify_fingerprint_either_epoch(req.core.request_id, &req.core.session_fingerprint)
     }
 
-    /// Verify a [`ConsentResponse`] against this session's fingerprint
+    /// Verify a [`crate::consent::ConsentResponse`] against this session's fingerprint
     /// AND the responder's public key. See
     /// [`Self::verify_consent_request`] — same both-epochs probing
     /// behavior for the rekey grace window.
@@ -440,13 +437,10 @@ impl Session {
         if !resp.verify(expected_pubkey) {
             return false;
         }
-        self.verify_fingerprint_either_epoch(
-            resp.core.request_id,
-            &resp.core.session_fingerprint,
-        )
+        self.verify_fingerprint_either_epoch(resp.core.request_id, &resp.core.session_fingerprint)
     }
 
-    /// Verify a [`ConsentRevocation`] against this session's fingerprint
+    /// Verify a [`crate::consent::ConsentRevocation`] against this session's fingerprint
     /// AND the revoker's public key. See
     /// [`Self::verify_consent_request`] — same both-epochs probing
     /// behavior for the rekey grace window.
@@ -561,18 +555,14 @@ impl Session {
             }
             (ConsentState::Requested, ConsentEvent::ResponseApproved { request_id }) => {
                 if self.active_request_id != Some(request_id) {
-                    return Err(ConsentViolation::StaleResponseForUnknownRequest {
-                        request_id,
-                    });
+                    return Err(ConsentViolation::StaleResponseForUnknownRequest { request_id });
                 }
                 self.consent_state = ConsentState::Approved;
                 self.last_response_approved = Some(true);
             }
             (ConsentState::Requested, ConsentEvent::ResponseDenied { request_id }) => {
                 if self.active_request_id != Some(request_id) {
-                    return Err(ConsentViolation::StaleResponseForUnknownRequest {
-                        request_id,
-                    });
+                    return Err(ConsentViolation::StaleResponseForUnknownRequest { request_id });
                 }
                 self.consent_state = ConsentState::Denied;
                 self.last_response_approved = Some(false);
@@ -700,9 +690,9 @@ impl Session {
         match self.consent_state {
             ConsentState::LegacyBypass | ConsentState::Approved => Ok(()),
             ConsentState::Revoked => Err(WireError::ConsentRevoked),
-            ConsentState::AwaitingRequest
-            | ConsentState::Requested
-            | ConsentState::Denied => Err(WireError::NoConsent),
+            ConsentState::AwaitingRequest | ConsentState::Requested | ConsentState::Denied => {
+                Err(WireError::NoConsent)
+            }
         }
     }
 
@@ -718,7 +708,7 @@ impl Session {
     /// [`WireError::SealFailed`] if the underlying AEAD implementation
     /// rejects the input (should not happen with a valid 32-byte key).
     pub fn seal(&mut self, plaintext: &[u8], payload_type: u8) -> Result<Vec<u8>, WireError> {
-        use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, KeyInit, Nonce};
+        use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce, aead::Aead};
 
         // Consent gate — only when the consent feature is compiled in.
         // Applies only to the reference application payload types (FRAME,
@@ -788,7 +778,7 @@ impl Session {
     /// keying only — the caller is responsible for dispatching the returned
     /// plaintext to the correct deserializer.
     pub fn open(&mut self, envelope: &[u8]) -> Result<Vec<u8>, WireError> {
-        use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, KeyInit, Nonce};
+        use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce, aead::Aead};
 
         if envelope.len() < 12 + 16 {
             return Err(WireError::OpenFailed);
@@ -1128,7 +1118,7 @@ mod tests {
         s.nonce_counter = (1u64 << 32) - 1; // = u32::MAX as u64
         let sealed = s.seal(b"last-valid", 0x10).expect("seal at boundary - 1");
         assert_eq!(sealed.len(), 12 + 10 + 16); // nonce + plaintext + tag
-                                                // Counter is now at the boundary — next seal must refuse.
+        // Counter is now at the boundary — next seal must refuse.
         assert!(matches!(
             s.seal(b"over-the-edge", 0x10),
             Err(WireError::SequenceExhausted)

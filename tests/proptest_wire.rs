@@ -11,7 +11,7 @@
 #![cfg(feature = "reference-frame")]
 
 use proptest::prelude::*;
-use xenia_wire::{open_frame, seal_frame, Frame, ReplayWindow, Session, WireError, WINDOW_BITS};
+use xenia_wire::{Frame, ReplayWindow, Session, WINDOW_BITS, WireError, open_frame, seal_frame};
 
 // ── ReplayWindow properties ───────────────────────────────────────────
 

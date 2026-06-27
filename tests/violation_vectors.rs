@@ -14,8 +14,8 @@
 
 use std::fs;
 use std::path::Path;
-use xenia_wire::consent::{ConsentEvent, ConsentState, ConsentViolation};
 use xenia_wire::Session;
+use xenia_wire::consent::{ConsentEvent, ConsentState, ConsentViolation};
 
 #[derive(Debug)]
 enum Line {
@@ -87,7 +87,11 @@ fn parse_vector(text: &str) -> Vec<Line> {
                 out.push(Line::Initial(parse_state(parts[1])));
             }
             "EVENT" => {
-                assert_eq!(parts.len(), 3, "EVENT takes two args: kind, request_id: {line}");
+                assert_eq!(
+                    parts.len(),
+                    3,
+                    "EVENT takes two args: kind, request_id: {line}"
+                );
                 let id = parts[2].parse::<u64>().expect("request_id is u64");
                 out.push(Line::Event(parse_event(parts[1], id)));
             }
@@ -154,9 +158,7 @@ fn run_vector(path: &Path) {
         _ => panic!("{}: must start with INITIAL", path.display()),
     };
     let mut session = match initial {
-        ConsentState::AwaitingRequest => {
-            Session::builder().require_consent(true).build()
-        }
+        ConsentState::AwaitingRequest => Session::builder().require_consent(true).build(),
         ConsentState::LegacyBypass => Session::new(),
         other => panic!(
             "{}: INITIAL state {:?} cannot be a fresh-session start state",

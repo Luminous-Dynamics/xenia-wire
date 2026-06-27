@@ -24,7 +24,7 @@
 
 use std::fs;
 use std::path::Path;
-use xenia_wire::{Frame, Input, Sealable, Session, PAYLOAD_TYPE_FRAME, PAYLOAD_TYPE_INPUT};
+use xenia_wire::{Frame, Input, PAYLOAD_TYPE_FRAME, PAYLOAD_TYPE_INPUT, Sealable, Session};
 
 fn main() -> std::io::Result<()> {
     let out_dir = Path::new("test-vectors");
@@ -310,8 +310,8 @@ fn emit_06_lz4_frame(out: &Path) -> std::io::Result<()> {
 #[cfg(feature = "consent")]
 fn emit_07_consent_request(out: &Path) -> std::io::Result<()> {
     use ed25519_dalek::SigningKey;
-    use xenia_wire::consent::{ConsentRequestCore, ConsentScope};
     use xenia_wire::PAYLOAD_TYPE_CONSENT_REQUEST;
+    use xenia_wire::consent::{ConsentRequestCore, ConsentScope};
 
     // Ed25519 seed: 32 bytes derived from the fixture label.
     let seed: [u8; 32] = *b"xenia-consent-test-vector-seed!!";
@@ -384,6 +384,7 @@ fn emit_07_consent_request(out: &Path) -> std::io::Result<()> {
     )
 }
 
+#[allow(dead_code)] // Reserved for explicit hex-vector diagnostics.
 fn hex_string(bytes: &[u8]) -> String {
     let mut s = String::with_capacity(bytes.len() * 2);
     for b in bytes {
@@ -410,8 +411,8 @@ impl<T: xenia_wire::Sealable> SealableExt for T {}
 #[cfg(feature = "consent")]
 fn emit_08_consent_response(out: &Path) -> std::io::Result<()> {
     use ed25519_dalek::SigningKey;
-    use xenia_wire::consent::ConsentResponseCore;
     use xenia_wire::PAYLOAD_TYPE_CONSENT_RESPONSE;
+    use xenia_wire::consent::ConsentResponseCore;
 
     // Distinct seed from vector 07 — same fixture scheme.
     let seed: [u8; 32] = *b"xenia-consent-test-vector-seed#2";
@@ -476,8 +477,8 @@ fn emit_08_consent_response(out: &Path) -> std::io::Result<()> {
 #[cfg(feature = "consent")]
 fn emit_09_consent_revocation(out: &Path) -> std::io::Result<()> {
     use ed25519_dalek::SigningKey;
-    use xenia_wire::consent::ConsentRevocationCore;
     use xenia_wire::PAYLOAD_TYPE_CONSENT_REVOCATION;
+    use xenia_wire::consent::ConsentRevocationCore;
 
     // Same seed as the responder in vector 08 — the end-user is
     // revoking their previous approval.

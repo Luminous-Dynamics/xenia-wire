@@ -5,3 +5,14 @@ Cargo.lock
 .claude/
 .idea/
 .vscode/
+
+# Local archives and build/export products must not live in active source paths.
+*.tar.gz
+*.tgz
+*.zip
+/dist/
+/pkg/
+.claude/
+.idea/
+.vscode/
+.DS_Store

@@ -91,7 +91,7 @@ fn open_frame_never_panics_on_random_bytes() {
 fn seal_then_corrupt_arbitrarily_never_panics_on_open() {
     // Seal a valid envelope, then corrupt a random prefix / suffix /
     // middle slice. All variants must open cleanly (with an error).
-    use xenia_wire::{open_frame, seal_frame, Frame};
+    use xenia_wire::{Frame, open_frame, seal_frame};
     let mut rng = ChaCha20Rng::seed_from_u64(SEED ^ 0x04);
     let mut sender = Session::new();
     let mut receiver = Session::new();

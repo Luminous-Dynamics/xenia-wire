@@ -25,8 +25,8 @@ use xenia_wire::consent::{
     ConsentRevocation, ConsentRevocationCore, ConsentScope, ConsentState, ConsentViolation,
 };
 use xenia_wire::{
-    open_consent_request, open_consent_response, open_frame, seal_consent_request,
-    seal_consent_response, seal_consent_revocation, seal_frame, Frame, Session, WireError,
+    Frame, Session, WireError, open_consent_request, open_consent_response, open_frame,
+    seal_consent_request, seal_consent_response, seal_consent_revocation, seal_frame,
 };
 
 const REQUEST_ID: u64 = 1;

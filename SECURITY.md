@@ -5,12 +5,13 @@ vulnerabilities seriously and appreciate responsible disclosure.
 
 ## Status
 
-`0.1.0-alpha.x` is **pre-alpha**. The wire format is not yet frozen,
-the specification document is not yet written, and no independent
-cryptographic review has occurred. Do not deploy in production.
+`0.2.0-alpha.x` is **pre-alpha**. The wire format and consent ceremony are
+still subject to change, and no independent cryptographic review has occurred.
+Do not deploy in production.
 
-That said — if you find something worth knowing, we want to know
-it now rather than after others depend on the wire.
+A normative specification and test-vector suite exist, but they are not a
+substitute for external review. If you find something worth knowing, we want to
+know it now rather than after others depend on the wire.
 
 ## Reporting a vulnerability
 

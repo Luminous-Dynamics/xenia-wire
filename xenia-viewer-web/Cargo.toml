@@ -1,8 +1,8 @@
 [package]
 name = "xenia-viewer-web"
 version = "0.1.0-alpha.1"
-edition = "2021"
-rust-version = "1.75"
+edition = "2024"
+rust-version = "1.95"
 authors = ["Tristan Stoltz <tristan.stoltz@evolvingresonantcocreationism.com>"]
 license = "Apache-2.0 OR MIT"
 description = "WebAssembly demo of the Xenia wire protocol — seal/open in the browser. Pre-alpha — do not use in production."
