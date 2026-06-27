@@ -143,6 +143,7 @@ impl ReplayWindow {
     pub fn with_window_bits(bits: u32) -> Self {
         assert!(
             (DEFAULT_WINDOW_BITS..=MAX_WINDOW_BITS).contains(&bits)
+                #[allow(clippy::manual_is_multiple_of)] // MSRV: keep `%` instead of `is_multiple_of`.
                 && bits % DEFAULT_WINDOW_BITS == 0,
             "replay window bits must be a multiple of 64 between 64 and 1024; got {bits}",
         );
