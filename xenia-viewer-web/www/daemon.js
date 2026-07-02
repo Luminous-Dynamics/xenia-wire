@@ -6,7 +6,13 @@
 // xenia-wire WASM bindings, parses the passthrough payload, and
 // renders each frame to a canvas.
 
-import init, { WasmSession, WasmHandshake, openDaemonFrame, wireVersion } from "./pkg/xenia_viewer_web.js";
+import init, {
+  WasmHandshake,
+  WasmLaneSession,
+  WasmRekeyState,
+  openLaneFrame,
+  wireVersion,
+} from "./pkg/xenia_viewer_web.js";
 
 // MUST match the daemon's --source-id-hex default.
 const DEFAULT_SOURCE_ID_HEX = "7878656e69617068";
@@ -27,7 +33,8 @@ const sErr = $("s-err");
 const sWire = $("s-wire");
 
 // App state (one active session at a time)
-let session = null;
+let laneSession = null;   // WasmLaneSession -- four independent lane keys
+let rekeyState = null;    // WasmRekeyState -- continuous rekey epoch tracking
 let socket = null;
 let frameCount = 0;
 let recentFrameTimes = [];
@@ -35,7 +42,9 @@ let recentFrameTimes = [];
 // see src/handshake.rs). The daemon always speaks this handshake first —
 // "awaiting-hello": expecting the daemon's HostHello as the first binary
 // message; "awaiting-finalize": ViewerResponse sent, expecting HostFinalize;
-// "done": session key installed, subsequent messages are sealed frames.
+// "done": lane keys installed, subsequent messages are lane-enveloped
+// sealed frames (video / capabilities / rekey proposals -- see
+// handleMessage's "done" branch).
 let handshake = null;
 let handshakeStage = "idle";
 
@@ -108,9 +117,15 @@ function handleMessage(event) {
 
   if (handshakeStage === "awaiting-finalize") {
     try {
-      const sessionKey = handshake.finish(bytes);
-      session = new WasmSession();
-      session.installKey(sessionKey);
+      // finish() returns the full transcript-bound lane key schedule
+      // (control/video/audio/telemetry/rekey/context/aead, each a
+      // 32-byte Uint8Array, plus transcript_hash) -- the real daemon
+      // keys each traffic lane independently post-handshake, so a
+      // single aead key can't decode anything past this point.
+      const schedule = handshake.finish(bytes);
+      laneSession = new WasmLaneSession();
+      laneSession.installSchedule(schedule.control, schedule.video, schedule.audio, schedule.telemetry);
+      rekeyState = new WasmRekeyState(schedule.rekey, schedule.transcript_hash);
       handshakeStage = "done";
       setState("connected", "var(--ok)");
       setError(null);
@@ -121,13 +136,45 @@ function handleMessage(event) {
     return;
   }
 
-  if (!session) {
-    setError("message received but session not ready");
+  if (!laneSession || !rekeyState) {
+    setError("message received but lane session not ready");
     return;
   }
   try {
-    const frame = openDaemonFrame(session, bytes);
-    drawFrame(frame);
+    const frame = openLaneFrame(laneSession, bytes);
+    switch (frame.pixel_format) {
+      case "passthrough":
+        drawFrame(frame);
+        break;
+      case "capabilities":
+        // Session-control metadata only; nothing to render.
+        break;
+      case "rekey":
+        if (frame.rekey_kind !== "proposal") {
+          setError(`unexpected rekey message: ${frame.rekey_kind}`);
+          break;
+        }
+        // Rekeys are continuous (every few video frames by default on
+        // the daemon), not a one-off post-handshake exchange --
+        // handleProposal validates, installs the new epoch's lane
+        // keys into laneSession, and returns the Ack to send back.
+        {
+          const ack = rekeyState.handleProposal(
+            laneSession,
+            frame.key_epoch,
+            frame.base_transcript_hash,
+            frame.previous_epoch_hash,
+            frame.reason,
+            frame.epoch_hash,
+          );
+          socket.send(ack);
+        }
+        break;
+      default:
+        // telemetry / audio / hdc / etc: not decoded by this MVP
+        // viewer (no telemetry panel / WebAudio playback wired here).
+        break;
+    }
     setError(null);
   } catch (e) {
     setError(String(e.message || e));
@@ -148,7 +195,8 @@ function disconnect() {
     try { socket.close(); } catch {}
     socket = null;
   }
-  session = null;
+  laneSession = null;
+  rekeyState = null;
   handshake = null;
   handshakeStage = "idle";
   frameCount = 0;
@@ -174,15 +222,10 @@ function connect() {
   // The daemon always speaks a real ML-KEM-768 + Ed25519 + HKDF-SHA-256
   // handshake first (xenia-peer-core::handshake, mirrored byte-for-byte
   // by WasmHandshake — see src/handshake.rs and its cross-implementation
-  // test). No fixture key: the session key is derived fresh each
-  // connection from the exchange below, handled in handleMessage's
-  // "awaiting-hello" / "awaiting-finalize" stages.
-  //
-  // The `source_id` field on the receiver's Session only matters when
-  // the receiver is also a SENDER — which the viewer is not yet (input
-  // path is M2) — so a fresh WasmSession installed with the derived key
-  // after the handshake completes is sufficient to open the daemon's
-  // frames; see the AEAD/replay-window note this comment used to carry.
+  // test). No fixture key: the full lane key schedule is derived fresh
+  // each connection from the exchange below, installed into a
+  // WasmLaneSession + WasmRekeyState in handleMessage's
+  // "awaiting-finalize" stage.
   try {
     handshake = new WasmHandshake();
     handshakeStage = "awaiting-hello";
