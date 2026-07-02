@@ -6,11 +6,8 @@
 // xenia-wire WASM bindings, parses the passthrough payload, and
 // renders each frame to a canvas.
 
-import init, { WasmSession, openDaemonFrame, wireVersion } from "./pkg/xenia_viewer_web.js";
+import init, { WasmSession, WasmHandshake, openDaemonFrame, wireVersion } from "./pkg/xenia_viewer_web.js";
 
-// MUST match the daemon's compiled-in FIXTURE_KEY. Any change on
-// either side makes AEAD open fail.
-const FIXTURE_KEY_BYTES = new TextEncoder().encode("xenia-peer-m0-stub-fixture-key!!");
 // MUST match the daemon's --source-id-hex default.
 const DEFAULT_SOURCE_ID_HEX = "7878656e69617068";
 const DEFAULT_EPOCH = 0x01;
@@ -34,6 +31,13 @@ let session = null;
 let socket = null;
 let frameCount = 0;
 let recentFrameTimes = [];
+// Real PQC handshake state machine (ML-KEM-768 + Ed25519 + HKDF-SHA-256,
+// see src/handshake.rs). The daemon always speaks this handshake first —
+// "awaiting-hello": expecting the daemon's HostHello as the first binary
+// message; "awaiting-finalize": ViewerResponse sent, expecting HostFinalize;
+// "done": session key installed, subsequent messages are sealed frames.
+let handshake = null;
+let handshakeStage = "idle";
 
 function setState(s, color) {
   sState.textContent = s;
@@ -79,16 +83,46 @@ function handleMessage(event) {
     setError("daemon sent a text frame; expected binary");
     return;
   }
-  if (!session) {
-    setError("message received but session not ready");
-    return;
-  }
   // event.data is ArrayBuffer or Blob depending on binaryType
   const bytes = event.data instanceof ArrayBuffer
     ? new Uint8Array(event.data)
     : null;
   if (!bytes) {
     setError("message data is not an ArrayBuffer; set socket.binaryType = 'arraybuffer'");
+    return;
+  }
+
+  if (handshakeStage === "awaiting-hello") {
+    try {
+      const viewerResponse = handshake.begin(bytes);
+      socket.send(viewerResponse);
+      handshakeStage = "awaiting-finalize";
+      setState("handshaking (2/2)…", "var(--accent)");
+      setError(null);
+    } catch (e) {
+      setError(`handshake (HostHello): ${e.message || e}`);
+      disconnect();
+    }
+    return;
+  }
+
+  if (handshakeStage === "awaiting-finalize") {
+    try {
+      const sessionKey = handshake.finish(bytes);
+      session = new WasmSession();
+      session.installKey(sessionKey);
+      handshakeStage = "done";
+      setState("connected", "var(--ok)");
+      setError(null);
+    } catch (e) {
+      setError(`handshake (HostFinalize): ${e.message || e}`);
+      disconnect();
+    }
+    return;
+  }
+
+  if (!session) {
+    setError("message received but session not ready");
     return;
   }
   try {
@@ -115,6 +149,8 @@ function disconnect() {
     socket = null;
   }
   session = null;
+  handshake = null;
+  handshakeStage = "idle";
   frameCount = 0;
   recentFrameTimes = [];
   sFrames.textContent = "0";
@@ -135,27 +171,21 @@ function connect() {
   setError(null);
   setState("connecting…", "var(--accent)");
 
-  // Fresh session per connect. WasmSession::new installs a random
-  // source_id/epoch, so we use the raw Session after overriding
-  // those to match the daemon. That's a gap in today's WASM API:
-  // WasmSession::new doesn't expose with_source_id. For M4.1 we
-  // work around by expecting the daemon to accept whatever
-  // source_id the viewer randomly picked — but the daemon uses a
-  // FIXED source_id, so we'd mismatch.
+  // The daemon always speaks a real ML-KEM-768 + Ed25519 + HKDF-SHA-256
+  // handshake first (xenia-peer-core::handshake, mirrored byte-for-byte
+  // by WasmHandshake — see src/handshake.rs and its cross-implementation
+  // test). No fixture key: the session key is derived fresh each
+  // connection from the exchange below, handled in handleMessage's
+  // "awaiting-hello" / "awaiting-finalize" stages.
   //
-  // Instead, the daemon's sealed envelopes only contain its own
-  // source_id in the nonce. The *receiver* session doesn't need to
-  // match — AEAD open uses the key alone; the replay window is
-  // keyed by (source_id_from_envelope, payload_type, key_epoch),
-  // which is fine. So any fresh WasmSession with the fixture key
-  // installed will correctly open the daemon's frames.
-  //
-  // The `source_id` field on the receiver's Session only matters
-  // when the receiver is also a SENDER — which the viewer is not
-  // in M4.1 (input path is M2).
+  // The `source_id` field on the receiver's Session only matters when
+  // the receiver is also a SENDER — which the viewer is not yet (input
+  // path is M2) — so a fresh WasmSession installed with the derived key
+  // after the handshake completes is sufficient to open the daemon's
+  // frames; see the AEAD/replay-window note this comment used to carry.
   try {
-    session = new WasmSession();
-    session.installKey(FIXTURE_KEY_BYTES);
+    handshake = new WasmHandshake();
+    handshakeStage = "awaiting-hello";
   } catch (e) {
     setError(`WASM init: ${e.message || e}`);
     disconnect();
@@ -172,7 +202,7 @@ function connect() {
   socket.binaryType = "arraybuffer";
 
   socket.addEventListener("open", () => {
-    setState("connected", "var(--ok)");
+    setState("handshaking (1/2)…", "var(--accent)");
     btnConnect.disabled = true;
     btnDisconnect.disabled = false;
   });

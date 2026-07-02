@@ -30,10 +30,35 @@ console_error_panic_hook = { version = "0.1", optional = true }
 # matches xenia-peer-core's RawFrame byte-for-byte under bincode v1).
 bincode = "1.3"
 serde = { version = "1", features = ["derive"] }
+# Real PQC handshake (see src/handshake.rs) -- same crates/versions as
+# xenia-peer's xenia-handshake crate, so the two implementations produce
+# byte-identical transcripts and session keys.
+ml-kem = { version = "=0.3.0-rc.2", default-features = false, features = ["zeroize", "getrandom"] }
+hkdf = "0.12"
+sha2 = "0.10"
+blake3 = "1.5"
+zeroize = { version = "1", features = ["derive"] }
+serde-big-array = "0.5"
+thiserror = "2"
+# ml-kem's dependency chain resolves getrandom 0.3 AND 0.4 (both
+# semver-incompatible with the 0.2 chain rand/ed25519-dalek use above,
+# and with each other) -- each needs its own wasm feature wired
+# independently for a wasm32 build to work.
+getrandom3 = { package = "getrandom", version = "0.3", features = ["wasm_js"] }
+getrandom4 = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
 
 [features]
 default = ["panic-hook"]
 panic-hook = ["dep:console_error_panic_hook"]
+
+[dev-dependencies]
+# Dev-only: lets the cross-implementation handshake test drive a REAL
+# native host side (xenia-peer-core::handshake + xenia-handshake) and
+# assert byte-identical session keys against this crate's WASM-side
+# reimplementation. Never compiled into the shipped wasm artifact.
+xenia-peer-core = { path = "../../xenia-peer/crates/xenia-peer-core" }
+xenia-handshake = { path = "../../xenia-peer/crates/xenia-handshake" }
+tokio = { version = "1", features = ["macros", "rt"] }
 
 [profile.release]
 opt-level = "z"

@@ -26,10 +26,13 @@ use xenia_wire::consent::{
     ConsentState,
 };
 use xenia_wire::{
-    Frame, Input, Session, open_consent_request, open_consent_response, open_consent_revocation,
-    open_frame, open_input, seal_consent_request, seal_consent_response, seal_consent_revocation,
-    seal_frame, seal_input,
+    open_consent_request, open_consent_response, open_consent_revocation, open_frame, open_input,
+    seal_consent_request, seal_consent_response, seal_consent_revocation, seal_frame, seal_input,
+    Frame, Input, Session,
 };
+
+mod handshake;
+pub use handshake::WasmHandshake;
 
 /// Install the panic hook so Rust panics surface in the browser console
 /// with readable stack traces. Call once at startup from JS.
