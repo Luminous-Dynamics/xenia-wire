@@ -105,11 +105,11 @@ jobs:
         run: cargo build --target wasm32-unknown-unknown --all-features
 
   pqc-claims:
-    name: PQC Claim Check
+    name: PQC Boundary Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: scripts/check-pqc-claims.sh .
+      - run: scripts/check-pqc-boundary.sh .
 
   audit:
     name: Security Audit

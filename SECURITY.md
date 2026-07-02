@@ -18,8 +18,11 @@ know it now rather than after others depend on the wire.
 
 `xenia-wire` does not perform key establishment or peer authentication. It can
 carry keys produced by an ML-KEM-capable handshake, but it is not itself a PQC
-handshake or a full post-quantum system. See `plans/FULL_PQC_BOUNDARY.md` before
-using PQC wording in README, release, or marketing text.
+handshake or a complete PQ-authenticated system. Even when adjacent Xenia crates
+add real ML-DSA evidence verification, this wire crate must keep its claim
+boundary: PQ key establishment and PQ authentication are provided by outer
+layers. See `plans/FULL_PQC_BOUNDARY.md` before using PQC wording in README,
+release, or marketing text.
 
 ## Reporting a vulnerability
 
@@ -78,3 +81,11 @@ in the paper's acknowledgements. Anonymous reports are accepted.
 ## Bounty
 
 There is no monetary bug bounty at this time.
+
+## PQC boundary validation
+
+Run `scripts/check-pqc-boundary.sh .` before changing README, SECURITY,
+SPEC, migration, or release wording that mentions post-quantum properties. The
+check wraps the positive claim scan and the negative overclaim matrix so the
+wire crate remains framed as an AEAD/replay/consent-state crate, not as a
+standalone post-quantum security layer.

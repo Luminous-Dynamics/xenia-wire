@@ -31,6 +31,15 @@ Do not say that this crate alone is full-PQC, entirely post-quantum, or a PQC
 handshake. Full post-quantum posture requires the outer layer to provide PQ key
 establishment and PQ authentication/signatures.
 
+## Adjacent real-backend note
+
+A real ML-DSA evidence-verification backend may live in `xenia-peer` /
+`xenia-ledger` behind an explicit feature and verifier path. That does not change
+this crate's boundary. `xenia-wire` still verifies frame encoding, AEAD opening,
+replay protection, and consent-state transitions only. It must not claim to be
+PQC-safe by itself; it can only say that it can carry keys and authenticated
+session state produced by an outer PQ-capable layer.
+
 ## Migration dependency
 
 A final PQ Xenia profile requires:

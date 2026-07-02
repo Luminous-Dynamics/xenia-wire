@@ -9,10 +9,16 @@ patterns=(
   "entirely PQC"
   "entirely post-quantum"
   "fully PQC"
+  "full PQC"
+  "full-PQC"
+  "full post-quantum"
+  "fully post-quantum"
   "PQC at every layer"
+  "quantum-safe wire"
+  "quantum-secure wire"
 )
 
-allow_re='(^|/)(plans/FULL_PQC_BOUNDARY\.md|scripts/check-pqc-claims\.sh)$'
+allow_re='(^|/)(plans/FULL_PQC_BOUNDARY\.md|scripts/check-pqc-claims\.sh|scripts/check-pqc-claim-guard-negative\.sh)$'
 failures=0
 
 for pattern in "${patterns[@]}"; do
@@ -23,7 +29,7 @@ for pattern in "${patterns[@]}"; do
     fi
     printf 'PQC claim overreach: %s:%s: %s\n' "$file" "$line" "$text" >&2
     failures=$((failures + 1))
-  done < <(grep -RIn --exclude-dir=.git --exclude-dir=target --exclude='*.patch' -- "$pattern" . || true)
+  done < <(grep -RIni --exclude-dir=.git --exclude-dir=target --exclude='*.patch' -- "$pattern" . || true)
 done
 
 if (( failures > 0 )); then
