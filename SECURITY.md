@@ -13,6 +13,14 @@ A normative specification and test-vector suite exist, but they are not a
 substitute for external review. If you find something worth knowing, we want to
 know it now rather than after others depend on the wire.
 
+
+## PQC claim boundary
+
+`xenia-wire` does not perform key establishment or peer authentication. It can
+carry keys produced by an ML-KEM-capable handshake, but it is not itself a PQC
+handshake or a full post-quantum system. See `plans/FULL_PQC_BOUNDARY.md` before
+using PQC wording in README, release, or marketing text.
+
 ## Reporting a vulnerability
 
 Please report security vulnerabilities through one of:

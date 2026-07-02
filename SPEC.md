@@ -579,11 +579,11 @@ and installed via `Session::install_key`. In tests and early
 prototypes a shared fixture key is acceptable; in production
 deployments the key MUST come from a real key-exchange protocol.
 
-### 8.2 Planned future: ML-KEM-768 + Ed25519
+### 8.2 Planned future: ML-KEM-768 with classical Ed25519 authentication
 
 A companion specification — currently tracked as "Track 2.5" in
 the Luminous Dynamics research roadmap — will define a
-post-quantum-resistant handshake:
+post-quantum key-establishment handshake with classical authentication:
 
 - **Identity**: Ed25519 signing keys on both peers, with
   application-defined trust anchors.

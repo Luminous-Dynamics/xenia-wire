@@ -6,7 +6,7 @@
 [![License: Apache-2.0 OR MIT](https://img.shields.io/badge/license-Apache--2.0_OR_MIT-blue.svg)](#license)
 [![MSRV: 1.94](https://img.shields.io/badge/MSRV-1.94-blue.svg)](Cargo.toml)
 
-PQC-sealed binary wire protocol for remote-control streams.
+AEAD-sealed binary wire protocol for remote-control streams, designed for ML-KEM-capable session keys supplied by a higher handshake layer.
 
 ```text
   ╔═══════════════════════════════════════════════════════════╗
@@ -58,8 +58,8 @@ caller's), and no opinion about handshake. Those live at higher layers.
 - Not a transport. Your caller ships the sealed bytes; `xenia-wire` doesn't
   open sockets.
 - Not a TLS replacement — no certificate chain, no ALPN, no hostname binding.
-- Not a handshake. Session keys arrive from somewhere else (ML-KEM-768 in the
-  real deployment; your unit tests' `[0xAB; 32]` fixture in development).
+- Not a handshake. Session keys arrive from somewhere else (for example,
+  ML-KEM-768 in the Xenia handshake layer; your unit tests' `[0xAB; 32]` fixture in development).
 - Not a general AEAD library — `xenia-wire` fixes a specific nonce layout
   suited to replay-protected streams.
 
@@ -83,7 +83,7 @@ matrix); new integrations should start on `0.2.x`.
 use xenia_wire::{Session, seal_frame, open_frame, Frame};
 
 // Both sides install the same 32-byte key (in production, this comes
-// from an ML-KEM-768 handshake; here we use a shared fixture).
+// from a handshake such as ML-KEM-768; here we use a shared fixture).
 let key = [0xAB; 32];
 let mut sender = Session::new();
 let mut receiver = Session::new();
@@ -200,7 +200,7 @@ not the Rust source.
   key lifecycle, LZ4-before-AEAD rule, error taxonomy, and security
   properties.
 - [`CHANGELOG.md`](CHANGELOG.md) — version history.
-- [`test-vectors/`](test-vectors/README.md) — 6 deterministic hex
+- [`test-vectors/`](test-vectors/README.md) — 12 deterministic hex
   fixtures for cross-implementation validation. An implementation in
   Go, Swift, Python, or any other language can reproduce every
   envelope byte from the published fixtures.

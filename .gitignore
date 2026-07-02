@@ -1,4 +1,5 @@
 /target
+xenia-viewer-web/target
 Cargo.lock
 .DS_Store
 *.swp

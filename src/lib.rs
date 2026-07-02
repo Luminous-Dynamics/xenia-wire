@@ -3,7 +3,7 @@
 
 //! # xenia-wire
 //!
-//! PQC-sealed binary wire protocol for remote-control streams.
+//! AEAD-sealed binary wire protocol for remote-control streams.
 //!
 //! **Pre-alpha.** The wire format is not yet frozen and breaking changes
 //! will land between `0.1.x` releases. Do not deploy in production.
