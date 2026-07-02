@@ -63,17 +63,34 @@ async fn wasm_viewer_handshake_matches_native_host() {
     assert_eq!(transport.sent.len(), 2, "expected exactly hello + finalize");
     let finalize_bytes = &transport.sent[1];
 
-    let viewer_key = transport
+    let viewer_schedule = transport
         .viewer
         .borrow_mut()
         .finish_inner(finalize_bytes)
         .expect("WasmHandshake::finish failed");
 
     assert_eq!(
-        viewer_key.as_slice(),
-        &outcome.session_key[..],
-        "viewer-derived session key must byte-for-byte match the host's"
+        viewer_schedule.aead, outcome.session_key,
+        "viewer-derived aead key must byte-for-byte match the host's session_key"
     );
+    assert_schedules_match(&viewer_schedule, &outcome.key_schedule);
+    assert_eq!(viewer_schedule.transcript_hash, outcome.transcript_hash);
+}
+
+/// Assert every lane key in the WASM-derived schedule matches the
+/// native `SessionKeySchedule` byte-for-byte -- not just `aead`, which
+/// is all the original (pre-lane) test checked.
+fn assert_schedules_match(
+    wasm: &xenia_viewer_web::WasmSessionKeySchedule,
+    native: &xenia_handshake::SessionKeySchedule,
+) {
+    assert_eq!(wasm.aead, native.aead, "aead key mismatch");
+    assert_eq!(wasm.control, native.control, "control key mismatch");
+    assert_eq!(wasm.video, native.video, "video key mismatch");
+    assert_eq!(wasm.audio, native.audio, "audio key mismatch");
+    assert_eq!(wasm.telemetry, native.telemetry, "telemetry key mismatch");
+    assert_eq!(wasm.rekey, native.rekey, "rekey key mismatch");
+    assert_eq!(wasm.context, native.context, "context key mismatch");
 }
 
 #[tokio::test]
@@ -95,13 +112,14 @@ async fn wasm_viewer_handshake_matches_native_host_with_negotiated_context() {
     .expect("native host handshake failed");
 
     let finalize_bytes = &transport.sent[1];
-    let viewer_key = transport
+    let viewer_schedule = transport
         .viewer
         .borrow_mut()
         .finish_inner(finalize_bytes)
         .expect("WasmHandshake::finish failed");
 
-    assert_eq!(viewer_key.as_slice(), &outcome.session_key[..]);
+    assert_schedules_match(&viewer_schedule, &outcome.key_schedule);
+    assert_eq!(viewer_schedule.transcript_hash, outcome.transcript_hash);
 }
 
 #[tokio::test]
@@ -125,7 +143,10 @@ async fn wasm_viewer_handshake_rejects_tampered_finalize() {
     let last = tampered_finalize.len() - 1;
     tampered_finalize[last] ^= 0xFF;
 
-    let result = transport.viewer.borrow_mut().finish_inner(&tampered_finalize);
+    let result = transport
+        .viewer
+        .borrow_mut()
+        .finish_inner(&tampered_finalize);
     assert!(
         result.is_err(),
         "viewer must reject a tampered HostFinalize signature"

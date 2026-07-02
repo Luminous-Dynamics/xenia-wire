@@ -53,6 +53,12 @@ const HANDSHAKE_SIGNATURE_CONTEXT_V1: &str = "xenia-handshake-signature-v1";
 
 const SESSION_KEY_SCHEDULE_SCHEMA: &str = "xenia-session-key-schedule-v1";
 const SESSION_AEAD_KEY_LABEL: &[u8] = b"xenia/session/aead";
+const SESSION_CONTROL_KEY_LABEL: &[u8] = b"xenia/session/control";
+const SESSION_VIDEO_KEY_LABEL: &[u8] = b"xenia/session/video";
+const SESSION_AUDIO_KEY_LABEL: &[u8] = b"xenia/session/audio";
+const SESSION_TELEMETRY_KEY_LABEL: &[u8] = b"xenia/session/telemetry";
+const SESSION_REKEY_KEY_LABEL: &[u8] = b"xenia/session/rekey";
+const SESSION_CONTEXT_KEY_LABEL: &[u8] = b"xenia/session/context";
 
 // ─── Wire-compatible message shape (must match xenia-peer-core's
 //     HandshakeMessage byte-for-byte under bincode v1) ───
@@ -158,7 +164,10 @@ fn hkdf_derive(classical_nonce: &[u8], kem_shared_secret: &[u8]) -> [u8; 32] {
     okm
 }
 
-fn derive_labeled_session_key(
+/// `pub(crate)` so `session.rs` can reuse it for rekey-epoch key
+/// derivation (`schedule.rekey` as root, epoch hash as transcript hash,
+/// `xenia/rekey/*` labels) -- same HKDF construction, different labels.
+pub(crate) fn derive_labeled_session_key(
     root_key: &[u8; 32],
     transcript_hash: &[u8; 32],
     label: &[u8],
@@ -209,6 +218,76 @@ struct PendingState {
     root_key: [u8; 32],
 }
 
+/// Transcript-bound lane keys, mirroring `xenia_handshake::SessionKeySchedule`
+/// field-for-field. `aead` is unused by the lane-based session (each lane has
+/// its own key) but kept for parity/potential single-key fallback use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WasmSessionKeySchedule {
+    pub aead: [u8; 32],
+    pub control: [u8; 32],
+    pub video: [u8; 32],
+    pub audio: [u8; 32],
+    pub telemetry: [u8; 32],
+    pub rekey: [u8; 32],
+    pub context: [u8; 32],
+    /// Canonical handshake transcript hash. Not part of the native
+    /// `SessionKeySchedule` type, but bundled here so the browser can
+    /// construct a `WasmRekeyState` (which needs it to validate future
+    /// rekey proposals) from this one return value.
+    pub transcript_hash: [u8; 32],
+}
+
+impl WasmSessionKeySchedule {
+    fn derive(root_key: &[u8; 32], transcript_hash: [u8; 32]) -> Self {
+        Self {
+            aead: derive_labeled_session_key(root_key, &transcript_hash, SESSION_AEAD_KEY_LABEL),
+            control: derive_labeled_session_key(
+                root_key,
+                &transcript_hash,
+                SESSION_CONTROL_KEY_LABEL,
+            ),
+            video: derive_labeled_session_key(root_key, &transcript_hash, SESSION_VIDEO_KEY_LABEL),
+            audio: derive_labeled_session_key(root_key, &transcript_hash, SESSION_AUDIO_KEY_LABEL),
+            telemetry: derive_labeled_session_key(
+                root_key,
+                &transcript_hash,
+                SESSION_TELEMETRY_KEY_LABEL,
+            ),
+            rekey: derive_labeled_session_key(root_key, &transcript_hash, SESSION_REKEY_KEY_LABEL),
+            context: derive_labeled_session_key(
+                root_key,
+                &transcript_hash,
+                SESSION_CONTEXT_KEY_LABEL,
+            ),
+            transcript_hash,
+        }
+    }
+
+    /// Build the JS-facing object: `{ aead, control, video, audio,
+    /// telemetry, rekey, context, transcript_hash }`, each a `Uint8Array`.
+    fn to_js(self) -> Result<JsValue, JsError> {
+        let obj = js_sys::Object::new();
+        let field = |obj: &js_sys::Object, name: &str, bytes: &[u8; 32]| -> Result<(), JsError> {
+            js_sys::Reflect::set(
+                obj,
+                &JsValue::from_str(name),
+                &js_sys::Uint8Array::from(bytes.as_slice()).into(),
+            )
+            .map(|_| ())
+            .map_err(|_| JsError::new("Reflect::set failed on session key schedule"))
+        };
+        field(&obj, "aead", &self.aead)?;
+        field(&obj, "control", &self.control)?;
+        field(&obj, "video", &self.video)?;
+        field(&obj, "audio", &self.audio)?;
+        field(&obj, "telemetry", &self.telemetry)?;
+        field(&obj, "rekey", &self.rekey)?;
+        field(&obj, "context", &self.context)?;
+        field(&obj, "transcript_hash", &self.transcript_hash)?;
+        Ok(obj.into())
+    }
+}
+
 /// Drives the viewer side of a real PQC handshake against a native
 /// `xenia-peer` host. See the module doc comment for the protocol.
 #[wasm_bindgen]
@@ -235,14 +314,14 @@ impl WasmHandshake {
         self.begin_inner(hello_bytes).map_err(js_error)
     }
 
-    /// Process the host's `HostFinalize` envelope; returns the derived
-    /// 32-byte AEAD session key on success. Call
-    /// [`crate::WasmSession::install_key`] with the result.
+    /// Process the host's `HostFinalize` envelope; returns the full
+    /// transcript-bound lane key schedule (`{ aead, control, video, audio,
+    /// telemetry, rekey, context }`, each a 32-byte `Uint8Array`) on
+    /// success. Install the per-lane keys into a `WasmLaneSession` via
+    /// `installSchedule`.
     #[wasm_bindgen(js_name = finish)]
-    pub fn finish(&mut self, finalize_bytes: &[u8]) -> Result<Vec<u8>, JsError> {
-        self.finish_inner(finalize_bytes)
-            .map(|key| key.to_vec())
-            .map_err(js_error)
+    pub fn finish(&mut self, finalize_bytes: &[u8]) -> Result<JsValue, JsError> {
+        self.finish_inner(finalize_bytes).map_err(js_error)?.to_js()
     }
 }
 
@@ -318,7 +397,10 @@ impl WasmHandshake {
     /// Pure-Rust, JS-boundary-free version of [`WasmHandshake::finish`] —
     /// used directly by native tests (`JsError` construction needs a real
     /// JS host and panics on native targets).
-    pub fn finish_inner(&mut self, finalize_bytes: &[u8]) -> Result<[u8; 32], HandshakeError> {
+    pub fn finish_inner(
+        &mut self,
+        finalize_bytes: &[u8],
+    ) -> Result<WasmSessionKeySchedule, HandshakeError> {
         let state = self.pending.take().ok_or(HandshakeError::NotStarted)?;
 
         let finalize: HandshakeMessage = bincode::deserialize(finalize_bytes)?;
@@ -360,10 +442,9 @@ impl WasmHandshake {
         let transcript_bytes = bincode::serialize(&transcript)?;
         let transcript_hash = *blake3::hash(&transcript_bytes).as_bytes();
 
-        Ok(derive_labeled_session_key(
+        Ok(WasmSessionKeySchedule::derive(
             &state.root_key,
-            &transcript_hash,
-            SESSION_AEAD_KEY_LABEL,
+            transcript_hash,
         ))
     }
 }

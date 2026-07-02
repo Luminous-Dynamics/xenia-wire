@@ -32,7 +32,12 @@ use xenia_wire::{
 };
 
 mod handshake;
-pub use handshake::WasmHandshake;
+pub use handshake::{WasmHandshake, WasmSessionKeySchedule};
+
+mod session;
+pub use session::{
+    open_lane_frame_inner, open_lane_frame_js, OpenedLaneFrame, WasmLaneSession, WasmRekeyState,
+};
 
 /// Install the panic hook so Rust panics surface in the browser console
 /// with readable stack traces. Call once at startup from JS.
@@ -140,31 +145,52 @@ pub fn wire_version() -> String {
 // shadow definitions track it via bincode v1's deterministic layout.
 // Field order MUST match the upstream crate byte-for-byte.
 
-/// Shadow of `xenia_peer_core::frame::PixelFormat`. `#[repr(u8)]` +
-/// bincode v1 encodes this as a single byte.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+/// Shadow of `xenia_peer_core::frame::PixelFormat`.
+///
+/// **Not encoded via `#[repr(u8)]`.** serde's derived `Deserialize` for a
+/// fieldless enum encodes/decodes the *declaration-order variant index*
+/// as a `u32` (see `bincode::Serializer::serialize_unit_variant`); the
+/// explicit `#[repr(u8)] = N` discriminants below exist only for
+/// readability/parity with the native enum and are never read by
+/// bincode. Correctness therefore depends entirely on this shadow
+/// listing every variant in the **same order** as the upstream
+/// `xenia_peer_core::frame::PixelFormat` -- reordering, inserting, or
+/// omitting a variant here silently breaks every payload type at once.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[repr(u8)]
 #[allow(dead_code)]
-enum RawPixelFormat {
+pub(crate) enum RawPixelFormat {
     Rgba8 = 0,
     Bgra8 = 1,
     H264 = 16,
     Vp9 = 17,
     Passthrough = 32,
+    Hdc = 33,
+    Telemetry = 240,
+    Audio = 241,
+    Capabilities = 242,
+    Rekey = 243,
 }
 
 /// Shadow of `xenia_peer_core::frame::RawFrame`. Field order matches
 /// the upstream; any divergence will produce a bincode-deserialize
 /// error on the first frame.
-#[derive(Debug, serde::Deserialize)]
-#[allow(dead_code)] // fields are populated by bincode + read by open_daemon_frame_js
-struct RawFrameShadow {
-    frame_id: u64,
-    timestamp_ms: u64,
-    width: u32,
-    height: u32,
-    pixel_format: RawPixelFormat,
-    pixels: Vec<u8>,
+///
+/// Also `Serialize`: `session.rs` needs to *build* one of these (e.g.
+/// a Rekey Ack) -- every sealed frame's wire-level `Frame.payload` is
+/// bincode(RawFrame), and RawFrame.pixels is in turn bincode(the
+/// specific payload type, e.g. RawRekey). Skipping this outer
+/// RawFrame layer and sealing the inner payload directly produces a
+/// structurally different (and undecodable) envelope.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[allow(dead_code)] // fields are populated by bincode + read by open_daemon_frame_js / session.rs
+pub(crate) struct RawFrameShadow {
+    pub(crate) frame_id: u64,
+    pub(crate) timestamp_ms: u64,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    pub(crate) pixel_format: RawPixelFormat,
+    pub(crate) pixels: Vec<u8>,
 }
 
 /// Open a sealed envelope that the xenia-peer daemon emitted, and
@@ -200,43 +226,9 @@ pub fn open_daemon_frame_js(
             raw.pixel_format
         )));
     }
+    let (width, height, body) = decode_passthrough(&raw.pixels)?;
 
-    // 4. Parse the passthrough header (12 bytes: magic 'X', version 1,
-    //    pix_fmt, reserved, width LE u32, height LE u32), then take
-    //    the raw pixel bytes.
-    if raw.pixels.len() < 12 {
-        return Err(JsError::new(
-            "passthrough payload shorter than 12-byte header",
-        ));
-    }
-    if raw.pixels[0] != 0x58 {
-        return Err(JsError::new("passthrough bad magic"));
-    }
-    if raw.pixels[1] != 0x01 {
-        return Err(JsError::new("passthrough unsupported version"));
-    }
-    // Only RGBA (0) is wired in the browser path; BGRA would need a swizzle
-    // in JS which we skip for MVP.
-    if raw.pixels[2] != 0 {
-        return Err(JsError::new(
-            "passthrough: only RGBA pixel-format supported in browser",
-        ));
-    }
-    let width = u32::from_le_bytes([raw.pixels[4], raw.pixels[5], raw.pixels[6], raw.pixels[7]]);
-    let height = u32::from_le_bytes([raw.pixels[8], raw.pixels[9], raw.pixels[10], raw.pixels[11]]);
-    let body = &raw.pixels[12..];
-    let expected = (width as usize) * (height as usize) * 4;
-    if body.len() != expected {
-        return Err(JsError::new(&format!(
-            "passthrough body {} bytes, expected {} for {}x{}",
-            body.len(),
-            expected,
-            width,
-            height
-        )));
-    }
-
-    // 5. Build the JS return object.
+    // 4. Build the JS return object.
     let obj = js_sys::Object::new();
     set_field(&obj, "frame_id", JsValue::from(raw.frame_id as f64))?;
     set_field(&obj, "timestamp_ms", JsValue::from(raw.timestamp_ms as f64))?;
@@ -247,7 +239,47 @@ pub fn open_daemon_frame_js(
     Ok(obj.into())
 }
 
-fn set_field(obj: &js_sys::Object, key: &str, value: JsValue) -> Result<(), JsError> {
+/// Parse the xenia-video passthrough codec's 12-byte header (magic
+/// 'X', version 1, pix_fmt, reserved, width LE u32, height LE u32) and
+/// return `(width, height, rgba_body)`. Shared by `openDaemonFrame`
+/// (single-key demo path) and `openLaneFrame` (real lane-separated
+/// daemon path, `session.rs`).
+pub(crate) fn decode_passthrough(pixels: &[u8]) -> Result<(u32, u32, &[u8]), JsError> {
+    if pixels.len() < 12 {
+        return Err(JsError::new(
+            "passthrough payload shorter than 12-byte header",
+        ));
+    }
+    if pixels[0] != 0x58 {
+        return Err(JsError::new("passthrough bad magic"));
+    }
+    if pixels[1] != 0x01 {
+        return Err(JsError::new("passthrough unsupported version"));
+    }
+    // Only RGBA (0) is wired in the browser path; BGRA would need a swizzle
+    // in JS which we skip for MVP.
+    if pixels[2] != 0 {
+        return Err(JsError::new(
+            "passthrough: only RGBA pixel-format supported in browser",
+        ));
+    }
+    let width = u32::from_le_bytes([pixels[4], pixels[5], pixels[6], pixels[7]]);
+    let height = u32::from_le_bytes([pixels[8], pixels[9], pixels[10], pixels[11]]);
+    let body = &pixels[12..];
+    let expected = (width as usize) * (height as usize) * 4;
+    if body.len() != expected {
+        return Err(JsError::new(&format!(
+            "passthrough body {} bytes, expected {} for {}x{}",
+            body.len(),
+            expected,
+            width,
+            height
+        )));
+    }
+    Ok((width, height, body))
+}
+
+pub(crate) fn set_field(obj: &js_sys::Object, key: &str, value: JsValue) -> Result<(), JsError> {
     js_sys::Reflect::set(obj, &JsValue::from_str(key), &value)
         .map(|_| ())
         .map_err(|_| JsError::new(&format!("Reflect::set {key} failed")))
