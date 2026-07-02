@@ -456,7 +456,9 @@ pub fn open_lane_frame_js(
             set_field(&obj, "frame_id", JsValue::from(frame_id as f64))?;
             set_field(&obj, "timestamp_ms", JsValue::from(timestamp_ms as f64))?;
             set_field(&obj, "rekey_kind", JsValue::from_str("proposal"))?;
-            set_field(&obj, "key_epoch", JsValue::from(key_epoch as f64))?;
+            // BigInt, not Number -- must match handleProposal's u64
+            // (bigint) parameter type, or JS throws on the call.
+            set_field(&obj, "key_epoch", JsValue::from(key_epoch))?;
             set_field(
                 &obj,
                 "base_transcript_hash",
