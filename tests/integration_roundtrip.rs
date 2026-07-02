@@ -6,7 +6,7 @@
 #![cfg(feature = "reference-frame")]
 
 use xenia_wire::{
-    Frame, Input, Session, WireError, open_frame, open_input, seal_frame, seal_input,
+    open_frame, open_input, seal_frame, seal_input, Frame, Input, Session, WireError,
 };
 
 fn paired_sessions(key: [u8; 32]) -> (Session, Session) {
@@ -147,4 +147,24 @@ fn lz4_roundtrip() {
     let sealed = seal_frame_lz4(&frame, &mut sender).unwrap();
     let opened = open_frame_lz4(&sealed, &mut receiver).unwrap();
     assert_eq!(opened, frame);
+}
+
+#[cfg(feature = "lz4")]
+#[test]
+fn lz4_forged_oversize_prefix_is_rejected_before_allocating() {
+    use xenia_wire::{open_frame_lz4, payload_types::PAYLOAD_TYPE_FRAME_LZ4};
+
+    let (mut sender, mut receiver) = paired_sessions([0x77; 32]);
+
+    // A valid AEAD envelope whose plaintext is a forged LZ4 block claiming a
+    // ~4 GiB uncompressed size in its 4-byte little-endian size prefix.
+    // open_frame_lz4 must reject this from the prefix alone, not attempt the
+    // allocation.
+    let mut forged_compressed = u32::MAX.to_le_bytes().to_vec();
+    forged_compressed.extend_from_slice(b"not real lz4 data");
+    let sealed = sender
+        .seal(&forged_compressed, PAYLOAD_TYPE_FRAME_LZ4)
+        .unwrap();
+
+    assert!(open_frame_lz4(&sealed, &mut receiver).is_err());
 }

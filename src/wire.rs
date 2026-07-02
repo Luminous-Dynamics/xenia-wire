@@ -97,15 +97,34 @@ pub fn seal_frame_lz4(frame: &crate::Frame, session: &mut Session) -> Result<Vec
     session.seal(&compressed, payload_types::PAYLOAD_TYPE_FRAME_LZ4)
 }
 
+/// Upper bound on the uncompressed size an [`open_frame_lz4`] caller will
+/// allocate for, read from the LZ4 size prefix before decompression.
+///
+/// `lz4_flex::block::decompress_size_prepended` trusts its 4-byte
+/// little-endian size prefix and allocates that many bytes up front. That
+/// prefix is authenticated (it's inside the AEAD-sealed envelope by the
+/// time we read it), so this isn't a spoofable-by-outsiders vector — but a
+/// valid-session-key sender who is buggy or compromised could still make an
+/// honest peer allocate an enormous single buffer. 64 MiB comfortably
+/// covers any realistic single frame/input payload for this protocol.
+#[cfg(feature = "lz4")]
+const MAX_LZ4_DECOMPRESSED_SIZE: usize = 64 * 1024 * 1024;
+
 /// Open a sealed envelope produced by [`seal_frame_lz4`].
 ///
 /// Reverses the pipeline: AEAD verify → LZ4 decompress → bincode deserialize.
 /// Returns [`WireError::OpenFailed`] on AEAD failure, decompression
-/// failure, or any length-prefix corruption; [`WireError::Codec`] on
-/// bincode deserialization failure of the decompressed plaintext.
+/// failure, a size prefix over [`MAX_LZ4_DECOMPRESSED_SIZE`], or any
+/// length-prefix corruption; [`WireError::Codec`] on bincode deserialization
+/// failure of the decompressed plaintext.
 #[cfg(feature = "lz4")]
 pub fn open_frame_lz4(bytes: &[u8], session: &mut Session) -> Result<crate::Frame, WireError> {
     let compressed = session.open(bytes)?;
+    let (uncompressed_size, _) =
+        lz4_flex::block::uncompressed_size(&compressed).map_err(|_| WireError::OpenFailed)?;
+    if uncompressed_size > MAX_LZ4_DECOMPRESSED_SIZE {
+        return Err(WireError::OpenFailed);
+    }
     let plaintext = lz4_flex::block::decompress_size_prepended(&compressed)
         .map_err(|_| WireError::OpenFailed)?;
     <crate::Frame as Sealable>::from_bin(&plaintext)
