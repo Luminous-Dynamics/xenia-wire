@@ -34,6 +34,9 @@ serde = { version = "1", features = ["derive"] }
 # xenia-peer's xenia-handshake crate, so the two implementations produce
 # byte-identical transcripts and session keys.
 ml-kem = { version = "=0.3.0-rc.2", default-features = false, features = ["zeroize", "getrandom"] }
+# Same version xenia-handshake/xenia-ledger pin, so all three resolve one
+# ml-dsa tree and produce byte-identical ML-DSA-65 encodings.
+ml-dsa = { version = "=0.1.1", default-features = true }
 hkdf = "0.12"
 sha2 = "0.10"
 blake3 = "1.5"
