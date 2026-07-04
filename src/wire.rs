@@ -20,6 +20,24 @@
 use crate::payload_types;
 use crate::{Sealable, Session, WireError};
 
+/// Read the `payload_type` byte out of a sealed envelope's cleartext
+/// nonce prefix, without decrypting anything.
+///
+/// Per [`Session::seal`]'s doc comment, the wire format is
+/// `[nonce (12 bytes) | ciphertext | tag (16 bytes)]` with the nonce
+/// laid out as `source_id[0..6] | payload_type | epoch | sequence[0..4]`
+/// — so `payload_type` is always cleartext byte index 6. This lets a
+/// receiver expecting more than one possible payload type on the same
+/// (unwrapped) stream dispatch by type before committing to a specific
+/// `open`/`open_input`-style call, instead of guessing and discarding a
+/// failed attempt (which would also incorrectly consume replay-window
+/// state for the wrong stream).
+///
+/// Returns `None` if `envelope` is too short to contain a full nonce.
+pub fn envelope_payload_type(envelope: &[u8]) -> Option<u8> {
+    envelope.get(6).copied()
+}
+
 /// Seal any [`Sealable`] payload under the session key with the caller-chosen
 /// payload type byte.
 ///
@@ -253,6 +271,32 @@ mod tests {
         let sealed = seal_input(&input, &mut sender).unwrap();
         let opened = open_input(&sealed, &mut receiver).unwrap();
         assert_eq!(opened, input);
+    }
+
+    #[test]
+    fn envelope_payload_type_matches_sealed_type_without_decrypting() {
+        let (mut sender, _) = paired_sessions([0xEF; 32]);
+        let frame_envelope = seal_frame(&sample_frame(), &mut sender).unwrap();
+        assert_eq!(
+            envelope_payload_type(&frame_envelope),
+            Some(payload_types::PAYLOAD_TYPE_FRAME)
+        );
+
+        let input = crate::Input {
+            sequence: 1,
+            timestamp_ms: 0,
+            payload: vec![],
+        };
+        let input_envelope = seal_input(&input, &mut sender).unwrap();
+        assert_eq!(
+            envelope_payload_type(&input_envelope),
+            Some(payload_types::PAYLOAD_TYPE_INPUT)
+        );
+    }
+
+    #[test]
+    fn envelope_payload_type_none_for_short_envelope() {
+        assert_eq!(envelope_payload_type(&[1, 2, 3]), None);
     }
 
     #[cfg(feature = "lz4")]

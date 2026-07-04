@@ -40,8 +40,8 @@ use web_time::Instant;
 
 use zeroize::Zeroizing;
 
-use crate::WireError;
 use crate::replay_window::ReplayWindow;
+use crate::WireError;
 
 #[cfg(feature = "consent")]
 use crate::consent::ConsentEvent;
@@ -708,7 +708,7 @@ impl Session {
     /// [`WireError::SealFailed`] if the underlying AEAD implementation
     /// rejects the input (should not happen with a valid 32-byte key).
     pub fn seal(&mut self, plaintext: &[u8], payload_type: u8) -> Result<Vec<u8>, WireError> {
-        use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce, aead::Aead};
+        use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, KeyInit, Nonce};
 
         // Consent gate — only when the consent feature is compiled in.
         // Applies only to the reference application payload types (FRAME,
@@ -778,7 +778,7 @@ impl Session {
     /// keying only — the caller is responsible for dispatching the returned
     /// plaintext to the correct deserializer.
     pub fn open(&mut self, envelope: &[u8]) -> Result<Vec<u8>, WireError> {
-        use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce, aead::Aead};
+        use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, KeyInit, Nonce};
 
         if envelope.len() < 12 + 16 {
             return Err(WireError::OpenFailed);
@@ -1118,7 +1118,7 @@ mod tests {
         s.nonce_counter = (1u64 << 32) - 1; // = u32::MAX as u64
         let sealed = s.seal(b"last-valid", 0x10).expect("seal at boundary - 1");
         assert_eq!(sealed.len(), 12 + 10 + 16); // nonce + plaintext + tag
-        // Counter is now at the boundary — next seal must refuse.
+                                                // Counter is now at the boundary — next seal must refuse.
         assert!(matches!(
             s.seal(b"over-the-edge", 0x10),
             Err(WireError::SequenceExhausted)
