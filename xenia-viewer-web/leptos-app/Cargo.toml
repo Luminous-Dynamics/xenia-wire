@@ -1,0 +1,45 @@
+# Copyright (c) 2026 Tristan Stoltz / Luminous Dynamics
+# SPDX-License-Identifier: Apache-2.0 OR MIT
+
+[package]
+name = "xenia-viewer-leptos"
+version = "0.1.0-alpha.1"
+edition = "2024"
+rust-version = "1.95"
+authors = ["Tristan Stoltz <tristan.stoltz@evolvingresonantcocreationism.com>"]
+license = "Apache-2.0 OR MIT"
+description = "Leptos CSR frontend for the Xenia daemon viewer -- replaces the vanilla-JS daemon.js UI."
+repository = "https://github.com/Luminous-Dynamics/xenia-wire"
+publish = false
+
+# Standalone crate, not part of the parent xenia-viewer-web workspace --
+# same reasoning as Mycelix's Leptos frontends: a native-WASM Leptos CSR
+# build has its own profile/dependency shape that doesn't belong mixed
+# into the wasm-bindgen library crate it depends on.
+[workspace]
+
+[dependencies]
+# The existing wasm-bindgen library crate as a normal Rust dependency --
+# WasmHandshake/WasmLaneSession/WasmRekeyState/open_lane_frame_inner are
+# plain Rust APIs underneath their #[wasm_bindgen] attributes, so Leptos
+# can call them directly with no JS round-trip at all (open_lane_frame_inner
+# in particular returns a plain Rust OpenedLaneFrame enum, not a JsValue --
+# see its own doc comment on why open_lane_frame_js is a separate, JS-only
+# wrapper around it).
+xenia-viewer-web = { path = ".." }
+
+leptos = { version = "0.8", features = ["csr"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = [
+    "console", "Window", "Document",
+    "HtmlCanvasElement", "CanvasRenderingContext2d", "ImageData",
+    "WebSocket", "MessageEvent", "CloseEvent", "ErrorEvent", "BinaryType",
+    "Performance",
+] }
+console_error_panic_hook = "0.1"
+
+[profile.release]
+opt-level = "z"
+lto = true
