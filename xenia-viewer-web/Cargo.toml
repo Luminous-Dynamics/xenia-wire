@@ -62,6 +62,10 @@ panic-hook = ["dep:console_error_panic_hook"]
 xenia-peer-core = { path = "../../xenia-peer/crates/xenia-peer-core" }
 xenia-handshake = { path = "../../xenia-peer/crates/xenia-handshake" }
 tokio = { version = "1", features = ["macros", "rt"] }
+# Dev-only: lets the HDC cross-compat test drive a REAL native
+# HdcEncoder and assert this crate's WASM-side decode-only
+# reimplementation (src/hdc.rs) produces byte-identical RGBA output.
+xenia-video = { path = "../../xenia-peer/crates/xenia-video", features = ["hdc"] }
 
 [profile.release]
 opt-level = "z"

@@ -34,6 +34,8 @@ use xenia_wire::{
 mod handshake;
 pub use handshake::{WasmHandshake, WasmSessionKeySchedule};
 
+mod hdc;
+
 mod session;
 pub use session::{
     open_lane_frame_inner, open_lane_frame_js, OpenedLaneFrame, WasmLaneSession, WasmRekeyState,

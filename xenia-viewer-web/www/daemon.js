@@ -3,8 +3,8 @@
 
 // Browser viewer for the xenia-peer daemon.
 // Connects over WebSocket, decrypts sealed envelopes via the
-// xenia-wire WASM bindings, parses the passthrough payload, and
-// renders each frame to a canvas.
+// xenia-wire WASM bindings, decodes passthrough or HDC video payloads,
+// and renders each frame to a canvas.
 
 import init, {
   WasmHandshake,
@@ -144,6 +144,11 @@ function handleMessage(event) {
     const frame = openLaneFrame(laneSession, bytes);
     switch (frame.pixel_format) {
       case "passthrough":
+      case "hdc":
+        // Both shapes are { width, height, rgba, frame_id, ... } --
+        // HDC's per-tile delta decode already happened inside
+        // openLaneFrame (WasmLaneSession keeps the persistent HDC
+        // canvas), so drawing is identical to passthrough from here.
         drawFrame(frame);
         break;
       case "capabilities":
@@ -171,8 +176,8 @@ function handleMessage(event) {
         }
         break;
       default:
-        // telemetry / audio / hdc / etc: not decoded by this MVP
-        // viewer (no telemetry panel / WebAudio playback wired here).
+        // telemetry / audio / etc: not decoded by this MVP viewer
+        // (no telemetry panel / WebAudio playback wired here).
         break;
     }
     setError(null);

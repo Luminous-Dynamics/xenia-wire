@@ -26,6 +26,7 @@ use wasm_bindgen::prelude::*;
 use xenia_wire::{Frame, Session as WireSession};
 
 use crate::handshake::derive_labeled_session_key;
+use crate::hdc::HdcDecoderState;
 use crate::{decode_passthrough, set_field, RawFrameShadow, RawPixelFormat};
 
 const LANE_ENVELOPE_MAGIC: [u8; 4] = *b"XLN1";
@@ -211,6 +212,10 @@ pub struct WasmLaneSession {
     video: WireSession,
     audio: WireSession,
     telemetry: WireSession,
+    /// HDC delta-decode state for the video lane. Lazily primed by the
+    /// first keyframe; a fresh session (or one that never sees an HDC
+    /// frame, e.g. passthrough/H.264 codec) just never touches this.
+    hdc: HdcDecoderState,
 }
 
 #[wasm_bindgen]
@@ -222,6 +227,7 @@ impl WasmLaneSession {
             video: WireSession::new(),
             audio: WireSession::new(),
             telemetry: WireSession::new(),
+            hdc: HdcDecoderState::default(),
         }
     }
 
@@ -280,7 +286,20 @@ pub enum OpenedLaneFrame {
         reason: &'static str,
         epoch_hash: [u8; 32],
     },
-    /// Telemetry / audio / hdc / anything else this MVP viewer doesn't
+    /// HDC hybrid tile-delta codec frame (video lane), patched into
+    /// this session's persistent HDC canvas and returned fully
+    /// decoded as RGBA -- same shape as `Passthrough`. `pts_ms` here
+    /// is the codec's own source-time timestamp (from `HdcPacket`),
+    /// which may differ slightly from the outer `RawFrame.timestamp_ms`.
+    Hdc {
+        frame_id: u64,
+        timestamp_ms: u64,
+        pts_ms: u64,
+        width: u32,
+        height: u32,
+        rgba: Vec<u8>,
+    },
+    /// Telemetry / audio / anything else this MVP viewer doesn't
     /// decode further (no telemetry panel / WebAudio playback wired
     /// here yet).
     Other {
@@ -328,6 +347,20 @@ pub fn open_lane_frame_inner(
                 width,
                 height,
                 rgba: body.to_vec(),
+            }
+        }
+        RawPixelFormat::Hdc => {
+            let decoded = session
+                .hdc
+                .decode(&raw.pixels)
+                .map_err(|e| format!("HDC decode: {e}"))?;
+            OpenedLaneFrame::Hdc {
+                frame_id: raw.frame_id,
+                timestamp_ms: raw.timestamp_ms,
+                pts_ms: decoded.pts_ms,
+                width: decoded.width,
+                height: decoded.height,
+                rgba: decoded.rgba,
             }
         }
         RawPixelFormat::Capabilities => {
@@ -381,6 +414,12 @@ pub fn open_lane_frame_inner(
 ///
 /// - `"passthrough"` (video lane): `{ lane, pixel_format, frame_id,
 ///   timestamp_ms, width, height, rgba }`
+/// - `"hdc"` (video lane): `{ lane, pixel_format, frame_id,
+///   timestamp_ms, pts_ms, width, height, rgba }` -- same shape as
+///   `"passthrough"` plus `pts_ms` (the HDC codec's own source-time
+///   timestamp). The tile-delta patching happens internally against
+///   this session's persistent HDC canvas; callers just get back a
+///   fully-decoded RGBA frame each time, keyframe or delta alike.
 /// - `"capabilities"` (control lane): `{ lane, pixel_format, frame_id,
 ///   timestamp_ms, telemetry_enabled, input_control_enabled }`
 /// - `"rekey"` (control lane, proposal only -- the browser only ever
@@ -388,11 +427,10 @@ pub fn open_lane_frame_inner(
 ///   frame_id, timestamp_ms, rekey_kind: "proposal", key_epoch,
 ///   base_transcript_hash, previous_epoch_hash, reason, epoch_hash }`.
 ///   Pass these fields straight to `WasmRekeyState.handleProposal`.
-/// - anything else (telemetry / audio / hdc / …): `{ lane,
-///   pixel_format, frame_id, timestamp_ms }` only -- payload decode
-///   isn't wired for these lanes in this MVP viewer (no telemetry
-///   panel / WebAudio playback here); extend this function if that's
-///   needed later.
+/// - anything else (telemetry / audio / …): `{ lane, pixel_format,
+///   frame_id, timestamp_ms }` only -- payload decode isn't wired for
+///   these lanes in this MVP viewer (no telemetry panel / WebAudio
+///   playback here); extend this function if that's needed later.
 #[wasm_bindgen(js_name = openLaneFrame)]
 pub fn open_lane_frame_js(
     session: &mut WasmLaneSession,
@@ -413,6 +451,27 @@ pub fn open_lane_frame_js(
             set_field(&obj, "pixel_format", JsValue::from_str("passthrough"))?;
             set_field(&obj, "frame_id", JsValue::from(frame_id as f64))?;
             set_field(&obj, "timestamp_ms", JsValue::from(timestamp_ms as f64))?;
+            set_field(&obj, "width", JsValue::from(width as f64))?;
+            set_field(&obj, "height", JsValue::from(height as f64))?;
+            set_field(
+                &obj,
+                "rgba",
+                js_sys::Uint8Array::from(rgba.as_slice()).into(),
+            )?;
+        }
+        OpenedLaneFrame::Hdc {
+            frame_id,
+            timestamp_ms,
+            pts_ms,
+            width,
+            height,
+            rgba,
+        } => {
+            set_field(&obj, "lane", JsValue::from_str("video"))?;
+            set_field(&obj, "pixel_format", JsValue::from_str("hdc"))?;
+            set_field(&obj, "frame_id", JsValue::from(frame_id as f64))?;
+            set_field(&obj, "timestamp_ms", JsValue::from(timestamp_ms as f64))?;
+            set_field(&obj, "pts_ms", JsValue::from(pts_ms as f64))?;
             set_field(&obj, "width", JsValue::from(width as f64))?;
             set_field(&obj, "height", JsValue::from(height as f64))?;
             set_field(
