@@ -3,7 +3,8 @@
 
 // Browser viewer for the xenia-peer daemon.
 // Connects over WebSocket, decrypts sealed envelopes via the
-// xenia-wire WASM bindings, decodes passthrough or HDC video payloads,
+// xenia-wire WASM bindings, decodes passthrough/HDC/H.264 video
+// payloads (H.264 via the browser's native WebCodecs VideoDecoder),
 // and renders each frame to a canvas.
 
 import init, {
@@ -38,6 +39,13 @@ let rekeyState = null;    // WasmRekeyState -- continuous rekey epoch tracking
 let socket = null;
 let frameCount = 0;
 let recentFrameTimes = [];
+// WebCodecs H.264 decode (M4.1b). Lazily created once the first h264
+// frame's codec_string is known (needs a real SPS-derived profile/
+// level, not a guess -- see src/h264.rs). Torn down on disconnect,
+// since a fresh session may reconnect at a different resolution/codec.
+let h264Decoder = null;
+let h264Configured = false;
+let h264SeenKeyframe = false;
 // Real PQC handshake state machine (ML-KEM-768 + Ed25519 + HKDF-SHA-256,
 // see src/handshake.rs). The daemon always speaks this handshake first —
 // "awaiting-hello": expecting the daemon's HostHello as the first binary
@@ -66,6 +74,69 @@ function updateFps() {
 function resizeCanvas(w, h) {
   if (canvas.width !== w) canvas.width = w;
   if (canvas.height !== h) canvas.height = h;
+}
+
+// Draw a decoded VideoFrame (from the WebCodecs H.264 decoder's output
+// callback) to the canvas, then release it -- VideoFrames hold real
+// GPU/native memory and MUST be closed promptly or the browser leaks.
+function drawVideoFrame(videoFrame) {
+  try {
+    resizeCanvas(videoFrame.displayWidth, videoFrame.displayHeight);
+    ctx.drawImage(videoFrame, 0, 0, videoFrame.displayWidth, videoFrame.displayHeight);
+
+    frameCount += 1;
+    sFrames.textContent = String(frameCount);
+    sLast.textContent = `${videoFrame.displayWidth}×${videoFrame.displayHeight} (h264)`;
+
+    const now = performance.now();
+    recentFrameTimes.push(now);
+    while (recentFrameTimes.length > 32) recentFrameTimes.shift();
+    updateFps();
+  } finally {
+    videoFrame.close();
+  }
+}
+
+// Feed one h264-tagged lane frame (as returned by openLaneFrame) into
+// the WebCodecs decoder, configuring it lazily the first time a
+// codec_string is available (typically the very first, keyframe,
+// packet -- see h264.rs's sps_codec_string doc comment).
+function handleH264Frame(frame) {
+  if (typeof VideoDecoder === "undefined") {
+    setError("this browser has no WebCodecs VideoDecoder; H.264 playback unavailable");
+    return;
+  }
+  if (!h264Decoder) {
+    h264Decoder = new VideoDecoder({
+      output: drawVideoFrame,
+      error: (e) => setError(`VideoDecoder: ${e.message || e}`),
+    });
+  }
+  if (!h264Configured) {
+    if (!frame.codec_string) {
+      // No SPS yet (mid-stream reconnect landed on a delta packet) --
+      // can't configure without a real profile/level. Drop until a
+      // keyframe (which always carries an inline SPS) arrives.
+      return;
+    }
+    h264Decoder.configure({ codec: frame.codec_string, avc: { format: "annexb" } });
+    h264Configured = true;
+  }
+  if (frame.is_keyframe) {
+    h264SeenKeyframe = true;
+  } else if (!h264SeenKeyframe) {
+    // A decoder can't do anything useful with a delta before it's
+    // seen a real keyframe (WebCodecs throws on this) -- drop until
+    // the next one arrives, same as HDC's "delta before keyframe" gate.
+    return;
+  }
+  h264Decoder.decode(
+    new EncodedVideoChunk({
+      type: frame.is_keyframe ? "key" : "delta",
+      timestamp: frame.timestamp_ms * 1000, // WebCodecs wants microseconds
+      data: frame.bytes,
+    }),
+  );
 }
 
 function drawFrame(frame) {
@@ -151,6 +222,11 @@ function handleMessage(event) {
         // canvas), so drawing is identical to passthrough from here.
         drawFrame(frame);
         break;
+      case "h264":
+        // Undecoded Annex-B bytes -- actual decode happens in the
+        // browser's native VideoDecoder (WebCodecs), not in WASM.
+        handleH264Frame(frame);
+        break;
       case "capabilities":
         // Session-control metadata only; nothing to render.
         break;
@@ -206,6 +282,12 @@ function disconnect() {
   handshakeStage = "idle";
   frameCount = 0;
   recentFrameTimes = [];
+  if (h264Decoder && h264Decoder.state !== "closed") {
+    try { h264Decoder.close(); } catch {}
+  }
+  h264Decoder = null;
+  h264Configured = false;
+  h264SeenKeyframe = false;
   sFrames.textContent = "0";
   sLast.textContent = "–";
   sFps.textContent = "–";

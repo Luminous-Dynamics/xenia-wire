@@ -34,6 +34,8 @@ use xenia_wire::{
 mod handshake;
 pub use handshake::{WasmHandshake, WasmSessionKeySchedule};
 
+mod h264;
+
 mod hdc;
 
 mod session;

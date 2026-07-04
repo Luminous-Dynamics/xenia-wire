@@ -53,6 +53,12 @@ getrandom4 = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
 [features]
 default = ["panic-hook"]
 panic-hook = ["dep:console_error_panic_hook"]
+# Opt-in: activates xenia-video's `h264` feature (ffmpeg-next/libx264,
+# requires libav dev headers) so tests/h264_cross_compat.rs can run.
+# Run inside `nix develop` from the xenia-peer workspace (this repo
+# has no flake of its own): `cargo test --features h264-test --test
+# h264_cross_compat`.
+h264-test = ["xenia-video/h264"]
 
 [dev-dependencies]
 # Dev-only: lets the cross-implementation handshake test drive a REAL
@@ -65,7 +71,19 @@ tokio = { version = "1", features = ["macros", "rt"] }
 # Dev-only: lets the HDC cross-compat test drive a REAL native
 # HdcEncoder and assert this crate's WASM-side decode-only
 # reimplementation (src/hdc.rs) produces byte-identical RGBA output.
+# The h264 cross-compat test additionally needs xenia-video's own
+# `h264` feature (ffmpeg-next/libx264, requires libav dev headers) --
+# gated behind this crate's own `h264-test` feature (below) so a plain
+# `cargo test` doesn't force every contributor to have libav headers
+# installed just to run the HDC/handshake tests.
 xenia-video = { path = "../../xenia-peer/crates/xenia-video", features = ["hdc"] }
+
+# Skipped by a plain `cargo test` / `cargo test --workspace` -- needs
+# `--features h264-test` (and libav dev headers via `nix develop` from
+# the xenia-peer workspace) to actually run.
+[[test]]
+name = "h264_cross_compat"
+required-features = ["h264-test"]
 
 [profile.release]
 opt-level = "z"

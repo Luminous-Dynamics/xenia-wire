@@ -27,7 +27,7 @@ use xenia_wire::{Frame, Session as WireSession};
 
 use crate::handshake::derive_labeled_session_key;
 use crate::hdc::HdcDecoderState;
-use crate::{decode_passthrough, set_field, RawFrameShadow, RawPixelFormat};
+use crate::{decode_passthrough, h264, set_field, RawFrameShadow, RawPixelFormat};
 
 const LANE_ENVELOPE_MAGIC: [u8; 4] = *b"XLN1";
 const LANE_ENVELOPE_HEADER_LEN: usize = 5;
@@ -286,6 +286,23 @@ pub enum OpenedLaneFrame {
         reason: &'static str,
         epoch_hash: [u8; 32],
     },
+    /// H.264 Annex-B access unit (video lane) -- undecoded. Actual
+    /// decode happens in the browser's native `VideoDecoder` (WebCodecs),
+    /// not here; this just recovers the two things the wire format
+    /// doesn't carry that `EncodedVideoChunk`/`configure()` need: a
+    /// keyframe flag (scanned for an IDR NAL) and, when this chunk
+    /// contains a SPS, a codec string derived from its actual
+    /// profile/constraint-flags/level bytes (see `h264.rs`).
+    H264 {
+        frame_id: u64,
+        timestamp_ms: u64,
+        is_keyframe: bool,
+        /// `Some` only for chunks that contain a SPS NAL (typically
+        /// the first keyframe, and any keyframe after a dimension
+        /// change) -- present once is enough to configure the decoder.
+        codec_string: Option<String>,
+        bytes: Vec<u8>,
+    },
     /// HDC hybrid tile-delta codec frame (video lane), patched into
     /// this session's persistent HDC canvas and returned fully
     /// decoded as RGBA -- same shape as `Passthrough`. `pts_ms` here
@@ -349,6 +366,13 @@ pub fn open_lane_frame_inner(
                 rgba: body.to_vec(),
             }
         }
+        RawPixelFormat::H264 => OpenedLaneFrame::H264 {
+            frame_id: raw.frame_id,
+            timestamp_ms: raw.timestamp_ms,
+            is_keyframe: h264::is_keyframe_chunk(&raw.pixels),
+            codec_string: h264::sps_codec_string(&raw.pixels),
+            bytes: raw.pixels,
+        },
         RawPixelFormat::Hdc => {
             let decoded = session
                 .hdc
@@ -414,6 +438,12 @@ pub fn open_lane_frame_inner(
 ///
 /// - `"passthrough"` (video lane): `{ lane, pixel_format, frame_id,
 ///   timestamp_ms, width, height, rgba }`
+/// - `"h264"` (video lane): `{ lane, pixel_format, frame_id,
+///   timestamp_ms, is_keyframe, codec_string, bytes }` -- undecoded
+///   Annex-B bytes; feed `bytes` to a WebCodecs `VideoDecoder` as an
+///   `EncodedVideoChunk` (`type: is_keyframe ? "key" : "delta"`).
+///   `codec_string` is `null` unless this chunk contains a SPS (use it
+///   to `configure()` the decoder the first time it's non-null).
 /// - `"hdc"` (video lane): `{ lane, pixel_format, frame_id,
 ///   timestamp_ms, pts_ms, width, height, rgba }` -- same shape as
 ///   `"passthrough"` plus `pts_ms` (the HDC codec's own source-time
@@ -457,6 +487,32 @@ pub fn open_lane_frame_js(
                 &obj,
                 "rgba",
                 js_sys::Uint8Array::from(rgba.as_slice()).into(),
+            )?;
+        }
+        OpenedLaneFrame::H264 {
+            frame_id,
+            timestamp_ms,
+            is_keyframe,
+            codec_string,
+            bytes,
+        } => {
+            set_field(&obj, "lane", JsValue::from_str("video"))?;
+            set_field(&obj, "pixel_format", JsValue::from_str("h264"))?;
+            set_field(&obj, "frame_id", JsValue::from(frame_id as f64))?;
+            set_field(&obj, "timestamp_ms", JsValue::from(timestamp_ms as f64))?;
+            set_field(&obj, "is_keyframe", JsValue::from_bool(is_keyframe))?;
+            set_field(
+                &obj,
+                "codec_string",
+                match codec_string {
+                    Some(s) => JsValue::from_str(&s),
+                    None => JsValue::NULL,
+                },
+            )?;
+            set_field(
+                &obj,
+                "bytes",
+                js_sys::Uint8Array::from(bytes.as_slice()).into(),
             )?;
         }
         OpenedLaneFrame::Hdc {
