@@ -174,6 +174,7 @@ pub(crate) enum RawPixelFormat {
     Audio = 241,
     Capabilities = 242,
     Rekey = 243,
+    Clipboard = 244,
 }
 
 /// Shadow of `xenia_peer_core::frame::RawFrame`. Field order matches

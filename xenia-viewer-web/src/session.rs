@@ -125,6 +125,7 @@ struct RawCapabilitiesShadow {
     video_format: RawPixelFormat,
     telemetry_enabled: bool,
     input_control_enabled: bool,
+    clipboard_enabled: bool,
     lane_envelope_version: u16,
     lane_envelope_magic: [u8; 4],
 }
@@ -276,6 +277,7 @@ pub enum OpenedLaneFrame {
         timestamp_ms: u64,
         telemetry_enabled: bool,
         input_control_enabled: bool,
+        clipboard_enabled: bool,
     },
     RekeyProposal {
         frame_id: u64,
@@ -395,6 +397,7 @@ pub fn open_lane_frame_inner(
                 timestamp_ms: raw.timestamp_ms,
                 telemetry_enabled: caps.telemetry_enabled,
                 input_control_enabled: caps.input_control_enabled,
+                clipboard_enabled: caps.clipboard_enabled,
             }
         }
         RawPixelFormat::Rekey => {
@@ -451,7 +454,8 @@ pub fn open_lane_frame_inner(
 ///   this session's persistent HDC canvas; callers just get back a
 ///   fully-decoded RGBA frame each time, keyframe or delta alike.
 /// - `"capabilities"` (control lane): `{ lane, pixel_format, frame_id,
-///   timestamp_ms, telemetry_enabled, input_control_enabled }`
+///   timestamp_ms, telemetry_enabled, input_control_enabled,
+///   clipboard_enabled }`
 /// - `"rekey"` (control lane, proposal only -- the browser only ever
 ///   *receives* proposals, never acks): `{ lane, pixel_format,
 ///   frame_id, timestamp_ms, rekey_kind: "proposal", key_epoch,
@@ -541,6 +545,7 @@ pub fn open_lane_frame_js(
             timestamp_ms,
             telemetry_enabled,
             input_control_enabled,
+            clipboard_enabled,
         } => {
             set_field(&obj, "lane", JsValue::from_str("control"))?;
             set_field(&obj, "pixel_format", JsValue::from_str("capabilities"))?;
@@ -555,6 +560,11 @@ pub fn open_lane_frame_js(
                 &obj,
                 "input_control_enabled",
                 JsValue::from_bool(input_control_enabled),
+            )?;
+            set_field(
+                &obj,
+                "clipboard_enabled",
+                JsValue::from_bool(clipboard_enabled),
             )?;
         }
         OpenedLaneFrame::RekeyProposal {
