@@ -17,9 +17,10 @@
 //! is a separate wrapper specifically for JS callers; see its own doc
 //! comment).
 //!
-//! Currently reproduces daemon.js's passthrough/HDC rendering path.
-//! WebCodecs H.264 decode and clipboard UI are follow-up scope -- see
-//! ROADMAP.md.
+//! Reproduces daemon.js's passthrough/HDC/H.264 rendering path.
+//! Clipboard UI is still follow-up scope -- see ROADMAP.md.
+
+mod h264;
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -32,6 +33,8 @@ use web_sys::{
     BinaryType, CanvasRenderingContext2d, HtmlCanvasElement, ImageData, MessageEvent, WebSocket,
 };
 use xenia_viewer_web::{OpenedLaneFrame, WasmHandshake, WasmLaneSession, WasmRekeyState};
+
+use h264::H264Player;
 
 const DEFAULT_URL: &str = "ws://127.0.0.1:4747";
 
@@ -70,6 +73,7 @@ struct Connection {
     stage: HandshakeStage,
     lane_session: Option<WasmLaneSession>,
     rekey_state: Option<WasmRekeyState>,
+    h264_player: Option<H264Player>,
 }
 
 #[derive(Clone, Copy)]
@@ -102,7 +106,10 @@ fn draw_rgba(
     if let Ok(image_data) =
         ImageData::new_with_u8_clamped_array_and_sh(wasm_bindgen::Clamped(&mut rgba), width, height)
     {
-        let _ = ctx.put_image_data(&image_data, 0.0, 0.0);
+        // With `web_sys_unstable_apis` enabled (needed for WebCodecs
+        // below), web-sys swaps in the newer i32-arg put_image_data
+        // overload in place of the stable f64-arg one.
+        let _ = ctx.put_image_data(&image_data, 0, 0);
     }
 }
 
@@ -209,9 +216,28 @@ fn handle_message(
                         Err(e) => ui.err.set(format!("rekey: {e:?}")),
                     }
                 }
-                Ok(OpenedLaneFrame::H264 { .. }) => {
-                    // WebCodecs H.264 decode is follow-up scope for the
-                    // Leptos app -- not wired yet.
+                Ok(OpenedLaneFrame::H264 {
+                    is_keyframe,
+                    codec_string,
+                    bytes,
+                    timestamp_ms,
+                    ..
+                }) => {
+                    if conn_mut.h264_player.is_none() {
+                        match H264Player::new(ctx.clone(), canvas.clone(), ui) {
+                            Ok(player) => conn_mut.h264_player = Some(player),
+                            Err(e) => {
+                                ui.err.set(format!("VideoDecoder construction: {e:?}"));
+                                return;
+                            }
+                        }
+                    }
+                    if let Some(player) = conn_mut.h264_player.as_mut()
+                        && let Err(e) =
+                            player.handle_frame(is_keyframe, codec_string, timestamp_ms, &bytes)
+                    {
+                        ui.err.set(format!("H264 decode: {e:?}"));
+                    }
                 }
                 Ok(OpenedLaneFrame::Capabilities { .. } | OpenedLaneFrame::Other { .. }) => {}
                 Err(e) => ui.err.set(e),
@@ -262,6 +288,7 @@ fn App() -> impl IntoView {
                 stage: HandshakeStage::AwaitingHello,
                 lane_session: None,
                 rekey_state: None,
+                h264_player: None,
             });
             ui.conn_state.set(ConnState::Handshaking);
             ui.err.set("–".to_string());

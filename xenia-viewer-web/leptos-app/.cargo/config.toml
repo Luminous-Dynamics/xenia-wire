@@ -1,0 +1,9 @@
+# web-sys gates WebCodecs (VideoDecoder/EncodedVideoChunk/VideoFrame) behind
+# this cfg flag since the spec is still in flux -- see
+# https://wasm-bindgen.github.io/wasm-bindgen/web-sys/unstable-apis.html.
+# Without it, `#[cfg(web_sys_unstable_apis)]` compiles the bindings out
+# entirely (not a feature-flag error at the call site, just a missing-type
+# error), which is what made VideoDecoder/EncodedVideoChunkInit/etc. seem
+# "unrecognized" to `cargo add`'s feature validation earlier.
+[build]
+rustflags = ["--cfg=web_sys_unstable_apis"]
