@@ -181,6 +181,26 @@ enum RawRekeyShadow {
     },
 }
 
+/// Shadow of `xenia_peer_core::frame::ClipboardContent`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[allow(dead_code)]
+enum ClipboardContentShadow {
+    Text(String),
+    Cleared,
+}
+
+/// Shadow of `xenia_peer_core::frame::RawClipboard` (forward path only --
+/// host-to-viewer clipboard updates ride the lane-envelope system as a
+/// `PixelFormat::Clipboard` frame; the browser never seals one of these
+/// itself, only decodes what the daemon sends).
+#[derive(Debug, Clone, serde::Deserialize)]
+#[allow(dead_code)]
+struct RawClipboardShadow {
+    sequence: u64,
+    timestamp_ms: u64,
+    content: ClipboardContentShadow,
+}
+
 /// Shadow of `xenia_handshake::RekeyEpochContextV1` -- used only to
 /// recompute `epoch_hash()` (BLAKE3-256 of the canonical bincode
 /// bytes) for validating an inbound proposal.
@@ -257,6 +277,13 @@ impl Default for WasmLaneSession {
     }
 }
 
+/// Decoded clipboard content, mirroring `xenia_peer_core::frame::ClipboardContent`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ClipboardContent {
+    Text(String),
+    Cleared,
+}
+
 /// Plain-Rust decode result for a lane-enveloped frame -- no `JsValue`
 /// touched, so this can run on native test targets (constructing a
 /// `JsValue`/`JsError` panics outside a real JS host; see
@@ -278,6 +305,17 @@ pub enum OpenedLaneFrame {
         telemetry_enabled: bool,
         input_control_enabled: bool,
         clipboard_enabled: bool,
+    },
+    /// Host-to-viewer clipboard update (control lane). The reverse
+    /// direction (viewer-to-host) isn't wired here -- the browser
+    /// Clipboard API's read side needs focus + a permission prompt and
+    /// has no change event to poll against, unlike the native viewer's
+    /// OS-level clipboard watcher.
+    Clipboard {
+        frame_id: u64,
+        timestamp_ms: u64,
+        sequence: u64,
+        content: ClipboardContent,
     },
     RekeyProposal {
         frame_id: u64,
@@ -398,6 +436,19 @@ pub fn open_lane_frame_inner(
                 telemetry_enabled: caps.telemetry_enabled,
                 input_control_enabled: caps.input_control_enabled,
                 clipboard_enabled: caps.clipboard_enabled,
+            }
+        }
+        RawPixelFormat::Clipboard => {
+            let clip: RawClipboardShadow = bincode::deserialize(&raw.pixels)
+                .map_err(|e| format!("RawClipboard bincode decode: {e}"))?;
+            OpenedLaneFrame::Clipboard {
+                frame_id: raw.frame_id,
+                timestamp_ms: raw.timestamp_ms,
+                sequence: clip.sequence,
+                content: match clip.content {
+                    ClipboardContentShadow::Text(s) => ClipboardContent::Text(s),
+                    ClipboardContentShadow::Cleared => ClipboardContent::Cleared,
+                },
             }
         }
         RawPixelFormat::Rekey => {
@@ -566,6 +617,27 @@ pub fn open_lane_frame_js(
                 "clipboard_enabled",
                 JsValue::from_bool(clipboard_enabled),
             )?;
+        }
+        OpenedLaneFrame::Clipboard {
+            frame_id,
+            timestamp_ms,
+            sequence,
+            content,
+        } => {
+            set_field(&obj, "lane", JsValue::from_str("control"))?;
+            set_field(&obj, "pixel_format", JsValue::from_str("clipboard"))?;
+            set_field(&obj, "frame_id", JsValue::from(frame_id as f64))?;
+            set_field(&obj, "timestamp_ms", JsValue::from(timestamp_ms as f64))?;
+            set_field(&obj, "sequence", JsValue::from(sequence as f64))?;
+            match content {
+                ClipboardContent::Text(text) => {
+                    set_field(&obj, "content_kind", JsValue::from_str("text"))?;
+                    set_field(&obj, "content_text", JsValue::from_str(&text))?;
+                }
+                ClipboardContent::Cleared => {
+                    set_field(&obj, "content_kind", JsValue::from_str("cleared"))?;
+                }
+            }
         }
         OpenedLaneFrame::RekeyProposal {
             frame_id,

@@ -40,7 +40,8 @@ mod hdc;
 
 mod session;
 pub use session::{
-    open_lane_frame_inner, open_lane_frame_js, OpenedLaneFrame, WasmLaneSession, WasmRekeyState,
+    open_lane_frame_inner, open_lane_frame_js, ClipboardContent, OpenedLaneFrame, WasmLaneSession,
+    WasmRekeyState,
 };
 
 /// Install the panic hook so Rust panics surface in the browser console

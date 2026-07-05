@@ -17,8 +17,10 @@
 //! is a separate wrapper specifically for JS callers; see its own doc
 //! comment).
 //!
-//! Reproduces daemon.js's passthrough/HDC/H.264 rendering path.
-//! Clipboard UI is still follow-up scope -- see ROADMAP.md.
+//! Reproduces daemon.js's passthrough/HDC/H.264 rendering path, plus
+//! host-to-viewer clipboard sync (write-only -- see the module doc
+//! comment on `apply_clipboard_content` for why the reverse direction
+//! isn't wired here).
 
 mod h264;
 
@@ -32,9 +34,34 @@ use wasm_bindgen::JsCast;
 use web_sys::{
     BinaryType, CanvasRenderingContext2d, HtmlCanvasElement, ImageData, MessageEvent, WebSocket,
 };
-use xenia_viewer_web::{OpenedLaneFrame, WasmHandshake, WasmLaneSession, WasmRekeyState};
+use xenia_viewer_web::{ClipboardContent, OpenedLaneFrame, WasmHandshake, WasmLaneSession, WasmRekeyState};
 
 use h264::H264Player;
+
+/// Apply a daemon-originated clipboard update to the browser's clipboard.
+/// Write-only: `navigator.clipboard.writeText` needs no special
+/// permission in most browsers when called from a user-gesture-adjacent
+/// context, unlike `readText` (permission prompt + requires document
+/// focus) -- and there's no clipboard "change" event to poll against
+/// even if read access were granted. The native viewer's bidirectional
+/// OS-level clipboard watching has no real browser equivalent, so the
+/// reverse (viewer-to-host) direction isn't wired here.
+fn apply_clipboard_content(content: ClipboardContent, ui: UiState) {
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let text = match content {
+        ClipboardContent::Text(text) => text,
+        ClipboardContent::Cleared => String::new(),
+    };
+    let clipboard = window.navigator().clipboard();
+    let promise = clipboard.write_text(&text);
+    wasm_bindgen_futures::spawn_local(async move {
+        if let Err(e) = wasm_bindgen_futures::JsFuture::from(promise).await {
+            ui.err.set(format!("clipboard write failed: {e:?}"));
+        }
+    });
+}
 
 const DEFAULT_URL: &str = "ws://127.0.0.1:4747";
 
@@ -238,6 +265,9 @@ fn handle_message(
                     {
                         ui.err.set(format!("H264 decode: {e:?}"));
                     }
+                }
+                Ok(OpenedLaneFrame::Clipboard { content, .. }) => {
+                    apply_clipboard_content(content, ui);
                 }
                 Ok(OpenedLaneFrame::Capabilities { .. } | OpenedLaneFrame::Other { .. }) => {}
                 Err(e) => ui.err.set(e),
