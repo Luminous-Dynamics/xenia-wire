@@ -55,6 +55,36 @@ let h264SeenKeyframe = false;
 // handleMessage's "done" branch).
 let handshake = null;
 let handshakeStage = "idle";
+// The daemon URL of the current connection, captured at connect time so the
+// trust-on-first-use check below can key the pinned host fingerprint by it.
+let daemonUrl = null;
+
+// Trust-on-first-use host verification, the browser counterpart to the native
+// viewer's --known-hosts. The finished handshake schedule carries
+// host_identity_fingerprint (a 32-byte Uint8Array, computed byte-identically
+// to the native side). We pin it per daemon URL in localStorage: first contact
+// records it; a later mismatch aborts the session (an active MITM presenting
+// substitute keys yields a different fingerprint).
+function verifyHostIdentity(url, fingerprintBytes) {
+  const hex = Array.from(fingerprintBytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  const key = `xenia-known-host:${url}`;
+  const pinned = localStorage.getItem(key);
+  if (pinned === null) {
+    localStorage.setItem(key, hex);
+    console.info(`[xenia] pinned host identity for ${url} on first use: ${hex}`);
+    return;
+  }
+  if (pinned.toLowerCase() !== hex.toLowerCase()) {
+    throw new Error(
+      `host identity fingerprint changed for ${url}: pinned ${pinned}, host ` +
+        `presented ${hex} -- refusing to connect (possible man-in-the-middle). ` +
+        `Clear this host from localStorage if the change is expected.`,
+    );
+  }
+  console.info(`[xenia] host identity verified for ${url}: ${hex}`);
+}
 
 function setState(s, color) {
   sState.textContent = s;
@@ -194,6 +224,10 @@ function handleMessage(event) {
       // keys each traffic lane independently post-handshake, so a
       // single aead key can't decode anything past this point.
       const schedule = handshake.finish(bytes);
+      // Verify the host's identity before treating the session as trusted.
+      // Throws on a fingerprint mismatch, which the catch below turns into a
+      // visible error + disconnect.
+      verifyHostIdentity(daemonUrl, schedule.host_identity_fingerprint);
       laneSession = new WasmLaneSession();
       laneSession.installSchedule(schedule.control, schedule.video, schedule.audio, schedule.telemetry);
       rekeyState = new WasmRekeyState(schedule.rekey, schedule.transcript_hash);
@@ -302,6 +336,7 @@ function connect() {
     setError("URL must start with ws:// or wss://");
     return;
   }
+  daemonUrl = url;
 
   setError(null);
   setState("connecting…", "var(--accent)");

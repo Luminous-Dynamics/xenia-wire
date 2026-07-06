@@ -75,6 +75,17 @@ async fn wasm_viewer_handshake_matches_native_host() {
     );
     assert_schedules_match(&viewer_schedule, &outcome.key_schedule);
     assert_eq!(viewer_schedule.transcript_hash, outcome.transcript_hash);
+    // The browser must compute the same host-identity fingerprint the native
+    // side does, so a value pinned by one refers to the same host in the
+    // other -- this is what makes browser TOFU interoperable with native.
+    assert_eq!(
+        viewer_schedule.host_identity_fingerprint, outcome.host_identity_fingerprint,
+        "browser host-identity fingerprint must match native byte-for-byte"
+    );
+    assert_ne!(
+        viewer_schedule.host_identity_fingerprint, [0u8; 32],
+        "fingerprint must be populated"
+    );
 }
 
 /// Assert every lane key in the WASM-derived schedule matches the

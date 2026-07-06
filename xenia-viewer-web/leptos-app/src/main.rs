@@ -97,10 +97,51 @@ enum HandshakeStage {
 /// with real cryptographic state, not UI state.
 struct Connection {
     socket: WebSocket,
+    /// The daemon URL of this connection, used to key the trust-on-first-use
+    /// host fingerprint in localStorage.
+    daemon_url: String,
     stage: HandshakeStage,
     lane_session: Option<WasmLaneSession>,
     rekey_state: Option<WasmRekeyState>,
     h264_player: Option<H264Player>,
+}
+
+/// Trust-on-first-use host verification (browser counterpart to the native
+/// viewer's `--known-hosts`). Pins the host's identity fingerprint per daemon
+/// URL in localStorage; first contact records it, a later mismatch is refused
+/// (an active MITM presenting substitute keys yields a different fingerprint).
+fn verify_host_identity_tofu(daemon_url: &str, fingerprint: &[u8; 32]) -> Result<(), String> {
+    let hex: String = fingerprint.iter().map(|b| format!("{b:02x}")).collect();
+    let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) else {
+        // No localStorage (private mode, etc.): can't pin. Surface the
+        // fingerprint but don't hard-fail -- matches the native "no
+        // --known-hosts" default of logging without pinning.
+        web_sys::console::warn_1(
+            &format!("[xenia] host identity NOT pinned (no localStorage): {hex}").into(),
+        );
+        return Ok(());
+    };
+    let key = format!("xenia-known-host:{daemon_url}");
+    match storage.get_item(&key).ok().flatten() {
+        None => {
+            let _ = storage.set_item(&key, &hex);
+            web_sys::console::info_1(
+                &format!("[xenia] pinned host identity for {daemon_url} on first use: {hex}").into(),
+            );
+            Ok(())
+        }
+        Some(pinned) if pinned.eq_ignore_ascii_case(&hex) => {
+            web_sys::console::info_1(
+                &format!("[xenia] host identity verified for {daemon_url}: {hex}").into(),
+            );
+            Ok(())
+        }
+        Some(pinned) => Err(format!(
+            "host identity fingerprint changed for {daemon_url}: pinned {pinned}, host \
+             presented {hex} -- refusing (possible man-in-the-middle). Clear this host \
+             from localStorage if the change is expected."
+        )),
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -164,6 +205,12 @@ fn handle_message(
         }
         HandshakeStage::AwaitingFinalize(handshake) => match handshake.finish_inner(&bytes) {
             Ok(schedule) => {
+                if let Err(e) =
+                    verify_host_identity_tofu(&conn_mut.daemon_url, &schedule.host_identity_fingerprint)
+                {
+                    ui.err.set(e);
+                    return;
+                }
                 let mut lane_session = WasmLaneSession::new();
                 if let Err(e) = lane_session.install_schedule(
                     &schedule.control,
@@ -307,7 +354,8 @@ fn App() -> impl IntoView {
                 .unwrap()
                 .unchecked_into();
 
-            let Ok(socket) = WebSocket::new(&url.get_untracked()) else {
+            let daemon_url = url.get_untracked();
+            let Ok(socket) = WebSocket::new(&daemon_url) else {
                 ui.err.set("failed to construct WebSocket".to_string());
                 return;
             };
@@ -315,6 +363,7 @@ fn App() -> impl IntoView {
 
             *connection.borrow_mut() = Some(Connection {
                 socket: socket.clone(),
+                daemon_url,
                 stage: HandshakeStage::AwaitingHello,
                 lane_session: None,
                 rekey_state: None,

@@ -318,11 +318,23 @@ pub struct WasmSessionKeySchedule {
     /// construct a `WasmRekeyState` (which needs it to validate future
     /// rekey proposals) from this one return value.
     pub transcript_hash: [u8; 32],
+    /// BLAKE3 fingerprint of the host's signing identity (Ed25519 ||
+    /// ML-DSA-65), byte-identical to native `xenia_handshake`'s
+    /// `host_identity_fingerprint`. The browser pins this (localStorage
+    /// known-hosts) to detect an active MITM that substituted its own keys
+    /// in HostHello -- the browser's counterpart to the native viewer's
+    /// `--known-hosts` / `--host-fingerprint`.
+    pub host_identity_fingerprint: [u8; 32],
 }
 
 impl WasmSessionKeySchedule {
-    fn derive(root_key: &[u8; 32], transcript_hash: [u8; 32]) -> Self {
+    fn derive(
+        root_key: &[u8; 32],
+        transcript_hash: [u8; 32],
+        host_identity_fingerprint: [u8; 32],
+    ) -> Self {
         Self {
+            host_identity_fingerprint,
             aead: derive_labeled_session_key(root_key, &transcript_hash, SESSION_AEAD_KEY_LABEL),
             control: derive_labeled_session_key(
                 root_key,
@@ -367,6 +379,11 @@ impl WasmSessionKeySchedule {
         field(&obj, "rekey", &self.rekey)?;
         field(&obj, "context", &self.context)?;
         field(&obj, "transcript_hash", &self.transcript_hash)?;
+        field(
+            &obj,
+            "host_identity_fingerprint",
+            &self.host_identity_fingerprint,
+        )?;
         Ok(obj.into())
     }
 }
@@ -570,11 +587,28 @@ impl WasmHandshake {
         let transcript_bytes = bincode::serialize(&transcript)?;
         let transcript_hash = *blake3::hash(&transcript_bytes).as_bytes();
 
+        let host_fingerprint =
+            host_identity_fingerprint(&state.host_ed25519_pk, &state.host_ml_dsa_pk);
+
         Ok(WasmSessionKeySchedule::derive(
             &state.root_key,
             transcript_hash,
+            host_fingerprint,
         ))
     }
+}
+
+/// BLAKE3-256 fingerprint binding a peer's full signing identity: its Ed25519
+/// and ML-DSA-65 public keys together. Byte-identical to native
+/// `xenia_handshake::host_identity_fingerprint` -- the same domain tag and
+/// input order -- so a value pinned by a native viewer and one pinned by the
+/// browser refer to the same host.
+fn host_identity_fingerprint(ed25519_pk: &[u8; 32], ml_dsa_pk: &[u8]) -> [u8; 32] {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"xenia-host-identity-fingerprint-v1");
+    hasher.update(ed25519_pk);
+    hasher.update(ml_dsa_pk);
+    *hasher.finalize().as_bytes()
 }
 
 fn js_error(e: HandshakeError) -> JsError {
