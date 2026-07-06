@@ -15,7 +15,7 @@
 
 use std::time::Duration;
 
-use xenia_wire::{Frame, Session, WireError, open_frame, seal_frame};
+use xenia_wire::{open_frame, seal_frame, Frame, Session, WireError};
 
 fn sample_frame(id: u64) -> Frame {
     Frame {
@@ -189,4 +189,78 @@ fn ten_rekeys_with_high_sequences_all_succeed() {
         sender.install_key(key);
         receiver.install_key(key);
     }
+}
+
+/// Regression test for a real incident: a long-running session's
+/// `current_key_epoch` (originally `u8`) wrapped at rekey #256 and
+/// collided with stale replay-window state from session start,
+/// permanently rejecting every subsequent envelope. This drives past
+/// 300 rekeys at a realistic fast cadence (short grace vs. rapid
+/// rekeying, `tick()` called every cycle exactly like a real send
+/// loop would) and asserts every single frame keeps opening --
+/// before the fix this would freeze solid at rekey 257.
+#[test]
+fn rekey_past_256_epochs_with_tick_never_stalls() {
+    let grace = Duration::from_millis(2);
+    let mut sender = Session::with_source_id([0x66; 8], 0x01).with_rekey_grace(grace);
+    let mut receiver = Session::with_source_id([0x66; 8], 0x01).with_rekey_grace(grace);
+    let mut key = [0u8; 32];
+    key[0] = 1;
+    sender.install_key(key);
+    receiver.install_key(key);
+
+    for rekey in 0..300u32 {
+        for i in 0..4u64 {
+            let s = seal_frame(&sample_frame(i), &mut sender).unwrap();
+            let opened = open_frame(&s, &mut receiver);
+            assert!(
+                opened.is_ok(),
+                "rekey {rekey} seq {i} must open (this is exactly the key_epoch=256 \
+                 freeze if it regresses); got {opened:?}",
+            );
+        }
+        // Interleave tick() on a cadence that outpaces `grace` so old
+        // epochs actually get reclaimed, matching a real send loop
+        // (e.g. `xenia-peer`'s main loop calls this once per cycle).
+        std::thread::sleep(Duration::from_millis(3));
+        sender.tick();
+        receiver.tick();
+
+        key[0] = key[0].wrapping_add(1).max(1); // never install an all-zero key
+        sender.install_key(key);
+        receiver.install_key(key);
+    }
+}
+
+/// Proves the `Vec<PrevKey>` fix's actual correctness improvement over
+/// the original single-slot design: rekey twice in quick succession
+/// (both well within the grace window) and confirm an envelope sealed
+/// under the OLDEST of the two superseded keys still opens. A
+/// single-slot `prev_session_key` would have been overwritten by the
+/// second rekey, losing the first old key entirely and failing this.
+#[test]
+fn envelope_from_two_rekeys_back_opens_within_its_own_grace_window() {
+    let grace = Duration::from_secs(5); // generous -- both rekeys land well inside it
+    let mut sender = Session::with_source_id([0x77; 8], 0x02).with_rekey_grace(grace);
+    let mut receiver = Session::with_source_id([0x77; 8], 0x02).with_rekey_grace(grace);
+    sender.install_key([0x11; 32]);
+    receiver.install_key([0x11; 32]);
+
+    // Seal one envelope under the very first key, then hold it
+    // in-flight through two subsequent rekeys.
+    let oldest_in_flight = seal_frame(&sample_frame(0), &mut sender).unwrap();
+
+    sender.install_key([0x22; 32]);
+    receiver.install_key([0x22; 32]);
+    sender.install_key([0x33; 32]);
+    receiver.install_key([0x33; 32]);
+
+    // Current key is now 0x33; 0x11 and 0x22 are both still pending
+    // previous keys within the grace window.
+    let result = open_frame(&oldest_in_flight, &mut receiver);
+    assert!(
+        result.is_ok(),
+        "envelope from two rekeys back must still open within its own grace \
+         window (a single prev-key slot would have discarded it); got {result:?}",
+    );
 }

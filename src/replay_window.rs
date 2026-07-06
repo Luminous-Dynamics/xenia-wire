@@ -117,9 +117,18 @@ impl StreamWindow {
 /// Streams are keyed by `(source_id, payload_type, key_epoch)` — see
 /// module-level docs on why the key epoch matters across rekey. Use
 /// [`Self::accept`] to atomically check-and-mark a sequence as received.
+///
+/// `key_epoch` is `u32` (widened from the original `u8`) as defense in
+/// depth against wraparound-induced collisions between a fresh epoch's
+/// low sequences and stale entries from a much earlier epoch that
+/// reused the same wrapped value — see `Session::prev_keys`'s doc
+/// comment in `session.rs` for the incident this was widened to guard
+/// against (the real fix was closing the leak that let stale entries
+/// survive long enough to collide in the first place; the wider type
+/// makes a future collision require billions of rekeys instead of 256).
 #[derive(Debug, Clone)]
 pub struct ReplayWindow {
-    streams: HashMap<(u64, u8, u8), StreamWindow>,
+    streams: HashMap<(u64, u8, u32), StreamWindow>,
     window_bits: u32,
     bitmap_words: usize,
 }
@@ -181,7 +190,7 @@ impl ReplayWindow {
     /// every `install_key` call — the caller MUST pass the epoch of the
     /// key that verified the AEAD tag, not (for example) the current
     /// epoch if the previous key is what actually opened the envelope.
-    pub fn accept(&mut self, source_id: u64, payload_type: u8, key_epoch: u8, seq: u64) -> bool {
+    pub fn accept(&mut self, source_id: u64, payload_type: u8, key_epoch: u32, seq: u64) -> bool {
         let window_bits_u64 = self.window_bits as u64;
         let bitmap_words = self.bitmap_words;
         let win = self
@@ -240,7 +249,7 @@ impl ReplayWindow {
     /// verify anyway, so the old window is pure memory overhead and
     /// should be reclaimed. Safe to call for an epoch that has no
     /// entries (no-op).
-    pub fn drop_epoch(&mut self, key_epoch: u8) {
+    pub fn drop_epoch(&mut self, key_epoch: u32) {
         self.streams.retain(|(_, _, epoch), _| *epoch != key_epoch);
     }
 
@@ -313,7 +322,7 @@ mod tests {
     use super::*;
 
     const SRC: u64 = 0xDEAD_BEEF_CAFE_BABE;
-    const EPOCH: u8 = 0; // most single-epoch tests use epoch 0
+    const EPOCH: u32 = 0; // most single-epoch tests use epoch 0
 
     fn accept_default(w: &mut ReplayWindow, pld: u8, seq: u64) -> bool {
         w.accept(SRC, pld, EPOCH, seq)
@@ -471,5 +480,22 @@ mod tests {
         let mut w = ReplayWindow::new();
         w.drop_epoch(42); // no-op, must not panic
         assert_eq!(w.stream_count(), 0);
+    }
+
+    #[test]
+    fn epoch_256_does_not_collide_with_epoch_0() {
+        // Regression test for the real incident this widening fixes:
+        // `key_epoch` used to be `u8`, so epoch 256 (mod 256 = 0) would
+        // collide with genuinely-live epoch-0 state and get rejected as
+        // a replay. With `u32`, epoch 256 is a distinct value.
+        let mut w = ReplayWindow::new();
+        assert!(w.accept(SRC, 0x10, 0, 0));
+        // Epoch 0's window now has highest=0 -- if epoch 256 collided
+        // with it, seq=0 at epoch 256 would be rejected as a duplicate.
+        assert!(
+            w.accept(SRC, 0x10, 256, 0),
+            "epoch 256 must not collide with unrelated epoch 0 state"
+        );
+        assert_eq!(w.stream_count(), 2);
     }
 }

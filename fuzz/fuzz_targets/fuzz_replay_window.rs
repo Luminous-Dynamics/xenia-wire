@@ -21,7 +21,11 @@ fuzz_target!(|data: &[u8]| {
         }
         let source_id = u64::from_le_bytes(chunk[0..8].try_into().unwrap());
         let payload_type = chunk[8];
-        let key_epoch = chunk[9];
+        // `key_epoch` is `u32` (widened from `u8`); only fuzzing the
+        // u8 sub-range is intentional here -- the interesting bitmap/
+        // shift arithmetic this target exercises is orthogonal to the
+        // epoch dimension's own value range.
+        let key_epoch = chunk[9] as u32;
         let seq = u64::from_le_bytes(chunk[10..18].try_into().unwrap());
         let _ = w.accept(source_id, payload_type, key_epoch, seq);
     }

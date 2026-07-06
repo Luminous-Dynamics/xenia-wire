@@ -55,6 +55,19 @@ use crate::consent::ConsentEvent;
 /// [`Session::with_rekey_grace`].
 pub const DEFAULT_REKEY_GRACE: Duration = Duration::from_secs(5);
 
+/// A superseded session key still within its rekey-grace window.
+///
+/// Tracked as a list rather than a single slot (see [`Session::prev_keys`]'s
+/// doc comment for why a single slot is unsound under rapid rekeying).
+struct PrevKey {
+    key: Zeroizing<[u8; 32]>,
+    /// The `current_key_epoch` this key held while it was current, so
+    /// [`ReplayWindow::drop_epoch`] can reclaim exactly its window
+    /// state once `expires_at` passes.
+    epoch: u32,
+    expires_at: Instant,
+}
+
 /// Session state for a single logical stream.
 ///
 /// See the module-level docs for what `Session` owns and what it
@@ -64,13 +77,30 @@ pub const DEFAULT_REKEY_GRACE: Duration = Duration::from_secs(5);
 pub struct Session {
     /// Current session key (wrapped in `Zeroizing` so drop wipes it).
     session_key: Option<Zeroizing<[u8; 32]>>,
-    /// Previous session key, still valid during the rekey grace period.
-    prev_session_key: Option<Zeroizing<[u8; 32]>>,
+    /// Superseded session keys still within their own rekey-grace
+    /// window, oldest first.
+    ///
+    /// A single `Option<PrevKey>` slot (the original design) is unsound
+    /// under rapid rekeying: every `install_key` call unconditionally
+    /// overwrote it, discarding whatever epoch was parked there even if
+    /// its own grace timer hadn't fired yet. At the default
+    /// `RekeyPolicy` cadence (a rekey roughly every 4 frames) versus
+    /// [`DEFAULT_REKEY_GRACE`]'s 5 seconds, that's ~30-50 rekeys per
+    /// grace window — so in steady state `tick()`'s `drop_epoch` almost
+    /// never actually ran, and every historical epoch's replay-window
+    /// state leaked until `current_key_epoch` (then a `u8`) wrapped
+    /// after 256 rekeys and collided with the stale epoch-0 entries
+    /// from session start, permanently rejecting every subsequent
+    /// envelope as a replay (confirmed live: a real session froze solid
+    /// at exactly `key_epoch=256`). Tracking every pending key here and
+    /// draining each on its own expiry in [`Self::tick`] fixes the leak
+    /// directly; widening `current_key_epoch` to `u32` (below) is
+    /// defense in depth for configurations that outrun even a correctly
+    /// draining grace window.
+    prev_keys: Vec<PrevKey>,
     /// When the current key was installed (for observability + rotation
     /// policy decisions by higher layers).
     key_established_at: Option<Instant>,
-    /// When the previous key stops being accepted for opens.
-    prev_key_expires_at: Option<Instant>,
     /// Monotonic AEAD nonce counter.
     nonce_counter: u64,
     /// Per-session random 8-byte source identifier. 6 bytes land in the
@@ -88,11 +118,12 @@ pub struct Session {
     /// Increments (wrapping) on each `install_key`. Purely internal;
     /// not transmitted on the wire. Used to key per-epoch replay-window
     /// state so a counter reset at rekey doesn't clash with lingering
-    /// high-water marks from the previous key.
-    current_key_epoch: u8,
-    /// Epoch of the previous session key during the rekey grace
-    /// window. `Some` iff `prev_session_key` is `Some`.
-    prev_key_epoch: Option<u8>,
+    /// high-water marks from the previous key. `u32` rather than the
+    /// original `u8` as defense in depth against wraparound-induced
+    /// replay-window collisions (see [`Self::prev_keys`]'s doc comment
+    /// for the incident this fixes) — at any realistic rekey cadence
+    /// this effectively never wraps.
+    current_key_epoch: u32,
     /// Consent ceremony state (draft-03 §12). Only enforced when the
     /// `consent` feature is compiled in.
     #[cfg(feature = "consent")]
@@ -130,16 +161,14 @@ impl Session {
     pub fn with_source_id(source_id: [u8; 8], epoch: u8) -> Self {
         Self {
             session_key: None,
-            prev_session_key: None,
+            prev_keys: Vec::new(),
             key_established_at: None,
-            prev_key_expires_at: None,
             nonce_counter: 0,
             source_id,
             epoch,
             replay_window: ReplayWindow::new(),
             rekey_grace: DEFAULT_REKEY_GRACE,
             current_key_epoch: 0,
-            prev_key_epoch: None,
             #[cfg(feature = "consent")]
             consent_state: crate::consent::ConsentState::LegacyBypass,
             #[cfg(feature = "consent")]
@@ -169,10 +198,12 @@ impl Session {
     /// the old key's high-water mark. When the previous key expires
     /// in [`Self::tick`], its per-epoch replay state is dropped.
     pub fn install_key(&mut self, key: [u8; 32]) {
-        if self.session_key.is_some() {
-            self.prev_session_key = self.session_key.take();
-            self.prev_key_expires_at = Some(Instant::now() + self.rekey_grace);
-            self.prev_key_epoch = Some(self.current_key_epoch);
+        if let Some(old_key) = self.session_key.take() {
+            self.prev_keys.push(PrevKey {
+                key: old_key,
+                epoch: self.current_key_epoch,
+                expires_at: Instant::now() + self.rekey_grace,
+            });
             self.current_key_epoch = self.current_key_epoch.wrapping_add(1);
         }
         self.session_key = Some(Zeroizing::new(key));
@@ -188,21 +219,27 @@ impl Session {
     /// Advance session state that depends on wall-clock time.
     ///
     /// Call periodically (e.g. once per tick, or lazily before seal/open)
-    /// to expire the previous key once the grace period has elapsed.
+    /// to expire every previous key whose grace period has elapsed —
+    /// there can be several pending simultaneously under rapid rekeying
+    /// (see [`Self::prev_keys`]'s doc comment), not just one.
     pub fn tick(&mut self) {
-        match self.prev_key_expires_at {
-            Some(expires) if Instant::now() > expires => {
-                self.prev_session_key = None;
-                self.prev_key_expires_at = None;
+        let now = Instant::now();
+        // Borrow `replay_window` separately so the `retain` closure
+        // below doesn't need to borrow all of `self` (which would
+        // conflict with the concurrent `&mut self.prev_keys` borrow
+        // `retain` itself requires).
+        let replay_window = &mut self.replay_window;
+        self.prev_keys.retain(|pk| {
+            if now > pk.expires_at {
                 // Drop replay state for the old epoch — its envelopes
                 // can no longer AEAD-verify, so the window is pure
                 // memory overhead now.
-                if let Some(old_epoch) = self.prev_key_epoch.take() {
-                    self.replay_window.drop_epoch(old_epoch);
-                }
+                replay_window.drop_epoch(pk.epoch);
+                false
+            } else {
+                true
             }
-            _ => {}
-        }
+        });
     }
 
     /// Allocate the next AEAD nonce sequence number.
@@ -330,24 +367,26 @@ impl Session {
     /// if no key is installed.
     #[cfg(feature = "consent")]
     fn verify_fingerprint_either_epoch(&self, request_id: u64, claimed: &[u8; 32]) -> bool {
-        let current_match = match self.session_key.as_ref() {
+        let mut any_match = match self.session_key.as_ref() {
             Some(key) => {
                 let fp = self.session_fingerprint_from_key(request_id, key);
                 ct_eq_32(&fp, claimed)
             }
             None => false,
         };
-        let prev_match = match self.prev_session_key.as_ref() {
-            Some(prev) => {
-                let fp = self.session_fingerprint_from_key(request_id, prev);
-                ct_eq_32(&fp, claimed)
-            }
-            None => false,
-        };
-        // Bitwise OR on `bool` — NOT short-circuiting `||`. The `|`
-        // variant forces both operands to be evaluated and combined
-        // without control-flow branches on the intermediate values.
-        current_match | prev_match
+        // Bitwise OR-assign on `bool` — NOT short-circuiting `||`/`||=`.
+        // The loop always runs to completion and `|=` forces every
+        // operand to be evaluated and combined without a control-flow
+        // branch on intermediate values, removing the timing
+        // distinguisher a naive early-return would leak (see the
+        // original single-`prev_session_key` version of this function
+        // for the full rationale, preserved here across however many
+        // previous keys are currently pending).
+        for pk in &self.prev_keys {
+            let fp = self.session_fingerprint_from_key(request_id, &pk.key);
+            any_match |= ct_eq_32(&fp, claimed);
+        }
+        any_match
     }
 
     /// Sign a [`crate::consent::ConsentRequestCore`] after injecting the session
@@ -763,8 +802,9 @@ impl Session {
     ///
     /// 1. **Length**: envelope must be at least 28 bytes (12 nonce + 16 tag).
     /// 2. **AEAD verify**: ChaCha20-Poly1305 decrypt against the current
-    ///    session key, falling back to the previous key during the rekey
-    ///    grace period.
+    ///    session key, falling back to any still-pending previous key
+    ///    (there can be more than one under rapid rekeying) within its
+    ///    own grace period.
     /// 3. **Replay window**: the sequence embedded in nonce bytes 8..12
     ///    (little-endian u32) must be either strictly higher than any
     ///    previously accepted sequence for the same `(source_id,
@@ -786,37 +826,35 @@ impl Session {
         let (nonce_bytes, ciphertext) = envelope.split_at(12);
         let nonce = Nonce::from_slice(nonce_bytes);
 
-        // AEAD verify: current key, then prev_session_key fallback.
-        // Track which key verified so the replay-window check below can
-        // use the correct key_epoch (SPEC §5.3 / draft-02r1).
-        let (plaintext, verified_epoch) = if let Some(key) = self.session_key.as_ref() {
+        // AEAD verify: current key, then every still-pending previous
+        // key (most recently superseded first — the likeliest match for
+        // a genuinely in-flight envelope). Track which key verified so
+        // the replay-window check below can use the correct key_epoch
+        // (SPEC §5.3 / draft-02r1).
+        if self.session_key.is_none() && self.prev_keys.is_empty() {
+            return Err(WireError::NoSessionKey);
+        }
+        let mut plaintext_and_epoch = None;
+        if let Some(key) = self.session_key.as_ref() {
             let key_bytes: [u8; 32] = **key;
             let cipher = ChaCha20Poly1305::new((&key_bytes).into());
             if let Ok(pt) = cipher.decrypt(nonce, ciphertext) {
-                (Some(pt), Some(self.current_key_epoch))
-            } else if let (Some(prev), Some(prev_epoch)) =
-                (self.prev_session_key.as_ref(), self.prev_key_epoch)
-            {
-                let prev_bytes: [u8; 32] = **prev;
-                let cipher = ChaCha20Poly1305::new((&prev_bytes).into());
-                match cipher.decrypt(nonce, ciphertext) {
-                    Ok(pt) => (Some(pt), Some(prev_epoch)),
-                    Err(_) => (None, None),
+                plaintext_and_epoch = Some((pt, self.current_key_epoch));
+            }
+        }
+        if plaintext_and_epoch.is_none() {
+            for pk in self.prev_keys.iter().rev() {
+                let key_bytes: [u8; 32] = *pk.key;
+                let cipher = ChaCha20Poly1305::new((&key_bytes).into());
+                if let Ok(pt) = cipher.decrypt(nonce, ciphertext) {
+                    plaintext_and_epoch = Some((pt, pk.epoch));
+                    break;
                 }
-            } else {
-                (None, None)
             }
-        } else if let (Some(prev), Some(prev_epoch)) =
-            (self.prev_session_key.as_ref(), self.prev_key_epoch)
-        {
-            let prev_bytes: [u8; 32] = **prev;
-            let cipher = ChaCha20Poly1305::new((&prev_bytes).into());
-            match cipher.decrypt(nonce, ciphertext) {
-                Ok(pt) => (Some(pt), Some(prev_epoch)),
-                Err(_) => (None, None),
-            }
-        } else {
-            return Err(WireError::NoSessionKey);
+        }
+        let (plaintext, verified_epoch) = match plaintext_and_epoch {
+            Some((pt, epoch)) => (Some(pt), Some(epoch)),
+            None => (None, None),
         };
 
         let plaintext = plaintext.ok_or(WireError::OpenFailed)?;
@@ -967,16 +1005,14 @@ impl SessionBuilder {
 
         Session {
             session_key: None,
-            prev_session_key: None,
+            prev_keys: Vec::new(),
             key_established_at: None,
-            prev_key_expires_at: None,
             nonce_counter: 0,
             source_id,
             epoch,
             replay_window,
             rekey_grace: self.rekey_grace,
             current_key_epoch: 0,
-            prev_key_epoch: None,
             #[cfg(feature = "consent")]
             consent_state: if self.consent_required {
                 crate::consent::ConsentState::AwaitingRequest
