@@ -27,6 +27,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "fuzz_open_frame_lz4"
+path = "fuzz_targets/fuzz_open_frame_lz4.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "fuzz_replay_window"
 path = "fuzz_targets/fuzz_replay_window.rs"
 test = false
