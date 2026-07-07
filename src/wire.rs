@@ -132,7 +132,7 @@ const MAX_LZ4_DECOMPRESSED_SIZE: usize = 64 * 1024 * 1024;
 ///
 /// Reverses the pipeline: AEAD verify → LZ4 decompress → bincode deserialize.
 /// Returns [`WireError::OpenFailed`] on AEAD failure, decompression
-/// failure, a size prefix over [`MAX_LZ4_DECOMPRESSED_SIZE`], or any
+/// failure, a size prefix over `MAX_LZ4_DECOMPRESSED_SIZE`, or any
 /// length-prefix corruption; [`WireError::Codec`] on bincode deserialization
 /// failure of the decompressed plaintext.
 #[cfg(feature = "lz4")]

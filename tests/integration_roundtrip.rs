@@ -6,7 +6,7 @@
 #![cfg(feature = "reference-frame")]
 
 use xenia_wire::{
-    open_frame, open_input, seal_frame, seal_input, Frame, Input, Session, WireError,
+    Frame, Input, Session, WireError, open_frame, open_input, seal_frame, seal_input,
 };
 
 fn paired_sessions(key: [u8; 32]) -> (Session, Session) {

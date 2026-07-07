@@ -40,8 +40,8 @@ use web_time::Instant;
 
 use zeroize::Zeroizing;
 
-use crate::replay_window::ReplayWindow;
 use crate::WireError;
+use crate::replay_window::ReplayWindow;
 
 #[cfg(feature = "consent")]
 use crate::consent::ConsentEvent;
@@ -57,7 +57,7 @@ pub const DEFAULT_REKEY_GRACE: Duration = Duration::from_secs(5);
 
 /// A superseded session key still within its rekey-grace window.
 ///
-/// Tracked as a list rather than a single slot (see [`Session::prev_keys`]'s
+/// Tracked as a list rather than a single slot (see `prev_keys`'s
 /// doc comment for why a single slot is unsound under rapid rekeying).
 struct PrevKey {
     key: Zeroizing<[u8; 32]>,
@@ -120,7 +120,7 @@ pub struct Session {
     /// state so a counter reset at rekey doesn't clash with lingering
     /// high-water marks from the previous key. `u32` rather than the
     /// original `u8` as defense in depth against wraparound-induced
-    /// replay-window collisions (see [`Self::prev_keys`]'s doc comment
+    /// replay-window collisions (see `prev_keys`'s doc comment
     /// for the incident this fixes) — at any realistic rekey cadence
     /// this effectively never wraps.
     current_key_epoch: u32,
@@ -221,7 +221,7 @@ impl Session {
     /// Call periodically (e.g. once per tick, or lazily before seal/open)
     /// to expire every previous key whose grace period has elapsed —
     /// there can be several pending simultaneously under rapid rekeying
-    /// (see [`Self::prev_keys`]'s doc comment), not just one.
+    /// (see `prev_keys`'s doc comment), not just one.
     pub fn tick(&mut self) {
         let now = Instant::now();
         // Borrow `replay_window` separately so the `retain` closure
@@ -747,7 +747,7 @@ impl Session {
     /// [`WireError::SealFailed`] if the underlying AEAD implementation
     /// rejects the input (should not happen with a valid 32-byte key).
     pub fn seal(&mut self, plaintext: &[u8], payload_type: u8) -> Result<Vec<u8>, WireError> {
-        use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, KeyInit, Nonce};
+        use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce, aead::Aead};
 
         // Consent gate — only when the consent feature is compiled in.
         // Applies only to the reference application payload types (FRAME,
@@ -818,7 +818,7 @@ impl Session {
     /// keying only — the caller is responsible for dispatching the returned
     /// plaintext to the correct deserializer.
     pub fn open(&mut self, envelope: &[u8]) -> Result<Vec<u8>, WireError> {
-        use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, KeyInit, Nonce};
+        use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce, aead::Aead};
 
         if envelope.len() < 12 + 16 {
             return Err(WireError::OpenFailed);
@@ -1154,7 +1154,7 @@ mod tests {
         s.nonce_counter = (1u64 << 32) - 1; // = u32::MAX as u64
         let sealed = s.seal(b"last-valid", 0x10).expect("seal at boundary - 1");
         assert_eq!(sealed.len(), 12 + 10 + 16); // nonce + plaintext + tag
-                                                // Counter is now at the boundary — next seal must refuse.
+        // Counter is now at the boundary — next seal must refuse.
         assert!(matches!(
             s.seal(b"over-the-edge", 0x10),
             Err(WireError::SequenceExhausted)
