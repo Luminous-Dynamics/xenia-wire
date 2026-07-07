@@ -119,8 +119,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Verify test vectors from an independent implementation
+      - name: Verify envelope vectors from an independent implementation
         run: node test-vectors/conformance/verify.mjs
+      - name: Verify consent state-machine vectors from an independent implementation
+        run: node test-vectors/conformance/verify-consent.mjs
 
   audit:
     name: Security Audit

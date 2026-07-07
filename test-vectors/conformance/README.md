@@ -30,29 +30,35 @@ check:
 Plus a tamper check (a flipped ciphertext byte must fail Poly1305
 authentication) to confirm the tag is verified, not merely parsed.
 
+`verify-consent.mjs` is the companion for the consent event-sequence vectors
+(10–12). It reimplements the `observe_consent` state machine from SPEC §12.6.1
+(the normative transition table) and replays each vector's line-oriented DSL,
+asserting EXPECT_STATE / EXPECT_VIOLATION exactly as the Rust reference runner
+(`tests/violation_vectors.rs`) does — covering the RevocationBeforeApproval,
+ContradictoryResponse (with prior/new), and StaleResponseForUnknownRequest
+violation paths.
+
 ## Run
 
 ```console
-$ node test-vectors/conformance/verify.mjs
+$ node test-vectors/conformance/verify.mjs          # envelope vectors 01–09
+$ node test-vectors/conformance/verify-consent.mjs  # consent vectors 10–12
 ```
 
-Exits non-zero on any mismatch. No build step, no `npm install`.
+Both exit non-zero on any mismatch. No build step, no `npm install`. CI runs
+both.
 
 ## Scope
 
-Covers the envelope vectors (01–09), which are the core wire format. Not yet
-covered by this checker:
+Covers all twelve vectors: the envelope wire format (01–09) and the consent
+state machine (10–12). One narrow gap remains:
 
-- **LZ4 decompression** (vector 06): the checker validates the AEAD layer for
+- **LZ4 decompression** (vector 06): `verify.mjs` validates the AEAD layer for
   the `FRAME_LZ4` payload type (decrypt/reseal of the already-compressed
-  plaintext) but does not reimplement LZ4. The Rust vectors cover
+  plaintext) but does not reimplement LZ4 itself. The Rust vectors cover
   compress/decompress.
-- **Event-sequence vectors (10–12)**: these drive the consent state machine
-  (`observe_consent` analogue), a separate subsystem from the wire format. A
-  full alternate-language runner for them (replicating
-  `tests/violation_vectors.rs`) is future work.
 
-If a wire-format change regenerates the vectors, this checker should keep
-passing unchanged — if it doesn't, either the change is a genuine breaking
-wire bump (bump the SPEC version) or the checker caught a determinism
-regression.
+If a wire-format or state-machine change regenerates the vectors, these
+checkers should keep passing unchanged — if they don't, either the change is a
+genuine breaking bump (bump the SPEC version) or the checker caught a
+determinism/semantics regression.
