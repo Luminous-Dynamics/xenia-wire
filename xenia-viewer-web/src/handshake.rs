@@ -45,7 +45,7 @@ use ml_dsa::{
     signature::{Keypair as MlDsaKeypair, Signer as MlDsaSigner, Verifier as MlDsaVerifier},
     EncodedSignature as MlDsaEncodedSignature, EncodedVerifyingKey as MlDsaEncodedVerifyingKey,
     Generate as MlDsaGenerate, MlDsa65, Signature as MlDsaSignatureT,
-    SigningKey as MlDsaSigningKey, VerifyingKey as MlDsaVerifyingKey,
+    SigningKey as MlDsaSigningKey, VerifyingKey as MlDsaVerifyingKey, B32,
 };
 use ml_kem::{kem::Encapsulate, ml_kem_768::EncapsulationKey as MlKemEk, TryKeyInit};
 use rand::rngs::OsRng;
@@ -408,6 +408,33 @@ impl WasmHandshake {
             ml_dsa_signing_key: MlDsaSigningKey::<MlDsa65>::generate(),
             pending: None,
         }
+    }
+
+    /// Reconstruct a viewer identity from *persisted* seeds — a 32-byte Ed25519
+    /// secret and a 32-byte ML-DSA-65 seed — instead of generating fresh keys.
+    /// Derivation mirrors the native `HandshakeManager::from_identity_seeds`
+    /// exactly, so the same two seeds yield the same public identity on both
+    /// sides. This lets the operator console drive the handshake with its
+    /// *enrolled* operator key (the console already persists these seeds), so
+    /// the handshake authenticates the operator — see xenia-peer
+    /// `docs/security/SEALED_OPERATOR_CHANNEL_DESIGN.md`.
+    #[wasm_bindgen(js_name = fromIdentity)]
+    pub fn from_identity(
+        ed25519_secret: &[u8],
+        ml_dsa_seed: &[u8],
+    ) -> Result<WasmHandshake, JsError> {
+        let ed: [u8; 32] = ed25519_secret
+            .try_into()
+            .map_err(|_| JsError::new("ed25519_secret must be exactly 32 bytes"))?;
+        let ml: [u8; 32] = ml_dsa_seed
+            .try_into()
+            .map_err(|_| JsError::new("ml_dsa_seed must be exactly 32 bytes"))?;
+        let seed: B32 = ml.into();
+        Ok(Self {
+            signing_key: SigningKey::from_bytes(&ed),
+            ml_dsa_signing_key: MlDsaSigningKey::<MlDsa65>::from_seed(&seed),
+            pending: None,
+        })
     }
 
     /// Process the host's `HostHello` envelope; returns the `ViewerResponse`
