@@ -73,6 +73,14 @@ blake3 = { version = "1.5", optional = true }
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2", features = ["js"] }
 web-time = "1"
+# The `handshake` feature's ml-kem chain resolves getrandom 0.3 AND 0.4 (both
+# semver-incompatible with the 0.2 chain above and with each other); each needs
+# its own wasm_js backend selected for a wasm32 build. Declared here (always, on
+# wasm32) so `xenia-wire` builds standalone on wasm32 even with `--all-features`;
+# they are inert unless `handshake` pulls ml-kem into the graph. Mirrors
+# xenia-viewer-web's getrandom3/getrandom4 wiring.
+getrandom_v03 = { package = "getrandom", version = "0.3", features = ["wasm_js"] }
+getrandom_v04 = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
 
 [dev-dependencies]
 criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
