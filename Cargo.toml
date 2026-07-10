@@ -31,6 +31,23 @@ lz4 = ["dep:lz4_flex"]
 # revocation terminates) + HKDF-SHA-256 session fingerprint binding.
 # Corresponds to SPEC.md draft-03 §12.
 consent = ["dep:ed25519-dalek", "dep:serde-big-array", "dep:hkdf", "dep:sha2"]
+# Viewer-side PQC handshake (ML-KEM-768 + Ed25519 + ML-DSA-65 + HKDF-SHA-256).
+# A from-scratch reimplementation of the viewer half of xenia-peer's native
+# handshake, wire-compatible byte-for-byte, so a browser/WASM client (e.g. the
+# operator console) can complete a real handshake against a native host without
+# depending on the xenia-peer crates. Off by default — pulls the ML-KEM/ML-DSA
+# tree. See `src/handshake.rs`. NOTE: a wasm32 build with this feature also needs
+# the consumer to wire getrandom 0.3/0.4 `wasm_js` backends (ml-kem's chain),
+# exactly as xenia-viewer-web / sovereign-admin already do.
+handshake = [
+    "dep:ed25519-dalek",
+    "dep:serde-big-array",
+    "dep:hkdf",
+    "dep:sha2",
+    "dep:ml-kem",
+    "dep:ml-dsa",
+    "dep:blake3",
+]
 
 [dependencies]
 chacha20poly1305 = "0.10"
@@ -44,12 +61,26 @@ ed25519-dalek = { version = "2", default-features = false, features = ["std", "z
 serde-big-array = { version = "0.5", optional = true }
 hkdf = { version = "0.12", default-features = false, optional = true }
 sha2 = { version = "0.10", default-features = false, optional = true }
+# `handshake` feature. Versions pinned to EXACTLY what xenia-peer's
+# xenia-handshake crate and xenia-viewer-web use, so all implementations resolve
+# one ML-KEM/ML-DSA tree and produce byte-identical encodings/transcripts.
+ml-kem = { version = "=0.3.0-rc.2", default-features = false, features = ["zeroize", "getrandom"], optional = true }
+ml-dsa = { version = "=0.1.1", optional = true }
+blake3 = { version = "1.5", optional = true }
 
 # wasm32 needs web-time for `Instant` (the std one panics on wasm32-unknown-unknown)
 # and getrandom's "js" feature to source entropy from crypto.getRandomValues.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2", features = ["js"] }
 web-time = "1"
+# The `handshake` feature's ml-kem chain resolves getrandom 0.3 AND 0.4 (both
+# semver-incompatible with the 0.2 chain above and with each other); each needs
+# its own wasm_js backend selected for a wasm32 build. Declared here (always, on
+# wasm32) so `xenia-wire` builds standalone on wasm32 even with `--all-features`;
+# they are inert unless `handshake` pulls ml-kem into the graph. Mirrors
+# xenia-viewer-web's getrandom3/getrandom4 wiring.
+getrandom_v03 = { package = "getrandom", version = "0.3", features = ["wasm_js"] }
+getrandom_v04 = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
 
 [dev-dependencies]
 criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }

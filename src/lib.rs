@@ -101,6 +101,9 @@ mod frame;
 #[cfg(feature = "consent")]
 pub mod consent;
 
+#[cfg(feature = "handshake")]
+pub mod handshake;
+
 pub use error::WireError;
 pub use payload_types::{
     PAYLOAD_TYPE_APPLICATION_MIN, PAYLOAD_TYPE_ATTESTED_ACTION, PAYLOAD_TYPE_CONSENT_REQUEST,
