@@ -86,6 +86,11 @@ const SESSION_CONTEXT_KEY_LABEL: &[u8] = b"xenia/session/context";
 // ─── Wire-compatible message shape (must match xenia-peer-core's
 //     HandshakeMessage byte-for-byte under bincode v1) ───
 
+// The variants differ a lot in size (HostHello/ViewerResponse carry ML-DSA-65
+// keys+signatures, ~3.3KB each); this is a fixed wire type decoded once per
+// handshake, so boxing to equalize the variants would change the bincode layout
+// for no real benefit.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 enum HandshakeMessage {
     HostHello {
