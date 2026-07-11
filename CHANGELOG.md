@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0-alpha.5] — 2026-07-12
+
+### Added
+
+- **`operator_rekey` module** (feature `operator-rekey`): forward-secrecy
+  rekey control messages (`OperatorRekeyMessage::{Proposal,Ack}`) for a
+  single-key application channel such as Xenia's operator sealed channel.
+  Mutual epoch-hash self-consistency check on `Proposal` (not a tamper
+  check — the envelope is already AEAD-authenticated — a protocol
+  desync/replay guard). New `PAYLOAD_TYPE_OPERATOR_REKEY` (0x31).
+  Deliberately does not imply `handshake`: the message/context types only
+  need `blake3`+`bincode`+`serde`, so a host with its own native HKDF copy
+  can use this without pulling the ml-kem/ml-dsa tree a second time.
+- **`handshake_highsec` module** (implied by feature `handshake`): a
+  self-contained ML-KEM-1024 + Ed25519 + ML-DSA-87 (NIST security
+  category 5) handshake, implementing both the host and viewer roles in
+  this one crate (unlike the standard `handshake` module, which
+  implements only the viewer role — the host role's standard-suite
+  counterpart lives natively in the consuming application). Produces the
+  same `handshake::SessionKeySchedule` type via the same HKDF
+  construction (`SessionKeySchedule::derive` widened from private to
+  `pub(crate)`).
+
 ## [0.2.0-alpha.3] — 2026-04-18
 
 Tracks **SPEC draft-03**. Round-3-reviewer-prompted hardening
