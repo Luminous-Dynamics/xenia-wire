@@ -350,7 +350,10 @@ pub struct SessionKeySchedule {
 }
 
 impl SessionKeySchedule {
-    fn derive(
+    /// `pub(crate)` (rather than private) so [`crate::handshake_highsec`] can
+    /// reuse this exact derivation for its own suite -- both produce this
+    /// same `SessionKeySchedule` type, only the handshake step differs.
+    pub(crate) fn derive(
         root_key: &[u8; 32],
         transcript_hash: [u8; 32],
         host_identity_fingerprint: [u8; 32],
