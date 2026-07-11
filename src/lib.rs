@@ -104,6 +104,12 @@ pub mod consent;
 #[cfg(feature = "handshake")]
 pub mod handshake;
 
+#[cfg(feature = "handshake")]
+pub mod handshake_highsec;
+
+#[cfg(feature = "operator-rekey")]
+pub mod operator_rekey;
+
 pub use error::WireError;
 pub use payload_types::{
     PAYLOAD_TYPE_APPLICATION_MIN, PAYLOAD_TYPE_ATTESTED_ACTION, PAYLOAD_TYPE_CONSENT_REQUEST,

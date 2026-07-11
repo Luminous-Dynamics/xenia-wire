@@ -48,6 +48,20 @@ handshake = [
     "dep:ml-dsa",
     "dep:blake3",
 ]
+# Rekey control messages for a single-key application channel (e.g. Xenia's
+# operator sealed channel): key rotation for a long-lived channel that isn't
+# built on the multi-lane video/audio/control rekey system. Deliberately does
+# NOT imply `handshake` -- the message/context types + epoch-hash computation
+# only need `blake3`+`bincode`+`serde`. A host with its own native handshake
+# crate (xenia-peer's `xenia_handshake`) can build/verify
+# `OperatorRekeyMessage`s and derive keys via its own copy of the HKDF
+# derivation with just this feature, without pulling xenia-wire's
+# ml-kem/ml-dsa tree a second time. A consumer without a native handshake
+# crate (the browser console) enables both features --
+# `derive_operator_rekey_key` (the one function needing
+# `handshake::derive_labeled_session_key`) is gated accordingly. See
+# `src/operator_rekey.rs`.
+operator-rekey = ["dep:blake3"]
 
 [dependencies]
 chacha20poly1305 = "0.10"
