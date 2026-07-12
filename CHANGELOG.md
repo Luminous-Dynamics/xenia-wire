@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0-alpha.7] — 2026-07-12
+
+### Changed
+
+- **`handshake_highsec::ML_DSA_87_PK_LEN` is now `pub`** (was a private
+  module constant). A caller that stores this suite's public key elsewhere
+  (e.g. an operator policy file) needs to validate its length without
+  duplicating the constant; xenia-peer's `OperatorPolicy::from_json` had no
+  way to do this at all, which was part of why it could not accept an
+  ML-DSA-87 key of any length.
+
 ## [0.2.0-alpha.6] — 2026-07-12
 
 ### Added
