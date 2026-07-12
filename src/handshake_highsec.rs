@@ -70,8 +70,12 @@ use crate::handshake::{HandshakeError, SessionKeySchedule};
 
 const ML_KEM_1024_PK_LEN: usize = 1568;
 const ML_KEM_1024_CT_LEN: usize = 1568;
-/// ML-DSA-87 verifying-key size in bytes (FIPS 204).
-const ML_DSA_87_PK_LEN: usize = 2592;
+/// ML-DSA-87 verifying-key size in bytes (FIPS 204). Public so a caller that
+/// stores this suite's public key elsewhere (e.g. an operator policy file)
+/// can validate its length without duplicating the constant -- xenia-peer's
+/// `OperatorPolicy::from_json` used to have no way to do this at all and so
+/// silently could not accept an ML-DSA-87 key of any kind.
+pub const ML_DSA_87_PK_LEN: usize = 2592;
 /// ML-DSA-87 signature size in bytes (FIPS 204).
 const ML_DSA_87_SIG_LEN: usize = 4627;
 
