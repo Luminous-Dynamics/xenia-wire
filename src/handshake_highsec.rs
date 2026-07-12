@@ -46,18 +46,18 @@
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use hkdf::Hkdf;
 use ml_dsa::{
-    B32, EncodedSignature as MlDsaEncodedSignature,
-    EncodedVerifyingKey as MlDsaEncodedVerifyingKey, Generate as MlDsaGenerate, MlDsa87,
-    Signature as MlDsaSignatureT, SigningKey as MlDsaSigningKey, VerifyingKey as MlDsaVerifyingKey,
     signature::{Keypair as MlDsaKeypair, Signer as MlDsaSigner, Verifier as MlDsaVerifier},
+    EncodedSignature as MlDsaEncodedSignature, EncodedVerifyingKey as MlDsaEncodedVerifyingKey,
+    Generate as MlDsaGenerate, MlDsa87, Signature as MlDsaSignatureT,
+    SigningKey as MlDsaSigningKey, VerifyingKey as MlDsaVerifyingKey, B32,
 };
 use ml_kem::{
-    MlKem1024, TryKeyInit,
     kem::{Decapsulate, Encapsulate, Kem, KeyExport},
     ml_kem_1024::{
         Ciphertext as MlKem1024Ciphertext, DecapsulationKey as MlKemDk1024,
         EncapsulationKey as MlKemEk1024,
     },
+    MlKem1024, TryKeyInit,
 };
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
@@ -360,6 +360,19 @@ impl ViewerHandshakeHighSec {
         self.signing_key.verifying_key().to_bytes()
     }
 
+    /// The viewer's ML-DSA-87 public key bytes -- what an operator enrolls
+    /// (alongside [`Self::ed25519_public_key`]) in a host's `OperatorPolicy`
+    /// for the high-security suite. Without this there is no way to derive
+    /// the value to enroll from a `ViewerHandshakeHighSec` identity at all.
+    pub fn ml_dsa_public_key_bytes(&self) -> [u8; ML_DSA_87_PK_LEN] {
+        self.ml_dsa_signing_key
+            .verifying_key()
+            .encode()
+            .as_slice()
+            .try_into()
+            .expect("ml-dsa-87 encoded verifying key is always ML_DSA_87_PK_LEN bytes")
+    }
+
     /// Process the host's `HostHello`; returns the `ViewerResponse` bytes.
     pub fn begin(&mut self, hello_bytes: &[u8]) -> Result<Vec<u8>, HandshakeError> {
         let hello: HandshakeMessageHighSec = bincode::deserialize(hello_bytes)?;
@@ -584,17 +597,23 @@ impl HostHandshakeHighSec {
         self.signing_key.verifying_key().to_bytes()
     }
 
-    /// BLAKE3-256 fingerprint of this host's high-security signing identity
-    /// (Ed25519 || ML-DSA-87). A viewer pins this for trust-on-first-use.
-    pub fn identity_fingerprint(&self) -> [u8; 32] {
-        let ml_dsa_pk: [u8; ML_DSA_87_PK_LEN] = self
-            .ml_dsa_signing_key
+    /// The host's ML-DSA-87 public key bytes.
+    pub fn ml_dsa_public_key_bytes(&self) -> [u8; ML_DSA_87_PK_LEN] {
+        self.ml_dsa_signing_key
             .verifying_key()
             .encode()
             .as_slice()
             .try_into()
-            .expect("ml-dsa-87 encoded verifying key is always ML_DSA_87_PK_LEN bytes");
-        host_identity_fingerprint_highsec(&self.ed25519_public_key(), &ml_dsa_pk)
+            .expect("ml-dsa-87 encoded verifying key is always ML_DSA_87_PK_LEN bytes")
+    }
+
+    /// BLAKE3-256 fingerprint of this host's high-security signing identity
+    /// (Ed25519 || ML-DSA-87). A viewer pins this for trust-on-first-use.
+    pub fn identity_fingerprint(&self) -> [u8; 32] {
+        host_identity_fingerprint_highsec(
+            &self.ed25519_public_key(),
+            &self.ml_dsa_public_key_bytes(),
+        )
     }
 
     /// Build and store `HostHello`; returns the bytes to send first.

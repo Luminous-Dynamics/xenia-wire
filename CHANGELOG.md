@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0-alpha.6] — 2026-07-12
+
+### Added
+
+- **`ViewerHandshakeHighSec::ml_dsa_public_key_bytes()` and
+  `HostHandshakeHighSec::ml_dsa_public_key_bytes()`**: expose each side's
+  ML-DSA-87 public key bytes directly, mirroring the existing
+  `ed25519_public_key()` accessors. Previously there was no way to derive
+  the value an operator needs to enroll for the high-security suite from a
+  `ViewerHandshakeHighSec` identity at all — a gap that had let a downstream
+  caller's test enrollment fall back to an arbitrary placeholder ML-DSA key
+  instead of the real one, silently defeating hybrid authentication for that
+  suite (the enrolled ML-DSA key was never actually checked against what the
+  handshake verified). `HostHandshakeHighSec::identity_fingerprint()` is
+  refactored to reuse the new host-side accessor rather than recomputing it
+  inline.
+
 ## [0.2.0-alpha.5] — 2026-07-12
 
 ### Added
