@@ -13,9 +13,11 @@ AEAD-sealed binary wire protocol for remote-control streams, designed for ML-KEM
   ║  PRE-ALPHA — DO NOT USE IN PRODUCTION                     ║
   ║                                                           ║
   ║  The wire format is not yet frozen. Breaking changes may   ║
-  ║  land between alpha releases. This crate does not perform ║
-  ║  peer authentication or key establishment; product layers  ║
-  ║  use xenia-handshake.                                     ║
+  ║  land between alpha releases. Peer authentication and key  ║
+  ║  establishment are now available in this crate (feature    ║
+  ║  `handshake`, off by default) as well as natively in       ║
+  ║  product layers such as `xenia-handshake` -- pick one, not ║
+  ║  both, per identity you're establishing.                   ║
   ║                                                           ║
   ║  This crate is an early research artifact. It will be     ║
   ║  ready for production use only after the specification is   ║
@@ -58,18 +60,29 @@ caller's), and no opinion about handshake. Those live at higher layers.
 - Not a transport. Your caller ships the sealed bytes; `xenia-wire` doesn't
   open sockets.
 - Not a TLS replacement — no certificate chain, no ALPN, no hostname binding.
-- Not a handshake. Session keys arrive from somewhere else (for example,
-  ML-KEM-768 in the Xenia handshake layer; your unit tests' `[0xAB; 32]` fixture in development).
 - Not a general AEAD library — `xenia-wire` fixes a specific nonce layout
   suited to replay-protected streams.
 
+The AEAD-sealing layer above (`Session`/`seal`/`open`) is transport- and
+handshake-agnostic — bring any 32-byte key from anywhere. That said, this
+crate now *also* ships its own handshakes (feature `handshake`, off by
+default): `handshake` (ML-KEM-768 + Ed25519 + ML-DSA-65, viewer role only —
+the host role's standard-suite counterpart lives natively in the `xenia-peer`
+product) and `handshake_highsec` (ML-KEM-1024 + Ed25519 + ML-DSA-87, both
+host and viewer roles, self-contained). Both derive a
+[`handshake::SessionKeySchedule`] that installs directly into a `Session`.
+A caller that already has a handshake layer (`xenia-handshake` or otherwise)
+can ignore all of this and just use the sealing layer with `default-features
+= false`.
+
 ## Install
 
-Because `0.2.0-alpha.3` is a pre-release, add it with the `@` form —
-`cargo add --version ...` rejects pre-release specifiers:
+Because it's a pre-release, add it with the `@` form — `cargo add
+--version ...` rejects pre-release specifiers. Use the latest `0.2.0-alpha.N`
+on [crates.io](https://crates.io/crates/xenia-wire) (currently `alpha.8`):
 
 ```console
-$ cargo add 'xenia-wire@0.2.0-alpha.3'
+$ cargo add 'xenia-wire@0.2.0-alpha.8'
 ```
 
 Once a stable `0.2.0` ships, `cargo add xenia-wire` will just work.
@@ -123,6 +136,8 @@ $ cargo run --example hello_xenia
 |------------------|---------|-------------------------------------------------------|
 | `reference-frame`| yes     | Ships `Frame` + `Input` reference types implementing `Sealable`. Drop it if you're only using custom payload types. |
 | `lz4`            | no      | Adds `seal_frame_lz4` / `open_frame_lz4` for LZ4-before-AEAD compression. Measured 2.12× on live Pixel 8 Pro captures. |
+| `handshake`      | no      | ML-KEM-768 + Ed25519 + ML-DSA-65 handshake (`handshake` module, viewer role) and the self-contained ML-KEM-1024 + Ed25519 + ML-DSA-87 high-security suite (`handshake_highsec`, both roles). Each handshake generates a fresh KEM keypair per session (forward-secret against later long-term-key compromise) and derives a [`handshake::SessionKeySchedule`] ready to `install_key` into a `Session`. |
+| `operator-rekey` | no      | Forward-secrecy rekey control messages (`operator_rekey` module) for a single-key application channel — periodic in-place key rotation on an already-established session. Independent of `handshake`: only needs `blake3`+`bincode`+`serde`. |
 
 ## Custom payloads
 
