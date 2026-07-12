@@ -531,6 +531,12 @@ struct HostPendingState {
     host_ed25519_pk: [u8; 32],
     host_ml_dsa_pk: [u8; ML_DSA_87_PK_LEN],
     host_kem_pk: [u8; ML_KEM_1024_PK_LEN],
+    /// This handshake's ephemeral decapsulation key -- generated fresh in
+    /// [`HostHandshakeHighSec::hello`], used once in
+    /// [`HostHandshakeHighSec::finish`], and then dropped along with the
+    /// rest of this state when `finish` takes and consumes it. Never
+    /// persisted, never reused across handshakes.
+    kem_dk: MlKemDk1024,
     negotiated_context_hash: Option<[u8; 32]>,
 }
 
@@ -550,20 +556,32 @@ pub struct VerifiedPeerIdentityHighSec {
 /// `finish()`'s returned bytes over whatever transport it has, and feeds the
 /// peer's response bytes back in.
 ///
-/// The KEM keypair is generated once at construction and reused across every
-/// handshake this instance drives (the normal, intended usage pattern for a
-/// KEM public key -- unlike a nonce, which must be fresh per handshake and
-/// is), mirroring native `xenia_handshake::HandshakeManager`'s design.
+/// The ML-KEM-1024 keypair is generated fresh in every [`Self::hello`] call
+/// and discarded once [`Self::finish`] returns -- unlike the persistent
+/// Ed25519/ML-DSA-87 signing identity, which is what a peer actually pins
+/// (see [`Self::identity_fingerprint`]). This is what makes the channel's
+/// AEAD key genuinely session-forward-secret against a *later* compromise
+/// of this host's long-term state: a captured ciphertext from handshake N
+/// cannot be decapsulated using anything recoverable after handshake N+1
+/// began, because the decapsulation key used for N no longer exists anywhere
+/// (an earlier revision of this type generated the KEM keypair once at
+/// construction and reused it for the process's entire lifetime -- every
+/// handshake that process ever completed shared one decapsulation key, so
+/// compromising that key at any point retroactively broke every past
+/// session too). The ephemeral keypair itself is bound into the transcript
+/// each signature covers (via `hello_bytes`, which every downstream
+/// signature transitively includes), so making it ephemeral needed no wire
+/// or transcript changes -- see [`Self::hello`]'s doc comment.
 pub struct HostHandshakeHighSec {
     signing_key: SigningKey,
     ml_dsa_signing_key: MlDsaSigningKey<MlDsa87>,
-    kem_dk: MlKemDk1024,
-    kem_ek_bytes: [u8; ML_KEM_1024_PK_LEN],
     pending: Option<HostPendingState>,
 }
 
 impl HostHandshakeHighSec {
-    /// Generate a fresh host Ed25519 + ML-DSA-87 + ML-KEM-1024 identity.
+    /// Generate a fresh host Ed25519 + ML-DSA-87 signing identity. (No
+    /// ML-KEM keypair here -- it's generated per handshake, not per
+    /// identity; see the struct doc comment.)
     pub fn new() -> Self {
         let signing_key = SigningKey::generate(&mut OsRng);
         let ml_dsa_seed: [u8; 32] = rand::random();
@@ -571,10 +589,9 @@ impl HostHandshakeHighSec {
     }
 
     /// Reconstruct a host identity from *persisted* seeds -- a 32-byte
-    /// Ed25519 secret and a 32-byte ML-DSA-87 seed. Mirrors
-    /// `xenia_handshake::HandshakeManager::from_identity_seeds`: the KEM
-    /// keypair stays freshly generated per construction (only the signing
-    /// identity is pinned by a peer).
+    /// Ed25519 secret and a 32-byte ML-DSA-87 seed. Only the signing
+    /// identity is persisted/pinned by a peer; the KEM keypair is never part
+    /// of this identity at all -- see the struct doc comment.
     pub fn from_identity(ed25519_secret: &[u8; 32], ml_dsa_seed: &[u8; 32]) -> Self {
         let signing_key = SigningKey::from_bytes(ed25519_secret);
         Self::from_identity_unchecked(signing_key, *ml_dsa_seed)
@@ -583,15 +600,9 @@ impl HostHandshakeHighSec {
     fn from_identity_unchecked(signing_key: SigningKey, ml_dsa_seed: [u8; 32]) -> Self {
         let seed: B32 = ml_dsa_seed.into();
         let ml_dsa_signing_key = MlDsaSigningKey::<MlDsa87>::from_seed(&seed);
-        let (kem_dk, kem_ek) = MlKem1024::generate_keypair();
-        let ek_encoded = kem_ek.to_bytes();
-        let mut kem_ek_bytes = [0u8; ML_KEM_1024_PK_LEN];
-        kem_ek_bytes.copy_from_slice(ek_encoded.as_slice());
         Self {
             signing_key,
             ml_dsa_signing_key,
-            kem_dk,
-            kem_ek_bytes,
             pending: None,
         }
     }
@@ -621,6 +632,15 @@ impl HostHandshakeHighSec {
     }
 
     /// Build and store `HostHello`; returns the bytes to send first.
+    ///
+    /// Generates a fresh ML-KEM-1024 keypair for *this* handshake -- see the
+    /// struct doc comment for why. The signature every downstream message
+    /// carries (`ViewerResponse`'s and `HostFinalize`'s, via
+    /// `viewer_signature_transcript`/`host_signature_transcript`) is built
+    /// over a transcript that includes `hello_bytes` verbatim, and
+    /// `hello_bytes` carries this ephemeral `kem_pk` -- so the ephemeral key
+    /// is authenticated by the same long-term signing identity a peer
+    /// already trusts, with no separate binding step needed.
     pub fn hello(&mut self, negotiated_context_hash: Option<[u8; 32]>) -> Vec<u8> {
         let host_nonce = rand::random::<[u8; 32]>();
         let host_ed25519_pk = self.ed25519_public_key();
@@ -632,10 +652,15 @@ impl HostHandshakeHighSec {
             .try_into()
             .expect("ml-dsa-87 encoded verifying key is always ML_DSA_87_PK_LEN bytes");
 
+        let (kem_dk, kem_ek) = MlKem1024::generate_keypair();
+        let ek_encoded = kem_ek.to_bytes();
+        let mut host_kem_pk = [0u8; ML_KEM_1024_PK_LEN];
+        host_kem_pk.copy_from_slice(ek_encoded.as_slice());
+
         let hello = HandshakeMessageHighSec::HostHello {
             ed25519_pk: host_ed25519_pk,
             ml_dsa_pk: host_ml_dsa_pk,
-            kem_pk: self.kem_ek_bytes,
+            kem_pk: host_kem_pk,
             nonce: host_nonce,
             negotiated_context_hash,
         };
@@ -647,7 +672,8 @@ impl HostHandshakeHighSec {
             host_nonce,
             host_ed25519_pk,
             host_ml_dsa_pk,
-            host_kem_pk: self.kem_ek_bytes,
+            host_kem_pk,
+            kem_dk,
             negotiated_context_hash,
         });
 
@@ -703,8 +729,11 @@ impl HostHandshakeHighSec {
         // ML-KEM decapsulate is infallible per FIPS 203 (implicit rejection:
         // an invalid ciphertext yields a pseudorandom shared secret rather
         // than an error). Authentication happens at the Ed25519/ML-DSA-87
-        // layer, same as the standard suite.
-        let shared = self.kem_dk.decapsulate(&ct);
+        // layer, same as the standard suite. `state.kem_dk` is this
+        // handshake's ephemeral decapsulation key -- used exactly once,
+        // here, and dropped with the rest of `state` when this function
+        // returns.
+        let shared = state.kem_dk.decapsulate(&ct);
         let root_key = hkdf_derive(&combined_nonce, shared.as_slice());
 
         let final_transcript = host_signature_transcript(

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0-alpha.8] — 2026-07-12
+
+### Changed
+
+- **`HostHandshakeHighSec` now generates a fresh ML-KEM-1024 keypair per
+  handshake instead of once per instance.** Previously the keypair was
+  generated at construction and reused for every handshake that
+  `HostHandshakeHighSec` instance ever drove (in `xenia-peer`, that's every
+  connection to the daemon's `--operator-sealed --operator-high-security`
+  endpoint for the process's entire lifetime) -- a captured ciphertext from
+  any past handshake could be decapsulated by anyone who later compromised
+  the long-term decapsulation key. The ephemeral keypair is generated in
+  `hello()` and consumed once by `finish()`; no wire or transcript format
+  change was needed, since the encapsulation key was already bound into
+  every downstream signature via `hello_bytes`. `HostHandshakeHighSec::new()`
+  and `from_identity()` no longer take or produce KEM key material at all.
+
 ## [0.2.0-alpha.7] — 2026-07-12
 
 ### Changed
