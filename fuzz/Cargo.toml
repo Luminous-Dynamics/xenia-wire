@@ -10,7 +10,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
 arbitrary = { version = "1", features = ["derive"] }
-xenia-wire = { path = "..", features = ["reference-frame", "lz4", "consent"] }
+xenia-wire = { path = "..", features = ["reference-frame", "lz4", "consent", "handshake", "operator-rekey"] }
 
 [[bin]]
 name = "fuzz_open"
@@ -43,6 +43,27 @@ bench = false
 [[bin]]
 name = "fuzz_observe_consent"
 path = "fuzz_targets/fuzz_observe_consent.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_handshake_begin"
+path = "fuzz_targets/fuzz_handshake_begin.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_handshake_highsec_begin"
+path = "fuzz_targets/fuzz_handshake_highsec_begin.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_operator_rekey"
+path = "fuzz_targets/fuzz_operator_rekey.rs"
 test = false
 doc = false
 bench = false
