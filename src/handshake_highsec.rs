@@ -46,18 +46,18 @@
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use hkdf::Hkdf;
 use ml_dsa::{
+    B32, EncodedSignature as MlDsaEncodedSignature,
+    EncodedVerifyingKey as MlDsaEncodedVerifyingKey, Generate as MlDsaGenerate, MlDsa87,
+    Signature as MlDsaSignatureT, SigningKey as MlDsaSigningKey, VerifyingKey as MlDsaVerifyingKey,
     signature::{Keypair as MlDsaKeypair, Signer as MlDsaSigner, Verifier as MlDsaVerifier},
-    EncodedSignature as MlDsaEncodedSignature, EncodedVerifyingKey as MlDsaEncodedVerifyingKey,
-    Generate as MlDsaGenerate, MlDsa87, Signature as MlDsaSignatureT,
-    SigningKey as MlDsaSigningKey, VerifyingKey as MlDsaVerifyingKey, B32,
 };
 use ml_kem::{
+    MlKem1024, TryKeyInit,
     kem::{Decapsulate, Encapsulate, Kem, KeyExport},
     ml_kem_1024::{
         Ciphertext as MlKem1024Ciphertext, DecapsulationKey as MlKemDk1024,
         EncapsulationKey as MlKemEk1024,
     },
-    MlKem1024, TryKeyInit,
 };
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
