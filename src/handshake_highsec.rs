@@ -46,23 +46,24 @@
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use hkdf::Hkdf;
 use ml_dsa::{
+    B32, EncodedSignature as MlDsaEncodedSignature,
+    EncodedVerifyingKey as MlDsaEncodedVerifyingKey, Generate as MlDsaGenerate, MlDsa87,
+    Signature as MlDsaSignatureT, SigningKey as MlDsaSigningKey, VerifyingKey as MlDsaVerifyingKey,
     signature::{Keypair as MlDsaKeypair, Signer as MlDsaSigner, Verifier as MlDsaVerifier},
-    EncodedSignature as MlDsaEncodedSignature, EncodedVerifyingKey as MlDsaEncodedVerifyingKey,
-    Generate as MlDsaGenerate, MlDsa87, Signature as MlDsaSignatureT,
-    SigningKey as MlDsaSigningKey, VerifyingKey as MlDsaVerifyingKey, B32,
 };
 use ml_kem::{
+    MlKem1024, TryKeyInit,
     kem::{Decapsulate, Encapsulate, Kem, KeyExport},
     ml_kem_1024::{
         Ciphertext as MlKem1024Ciphertext, DecapsulationKey as MlKemDk1024,
         EncapsulationKey as MlKemEk1024,
     },
-    MlKem1024, TryKeyInit,
 };
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use serde_big_array::BigArray;
 use sha2::Sha256;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::handshake::{HandshakeError, SessionKeySchedule};
 
@@ -294,9 +295,18 @@ fn host_identity_fingerprint_highsec(ed25519_pk: &[u8; 32], ml_dsa_pk: &[u8]) ->
 
 // ─── Viewer role ───
 
+/// Zeroized on drop -- this is the high-security suite's mirror of
+/// `crate::handshake`'s private `PendingState`, same rationale: `root_key`
+/// is the raw shared secret feeding [`SessionKeySchedule::derive`] and
+/// shouldn't linger in freed memory. `host_verifying_key` is skipped: it's
+/// the host's public key (reconstructible from `host_ed25519_pk`, also
+/// present here), and `ed25519_dalek::VerifyingKey` doesn't implement
+/// `Zeroize` anyway.
+#[derive(Zeroize, ZeroizeOnDrop)]
 struct ViewerPendingState {
     hello_bytes: Vec<u8>,
     host_ed25519_pk: [u8; 32],
+    #[zeroize(skip)]
     host_verifying_key: VerifyingKey,
     host_ml_dsa_pk: [u8; ML_DSA_87_PK_LEN],
     host_kem_pk: [u8; ML_KEM_1024_PK_LEN],
@@ -525,6 +535,15 @@ impl ViewerHandshakeHighSec {
 
 // ─── Host role ───
 
+/// Zeroized on drop, same rationale as [`ViewerPendingState`]. `kem_dk` is
+/// skipped from the derive: `ml_kem::DecapsulationKey` implements `Drop`
+/// (already zeroizing its own fields via ml-kem's `zeroize` feature, already
+/// enabled in this crate's `Cargo.toml`) but not the `Zeroize` trait itself,
+/// so it can't be a field in a `#[derive(Zeroize)]` struct -- skipping it
+/// here only opts it out of *this* struct's explicit `zeroize()` call; its
+/// own `Drop` still runs (and still zeroizes) automatically when this
+/// struct is dropped, exactly as it already did before this change.
+#[derive(Zeroize, ZeroizeOnDrop)]
 struct HostPendingState {
     hello_bytes: Vec<u8>,
     host_nonce: [u8; 32],
@@ -536,6 +555,7 @@ struct HostPendingState {
     /// [`HostHandshakeHighSec::finish`], and then dropped along with the
     /// rest of this state when `finish` takes and consumes it. Never
     /// persisted, never reused across handshakes.
+    #[zeroize(skip)]
     kem_dk: MlKemDk1024,
     negotiated_context_hash: Option<[u8; 32]>,
 }
