@@ -117,6 +117,8 @@ pub use payload_types::{
     PAYLOAD_TYPE_FRAME_LZ4, PAYLOAD_TYPE_INPUT,
 };
 pub use replay_window::{DEFAULT_WINDOW_BITS, MAX_WINDOW_BITS, ReplayWindow, WINDOW_BITS};
+#[cfg(all(feature = "consent", feature = "bench-internals"))]
+pub use session::ct_eq_32_for_bench;
 pub use session::{DEFAULT_REKEY_GRACE, Session, SessionBuilder};
 
 pub use frame::Sealable;

@@ -1060,6 +1060,16 @@ fn ct_eq_32(a: &[u8; 32], b: &[u8; 32]) -> bool {
     diff == 0
 }
 
+/// Re-exposes [`ct_eq_32`] publicly, only under `bench-internals` -- exists
+/// solely so `examples/ctbench_fingerprint.rs` (a `dudect` statistical
+/// constant-time benchmark) can reach this otherwise-private primitive from
+/// its own separate binary crate. Never enabled in a normal build; not part
+/// of this crate's real public API.
+#[cfg(all(feature = "consent", feature = "bench-internals"))]
+pub fn ct_eq_32_for_bench(a: &[u8; 32], b: &[u8; 32]) -> bool {
+    ct_eq_32(a, b)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

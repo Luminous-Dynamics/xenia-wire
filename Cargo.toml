@@ -48,6 +48,11 @@ handshake = [
     "dep:ml-dsa",
     "dep:blake3",
 ]
+# Re-exposes normally-private constant-time primitives (see
+# `session::ct_eq_32_for_bench`) so `examples/ctbench_fingerprint.rs` can
+# statistically verify them with `dudect`. Not part of the real public API;
+# never enable this in application code.
+bench-internals = []
 # Rekey control messages for a single-key application channel (e.g. Xenia's
 # operator sealed channel): key rotation for a long-lived channel that isn't
 # built on the multi-lane video/audio/control rekey system. Deliberately does
@@ -101,11 +106,27 @@ criterion = { version = "0.5", default-features = false, features = ["cargo_benc
 serde_json = "1"
 proptest = "1"
 rand_chacha = "0.3"
+# Statistical constant-time verification (DudeCT) for
+# examples/ctbench_fingerprint.rs. Dev-only. `BenchRng` is a rand-0.10-family
+# type; `rand_core = "0.10"` (not a plain `rand` dep -- its crate root
+# doesn't re-export the trait the example needs) gives the example
+# `rand_core::Rng` at the exact version `dudect-bencher`'s own `rand v0.10.2`
+# depends on (confirmed via `cargo tree -p rand@0.10.2`), so `BenchRng`'s
+# trait impl actually lines up -- note this `rand_core` release renamed the
+# older `RngCore` trait to `Rng` (`RngCore` still exists but is deprecated).
+# Coexists fine with this crate's own `rand = "0.8"` main dependency --
+# unrelated crate-graph entries.
+dudect-bencher = "0.7"
+rand_core = "0.10"
 
 [[bench]]
 name = "seal_open_throughput"
 harness = false
 required-features = ["reference-frame"]
+
+[[example]]
+name = "ctbench_fingerprint"
+required-features = ["consent", "bench-internals"]
 
 [[example]]
 name = "hello_xenia"
