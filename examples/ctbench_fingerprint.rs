@@ -33,7 +33,7 @@
 //! detect). A value at or above 5 would indicate a real, measurable timing
 //! difference between the two input classes below.
 
-use dudect_bencher::{ctbench_main, BenchRng, Class, CtRunner};
+use dudect_bencher::{BenchRng, Class, CtRunner, ctbench_main};
 use rand_core::Rng;
 use xenia_wire::ct_eq_32_for_bench;
 
@@ -76,7 +76,7 @@ fn fingerprint_compare(runner: &mut CtRunner, rng: &mut BenchRng) {
         }
     }
 
-    for (class, (a, b)) in classes.into_iter().zip(inputs.into_iter()) {
+    for (class, (a, b)) in classes.into_iter().zip(inputs) {
         runner.run_one(class, || ct_eq_32_for_bench(&a, &b));
     }
 }

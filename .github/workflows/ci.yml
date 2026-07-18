@@ -146,4 +146,14 @@ jobs:
         # breaking wire-format change that has to go through a spec bump,
         # not a silent dependency bump. Tracked as a v1.0-blocker
         # decision, not a CI-blocking vulnerability.
-        run: cargo audit --deny warnings --ignore RUSTSEC-2025-0141
+        #
+        # RUSTSEC-2021-0139 (ansi_term unmaintained), RUSTSEC-2024-0375
+        # (atty unmaintained), RUSTSEC-2021-0145 (atty unsound unaligned
+        # read on non-Unix/non-Windows targets): all three are transitive
+        # dev-only dependencies of `dudect-bencher` (examples/ctbench_fingerprint.rs's
+        # constant-time benchmark), pulled in via its pin on clap 2.x.
+        # Never part of the shipped library -- only reachable from a dev
+        # example binary, and CI runs exclusively on Linux/macOS/Windows
+        # where the unsound read doesn't apply. Revisit if dudect-bencher
+        # ever updates its own clap dependency.
+        run: cargo audit --deny warnings --ignore RUSTSEC-2025-0141 --ignore RUSTSEC-2021-0139 --ignore RUSTSEC-2024-0375 --ignore RUSTSEC-2021-0145
