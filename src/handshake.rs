@@ -51,6 +51,7 @@ use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use serde_big_array::BigArray;
 use sha2::Sha256;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 // ─── Wire-compatible constants (must match xenia-handshake exactly) ───
 
@@ -300,10 +301,17 @@ fn verify_ml_dsa(
 }
 
 /// Pending state carried between [`ViewerHandshake::begin`] and
-/// [`ViewerHandshake::finish`].
+/// [`ViewerHandshake::finish`]. Zeroized on drop -- `root_key` in particular
+/// is the raw shared secret feeding [`SessionKeySchedule::derive`], and
+/// should not linger in freed memory relying on allocator reuse to overwrite
+/// it. `host_verifying_key` is skipped: it's the host's *public* key,
+/// reconstructible from `host_ed25519_pk` (also present here), and
+/// `ed25519_dalek::VerifyingKey` doesn't implement `Zeroize` anyway.
+#[derive(Zeroize, ZeroizeOnDrop)]
 struct PendingState {
     hello_bytes: Vec<u8>,
     host_ed25519_pk: [u8; 32],
+    #[zeroize(skip)]
     host_verifying_key: VerifyingKey,
     host_ml_dsa_pk: [u8; ML_DSA_65_PK_LEN],
     host_kem_pk: [u8; ML_KEM_768_PK_LEN],
