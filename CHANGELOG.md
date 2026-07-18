@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0-alpha.9] — 2026-07-18
+
+### Security
+
+- **Pending handshake material (`PendingState`, `ViewerPendingState`,
+  `HostPendingState`) is now zeroized on drop.** Previously these structs
+  carried the raw shared secret feeding `SessionKeySchedule::derive` (for
+  both the standard and high-security suites, in both host and viewer
+  roles) with no `Zeroize`/`ZeroizeOnDrop`, so the secret was left in freed
+  heap memory relying on allocator reuse to overwrite it -- recoverable via
+  a memory-disclosure primitive, cold-boot attack, or swap inspection.
+  `host_verifying_key` is deliberately `#[zeroize(skip)]`d (it's a public
+  key, and `ed25519_dalek::VerifyingKey` doesn't implement `Zeroize`
+  anyway); `kem_dk`'s own zeroizing `Drop` composes correctly. The `ml-dsa`
+  dependency now enables its `"zeroize"` feature so the ML-DSA signing seed
+  is likewise zeroized.
+
+### Added
+
+- Fuzz targets for `ViewerHandshake::begin`, the high-security handshake's
+  `begin`, and the operator-rekey proposal path (`fuzz/fuzz_targets/`).
+
 ## [0.2.0-alpha.8] — 2026-07-12
 
 ### Changed
