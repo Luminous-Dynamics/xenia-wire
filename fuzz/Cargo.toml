@@ -11,6 +11,20 @@ cargo-fuzz = true
 libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
 arbitrary = { version = "1", features = ["derive"] }
 xenia-wire = { path = "..", features = ["reference-frame", "lz4", "consent", "handshake", "operator-rekey"] }
+# For fuzz_handshake_finish / fuzz_handshake_highsec_finish: these need to
+# build a real "fake host" identity and a genuinely valid HostHello/
+# HostFinalize to exercise finish() past its NotStarted check, so they
+# depend on the same crypto crates `xenia-wire`'s `handshake` feature does
+# -- exact-pinned to match, same reasoning as `src/handshake.rs`'s own
+# version pins (a plain semver range can silently resolve a newer,
+# API-incompatible version).
+serde = { version = "1", features = ["derive"] }
+serde-big-array = "0.5"
+bincode = "1.3"
+rand = "0.8"
+ed25519-dalek = { version = "2", default-features = false, features = ["std", "rand_core"] }
+ml-kem = { version = "=0.3.0-rc.2", default-features = false, features = ["zeroize", "getrandom"] }
+ml-dsa = { version = "=0.1.1", features = ["zeroize"] }
 
 [[bin]]
 name = "fuzz_open"
@@ -57,6 +71,20 @@ bench = false
 [[bin]]
 name = "fuzz_handshake_highsec_begin"
 path = "fuzz_targets/fuzz_handshake_highsec_begin.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_handshake_finish"
+path = "fuzz_targets/fuzz_handshake_finish.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_handshake_highsec_finish"
+path = "fuzz_targets/fuzz_handshake_highsec_finish.rs"
 test = false
 doc = false
 bench = false
