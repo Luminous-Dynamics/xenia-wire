@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  schedule:
+    # Weekly deep fuzz run (see fuzz-deep job) -- Sundays 06:00 UTC.
+    - cron: "0 6 * * 0"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -123,6 +126,62 @@ jobs:
         run: node test-vectors/conformance/verify.mjs
       - name: Verify consent state-machine vectors from an independent implementation
         run: node test-vectors/conformance/verify-consent.mjs
+
+  # Fuzz targets existed in fuzz/fuzz_targets/ but were never actually
+  # invoked by CI -- "compiles" and "runs without crashing" are different
+  # claims, and nothing here verified the second one. This job makes that
+  # claim true on every push/PR: each libFuzzer target gets a short,
+  # bounded run (enough to catch a build break or an immediate crash, not
+  # a deep fuzzing campaign) so the total job stays fast. `fuzz-deep`
+  # below runs the same targets for much longer on a weekly schedule,
+  # where an actual bug is more likely to surface.
+  fuzz-smoke:
+    name: Fuzz targets (PR smoke, 20s each)
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz -> target
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+      - name: Run every fuzz target briefly
+        working-directory: .
+        run: |
+          set -euo pipefail
+          for target in $(cargo fuzz list); do
+            echo "=== fuzzing $target for 20s ==="
+            cargo fuzz run "$target" -- -max_total_time=20 -rss_limit_mb=2048
+          done
+
+  fuzz-deep:
+    name: Fuzz targets (weekly deep run, 5m each)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz -> target
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+      - name: Run every fuzz target for 5 minutes
+        run: |
+          set -euo pipefail
+          for target in $(cargo fuzz list); do
+            echo "=== fuzzing $target for 300s ==="
+            cargo fuzz run "$target" -- -max_total_time=300 -rss_limit_mb=2048
+          done
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crash-artifacts
+          path: fuzz/artifacts/
+          if-no-files-found: ignore
 
   audit:
     name: Security Audit
