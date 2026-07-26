@@ -145,6 +145,21 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: fuzz -> target
+      # Corpus accumulates the inputs libFuzzer found "interesting" across
+      # runs -- without this, every run starts from a cold, empty corpus
+      # and re-explores the same shallow inputs each time. Keyed on
+      # run_id so every run always saves a fresh entry (a fixed key would
+      # never update after its first write); restore-keys falls back to
+      # the most recent prior entry. Shared with fuzz-deep below via the
+      # same key prefix, so the weekly deep run's discoveries feed back
+      # into every PR's smoke run and vice versa.
+      - name: Cache fuzz corpus
+        uses: actions/cache@v4
+        with:
+          path: fuzz/corpus
+          key: fuzz-corpus-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            fuzz-corpus-${{ runner.os }}-
       - name: Install cargo-fuzz
         run: cargo install cargo-fuzz --locked
       - name: Run every fuzz target briefly
@@ -166,6 +181,16 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: fuzz -> target
+      # Same growing-cache pattern as fuzz-smoke, same key prefix -- this
+      # is the job most likely to actually find new corpus entries (5m vs
+      # 20s per target), so keeping the two in sync matters most here.
+      - name: Cache fuzz corpus
+        uses: actions/cache@v4
+        with:
+          path: fuzz/corpus
+          key: fuzz-corpus-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            fuzz-corpus-${{ runner.os }}-
       - name: Install cargo-fuzz
         run: cargo install cargo-fuzz --locked
       - name: Run every fuzz target for 5 minutes
