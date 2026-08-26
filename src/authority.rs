@@ -23,7 +23,7 @@ use crate::consent::{
     CausalPredicate, ConsentRequest, ConsentRevocation, ConsentScope, PUBLIC_KEY_LEN,
     SIGNATURE_LEN,
 };
-use crate::{Sealable, WireError};
+use crate::{Sealable, Session, WireError};
 
 /// Human-readable profile identifier carried in `CausalPredicate::description`.
 pub const EXTERNAL_ACTION_AUTHORITY_PROFILE: &str = "xenia.external-action-authority.v1";
@@ -245,6 +245,9 @@ impl CausalAuthorityResponse {
         reason: impl Into<String>,
         signing_key: &SigningKey,
     ) -> Result<Self, ExternalAuthorityError> {
+        if issued_at_ms == 0 {
+            return Err(ExternalAuthorityError::InvalidResponseIssueTime);
+        }
         let reason = reason.into();
         if reason.as_bytes().len() > MAX_AUTHORITY_RESPONSE_REASON_BYTES {
             return Err(ExternalAuthorityError::ResponseReasonTooLong);
@@ -265,7 +268,9 @@ impl CausalAuthorityResponse {
 
     /// Verify the response signature and optional expected responder key.
     pub fn verify(&self, expected_pubkey: Option<&[u8; PUBLIC_KEY_LEN]>) -> bool {
-        if self.core.reason.as_bytes().len() > MAX_AUTHORITY_RESPONSE_REASON_BYTES {
+        if self.core.issued_at_ms == 0
+            || self.core.reason.as_bytes().len() > MAX_AUTHORITY_RESPONSE_REASON_BYTES
+        {
             return false;
         }
         if expected_pubkey.is_some_and(|expected| expected != &self.core.responder_pubkey) {
@@ -295,6 +300,34 @@ impl Sealable for CausalAuthorityResponse {
         }
         bincode::deserialize(bytes).map_err(WireError::decode)
     }
+}
+
+/// Seal an exact-authority response under the reserved `0x24` payload type.
+pub fn seal_causal_authority_response(
+    response: &CausalAuthorityResponse,
+    session: &mut Session,
+) -> Result<Vec<u8>, WireError> {
+    crate::seal(
+        response,
+        session,
+        crate::payload_types::PAYLOAD_TYPE_CAUSAL_AUTHORITY_RESPONSE,
+    )
+}
+
+/// Open an exact-authority response, failing closed on payload-type mismatch.
+///
+/// The explicit type check prevents a different stream's bincode-compatible
+/// plaintext from being interpreted as an authority approval.
+pub fn open_causal_authority_response(
+    bytes: &[u8],
+    session: &mut Session,
+) -> Result<CausalAuthorityResponse, WireError> {
+    if crate::envelope_payload_type(bytes)
+        != Some(crate::payload_types::PAYLOAD_TYPE_CAUSAL_AUTHORITY_RESPONSE)
+    {
+        return Err(WireError::OpenFailed);
+    }
+    crate::open(bytes, session)
 }
 
 /// Compute the digest a responder signs when approving an exact request.
@@ -383,6 +416,9 @@ pub enum ExternalAuthorityError {
     /// Signed response reason exceeds the profile's authority limit.
     #[error("causal authority response reason is too long")]
     ResponseReasonTooLong,
+    /// Bound response issue time is zero/invalid.
+    #[error("causal authority response issue time is invalid")]
+    InvalidResponseIssueTime,
     /// Bound response issue time is implausibly in the future.
     #[error("causal authority response issue time is in the future")]
     ResponseFromFuture,
@@ -494,6 +530,9 @@ pub fn verify_approved_external_action_authority(
         return Err(ExternalAuthorityError::RequestDigestMismatch);
     }
 
+    if response.core.issued_at_ms == 0 {
+        return Err(ExternalAuthorityError::InvalidResponseIssueTime);
+    }
     let future_limit = now_ms.saturating_add(AUTHORITY_CLOCK_SKEW_MS);
     if response.core.issued_at_ms > future_limit {
         return Err(ExternalAuthorityError::ResponseFromFuture);
@@ -740,6 +779,21 @@ mod tests {
     }
 
     #[test]
+    fn zero_issue_time_is_rejected_at_construction() {
+        let req = request(authority(15_000));
+        assert_eq!(
+            CausalAuthorityResponse::sign_for_request(
+                &req,
+                true,
+                0,
+                "invalid",
+                &responder(),
+            ),
+            Err(ExternalAuthorityError::InvalidResponseIssueTime)
+        );
+    }
+
+    #[test]
     fn future_response_is_rejected() {
         let req = request(authority(15_000));
         let resp = CausalAuthorityResponse::sign_for_request(
@@ -752,7 +806,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             verify(&req, &resp, &[], 20_000),
-            Err(ExternalAuthorityError::ResponseAfterRequestExpiry)
+            Err(ExternalAuthorityError::ResponseFromFuture)
         );
     }
 
@@ -828,6 +882,40 @@ mod tests {
         let bytes = resp.to_bin().unwrap();
         let decoded = CausalAuthorityResponse::from_bin(&bytes).unwrap();
         assert_eq!(decoded, resp);
+    }
+
+    #[test]
+    fn bound_response_wire_roundtrip_and_type_check() {
+        let req = request(authority(15_000));
+        let resp = response(&req, true);
+        let mut sender = Session::with_source_id([0x71; 8], 0x31);
+        let mut receiver = Session::with_source_id([0x71; 8], 0x31);
+        sender.install_key([0x42; 32]);
+        receiver.install_key([0x42; 32]);
+
+        let envelope = seal_causal_authority_response(&resp, &mut sender).unwrap();
+        assert_eq!(
+            crate::envelope_payload_type(&envelope),
+            Some(crate::payload_types::PAYLOAD_TYPE_CAUSAL_AUTHORITY_RESPONSE)
+        );
+        let opened = open_causal_authority_response(&envelope, &mut receiver).unwrap();
+        assert_eq!(opened, resp);
+    }
+
+    #[test]
+    fn authority_open_rejects_wrong_payload_type_before_decode() {
+        let req = request(authority(15_000));
+        let resp = response(&req, true);
+        let mut sender = Session::with_source_id([0x72; 8], 0x32);
+        let mut receiver = Session::with_source_id([0x72; 8], 0x32);
+        sender.install_key([0x43; 32]);
+        receiver.install_key([0x43; 32]);
+
+        let envelope = crate::seal(&resp, &mut sender, 0x30).unwrap();
+        assert!(matches!(
+            open_causal_authority_response(&envelope, &mut receiver),
+            Err(WireError::OpenFailed)
+        ));
     }
 
     #[test]
