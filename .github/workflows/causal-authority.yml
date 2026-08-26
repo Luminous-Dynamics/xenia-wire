@@ -18,8 +18,10 @@ on:
       - "tests/causal_authority_vectors.rs"
       - "test-vectors/13_causal_authority_v1.json"
       - "test-vectors/14_negotiated_context_v1.json"
+      - "test-vectors/15_capability_negotiation_v1.json"
       - "test-vectors/conformance/verify-causal-authority.mjs"
       - "test-vectors/conformance/verify-negotiated-context.mjs"
+      - "test-vectors/conformance/verify-capability-negotiation.mjs"
       - ".github/workflows/causal-authority.yml"
   workflow_dispatch:
 
@@ -70,7 +72,7 @@ jobs:
         run: cargo check --no-default-features --features causal-authority,handshake --all-targets
       - name: Clippy strict negotiation feature boundary
         run: cargo clippy --no-default-features --features causal-authority,handshake --all-targets -- -D warnings
-      - name: Test negotiated context and authority profile
+      - name: Test negotiated context, offers, binding, and authority profile
         run: cargo test --no-default-features --features causal-authority,handshake --lib
 
   node:
@@ -83,5 +85,7 @@ jobs:
           node-version: "22"
       - name: Reproduce canonical authority bytes, signatures, digests, and authority id
         run: node test-vectors/conformance/verify-causal-authority.mjs
-      - name: Reproduce negotiated-context canonical bytes and SHA-256
+      - name: Reproduce selected-context canonical bytes and SHA-256
         run: node test-vectors/conformance/verify-negotiated-context.mjs
+      - name: Reproduce capability offers, deterministic selection, and binding
+        run: node test-vectors/conformance/verify-capability-negotiation.mjs
