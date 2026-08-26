@@ -28,6 +28,9 @@
 //! - **[`authority`]** — experimental exact external-action authority. Unlike
 //!   ordinary consent responses, its responder statement commits to the digest
 //!   of the complete signed request. Available only with `causal-authority`.
+//! - **[`authority_session`]** — recommended live-session authority path. It
+//!   authenticates request fingerprints through Xenia's current/previous rekey
+//!   epochs before signing or verifying exact authority.
 //!
 //! ## What this crate deliberately does NOT do
 //!
@@ -108,6 +111,9 @@ pub mod consent;
 
 #[cfg(feature = "causal-authority")]
 pub mod authority;
+
+#[cfg(feature = "causal-authority")]
+pub mod authority_session;
 
 #[cfg(feature = "handshake")]
 pub mod handshake;
