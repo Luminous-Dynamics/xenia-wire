@@ -24,6 +24,10 @@
 //!   Available under the default `reference-frame` feature.
 //! - **[`seal_frame_lz4`] / [`open_frame_lz4`]** — LZ4-before-AEAD
 //!   compression variants. Available under the `lz4` feature.
+//! - **[`consent`]** — signed draft-03 request/response/revocation ceremony.
+//! - **[`authority`]** — experimental exact external-action authority. Unlike
+//!   ordinary consent responses, its responder statement commits to the digest
+//!   of the complete signed request. Available only with `causal-authority`.
 //!
 //! ## What this crate deliberately does NOT do
 //!
@@ -32,11 +36,10 @@
 //! - **No handshake.** Session keys arrive from somewhere else
 //!   (ML-KEM-768 in real deployments). Call [`Session::install_key`]
 //!   directly in tests or early prototypes.
-//! - **No state machine.** `Session` has no lifecycle — no connecting,
-//!   authenticating, closing. Those are application concerns.
-//! - **No domain semantics.** The reference [`Frame`] / [`Input`] types
-//!   carry opaque byte payloads. Implement [`Sealable`] on your own
-//!   types for anything real.
+//! - **No application lifecycle.** Session creation/teardown and durable
+//!   authority consumption remain application concerns.
+//! - **No domain semantics.** Xenia binds canonical application bytes and
+//!   digests; consuming applications define what those bytes mean.
 //!
 //! ## Quick start
 //!
@@ -76,10 +79,12 @@
 //!
 //! ## Feature flags
 //!
-//! | Feature           | Default | Description                                          |
-//! |-------------------|---------|------------------------------------------------------|
-//! | `reference-frame` | yes     | Ships [`Frame`] + [`Input`] reference types.         |
-//! | `lz4`             | no      | Adds LZ4-before-AEAD variants for frame sealing.     |
+//! | Feature            | Default | Description |
+//! |--------------------|---------|-------------|
+//! | `reference-frame`  | yes     | Ships [`Frame`] + [`Input`] reference types. |
+//! | `lz4`              | no      | Adds LZ4-before-AEAD variants for frames. |
+//! | `consent`          | no      | Adds signed consent ceremony + session gating. |
+//! | `causal-authority` | no      | Experimental exact request-bound authority; implies `consent`. |
 //!
 //! ## License
 //!
@@ -115,7 +120,8 @@ pub mod operator_rekey;
 
 pub use error::WireError;
 pub use payload_types::{
-    PAYLOAD_TYPE_APPLICATION_MIN, PAYLOAD_TYPE_ATTESTED_ACTION, PAYLOAD_TYPE_CONSENT_REQUEST,
+    PAYLOAD_TYPE_APPLICATION_MIN, PAYLOAD_TYPE_ATTESTED_ACTION,
+    PAYLOAD_TYPE_CAUSAL_AUTHORITY_RESPONSE, PAYLOAD_TYPE_CONSENT_REQUEST,
     PAYLOAD_TYPE_CONSENT_RESPONSE, PAYLOAD_TYPE_CONSENT_REVOCATION, PAYLOAD_TYPE_FRAME,
     PAYLOAD_TYPE_FRAME_LZ4, PAYLOAD_TYPE_INPUT,
 };
