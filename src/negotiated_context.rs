@@ -90,7 +90,8 @@ impl NegotiatedCapabilityV1 {
 /// Capabilities are sorted lexicographically by exact `(name, version)` bytes
 /// before hashing. This makes the selected-set digest independent of local
 /// advertisement order while still allowing the surrounding handshake
-/// transcript to bind the exact advertisements separately.
+/// transcript to bind the exact advertisements separately. A selected context
+/// may contain at most one version for any exact capability name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NegotiatedContextV1 {
     capabilities: Vec<NegotiatedCapabilityV1>,
@@ -100,9 +101,9 @@ pub struct NegotiatedContextV1 {
 impl NegotiatedContextV1 {
     /// Canonicalize and hash a selected capability set.
     ///
-    /// Exact duplicate `(name, version)` pairs fail closed rather than being
-    /// silently deduplicated, because duplicate negotiation output is usually a
-    /// caller bug or a sign that two implementations disagree about selection.
+    /// Every exact capability name maps to exactly one selected version. Exact
+    /// duplicates and multiple versions for the same name therefore fail closed
+    /// rather than being silently deduplicated or left ambiguous.
     pub fn from_capabilities<I>(capabilities: I) -> Result<Self, NegotiatedContextError>
     where
         I: IntoIterator<Item = NegotiatedCapabilityV1>,
@@ -116,8 +117,11 @@ impl NegotiatedContextV1 {
         }
 
         capabilities.sort();
-        if capabilities.windows(2).any(|pair| pair[0] == pair[1]) {
-            return Err(NegotiatedContextError::DuplicateCapability);
+        if capabilities
+            .windows(2)
+            .any(|pair| pair[0].name() == pair[1].name())
+        {
+            return Err(NegotiatedContextError::DuplicateCapabilityName);
         }
 
         let hash = hash_capabilities(&capabilities);
@@ -204,9 +208,9 @@ pub enum NegotiatedContextError {
     /// Capability version exceeds the protocol bound.
     #[error("capability version exceeds negotiated-context bound")]
     CapabilityVersionTooLong,
-    /// The selected set contains an exact duplicate capability.
-    #[error("duplicate negotiated capability")]
-    DuplicateCapability,
+    /// More than one selected entry uses the same exact capability name.
+    #[error("negotiated capability name has more than one selected version")]
+    DuplicateCapabilityName,
     /// A strict profile was required but the authenticated handshake carried no
     /// negotiated-context hash.
     #[error("authenticated handshake did not carry a negotiated context")]
@@ -252,10 +256,9 @@ mod tests {
         assert_eq!(
             context.hash(),
             [
-                0xff, 0xd0, 0xc4, 0xad, 0x0b, 0x13, 0x3e, 0x8a,
-                0xae, 0x58, 0xb0, 0xa7, 0x9b, 0x51, 0x0f, 0xa9,
-                0x0f, 0x5e, 0xbf, 0xf9, 0x77, 0x51, 0xb5, 0xfc,
-                0x2b, 0x55, 0xa7, 0xff, 0x79, 0x6c, 0x2a, 0x85,
+                0xff, 0xd0, 0xc4, 0xad, 0x0b, 0x13, 0x3e, 0x8a, 0xae, 0x58, 0xb0, 0xa7, 0x9b,
+                0x51, 0x0f, 0xa9, 0x0f, 0x5e, 0xbf, 0xf9, 0x77, 0x51, 0xb5, 0xfc, 0x2b, 0x55,
+                0xa7, 0xff, 0x79, 0x6c, 0x2a, 0x85,
             ]
         );
     }
@@ -277,13 +280,25 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_capability_fails_closed() {
+    fn duplicate_or_multi_version_capability_name_fails_closed() {
         let capability = cap(b"xenia.causal-authority", b"draft-04");
-        let result = NegotiatedContextV1::from_capabilities([
+        let duplicate = NegotiatedContextV1::from_capabilities([
             capability.clone(),
             capability,
         ]);
-        assert_eq!(result.unwrap_err(), NegotiatedContextError::DuplicateCapability);
+        assert_eq!(
+            duplicate.unwrap_err(),
+            NegotiatedContextError::DuplicateCapabilityName
+        );
+
+        let multi_version = NegotiatedContextV1::from_capabilities([
+            cap(b"xenia.causal-authority", b"draft-03"),
+            cap(b"xenia.causal-authority", b"draft-04"),
+        ]);
+        assert_eq!(
+            multi_version.unwrap_err(),
+            NegotiatedContextError::DuplicateCapabilityName
+        );
     }
 
     #[test]
