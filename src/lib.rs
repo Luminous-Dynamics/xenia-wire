@@ -101,6 +101,9 @@ mod frame;
 #[cfg(feature = "consent")]
 pub mod consent;
 
+#[cfg(feature = "causal-authority")]
+pub mod authority;
+
 #[cfg(feature = "handshake")]
 pub mod handshake;
 
