@@ -5,9 +5,11 @@ on:
     paths:
       - "Cargo.toml"
       - "src/authority.rs"
+      - "src/authority_negotiation.rs"
       - "src/authority_session.rs"
       - "src/consent.rs"
       - "src/lib.rs"
+      - "src/negotiated_context.rs"
       - "src/payload_types.rs"
       - "src/session.rs"
       - "src/wire.rs"
@@ -15,7 +17,9 @@ on:
       - "tests/causal_authority_session.rs"
       - "tests/causal_authority_vectors.rs"
       - "test-vectors/13_causal_authority_v1.json"
+      - "test-vectors/14_negotiated_context_v1.json"
       - "test-vectors/conformance/verify-causal-authority.mjs"
+      - "test-vectors/conformance/verify-negotiated-context.mjs"
       - ".github/workflows/causal-authority.yml"
   workflow_dispatch:
 
@@ -53,6 +57,22 @@ jobs:
       - name: Reproduce deterministic Rust vector
         run: cargo test --no-default-features --features causal-authority --test causal_authority_vectors -- --nocapture
 
+  negotiation:
+    name: Rust authority + handshake negotiation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.94
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Check strict negotiation feature boundary
+        run: cargo check --no-default-features --features causal-authority,handshake --all-targets
+      - name: Clippy strict negotiation feature boundary
+        run: cargo clippy --no-default-features --features causal-authority,handshake --all-targets -- -D warnings
+      - name: Test negotiated context and authority profile
+        run: cargo test --no-default-features --features causal-authority,handshake --lib
+
   node:
     name: Independent Node vector reproduction
     runs-on: ubuntu-latest
@@ -61,5 +81,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Reproduce canonical bytes, signatures, digests, and authority id
+      - name: Reproduce canonical authority bytes, signatures, digests, and authority id
         run: node test-vectors/conformance/verify-causal-authority.mjs
+      - name: Reproduce negotiated-context canonical bytes and SHA-256
+        run: node test-vectors/conformance/verify-negotiated-context.mjs
