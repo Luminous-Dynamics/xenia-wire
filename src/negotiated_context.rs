@@ -16,11 +16,14 @@
 
 #![cfg(feature = "handshake")]
 
-use blake3::Hasher;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 /// Domain separator for canonical negotiated-capability contexts.
 pub const NEGOTIATED_CONTEXT_V1_DOMAIN: &[u8] = b"xenia.negotiated-context.v1\0";
+
+/// Stable digest algorithm label for negotiated contexts.
+pub const NEGOTIATED_CONTEXT_HASH_ALGORITHM: &str = "sha256";
 
 /// Maximum number of capabilities in one negotiated context.
 pub const MAX_NEGOTIATED_CAPABILITIES: usize = 64;
@@ -126,7 +129,7 @@ impl NegotiatedContextV1 {
         &self.capabilities
     }
 
-    /// BLAKE3-256 digest to bind into the authenticated handshake transcript.
+    /// SHA-256 digest to bind into the authenticated handshake transcript.
     pub fn hash(&self) -> [u8; 32] {
         self.hash
     }
@@ -161,10 +164,10 @@ impl NegotiatedContextV1 {
 }
 
 fn hash_capabilities(capabilities: &[NegotiatedCapabilityV1]) -> [u8; 32] {
-    let mut hasher = Hasher::new();
+    let mut hasher = Sha256::new();
     hasher.update(NEGOTIATED_CONTEXT_V1_DOMAIN);
     hasher.update(
-        &u32::try_from(capabilities.len())
+        u32::try_from(capabilities.len())
             .expect("capability count is bounded below u32::MAX")
             .to_be_bytes(),
     );
@@ -174,12 +177,12 @@ fn hash_capabilities(capabilities: &[NegotiatedCapabilityV1]) -> [u8; 32] {
         hash_len_prefixed(&mut hasher, capability.version());
     }
 
-    *hasher.finalize().as_bytes()
+    hasher.finalize().into()
 }
 
-fn hash_len_prefixed(hasher: &mut Hasher, bytes: &[u8]) {
+fn hash_len_prefixed(hasher: &mut Sha256, bytes: &[u8]) {
     let len = u16::try_from(bytes.len()).expect("capability component is bounded below u16::MAX");
-    hasher.update(&len.to_be_bytes());
+    hasher.update(len.to_be_bytes());
     hasher.update(bytes);
 }
 
@@ -237,6 +240,24 @@ mod tests {
 
         assert_eq!(a, b);
         assert_eq!(a.hash(), b.hash());
+    }
+
+    #[test]
+    fn authority_only_context_has_frozen_sha256_vector() {
+        let context = NegotiatedContextV1::from_capabilities([cap(
+            b"xenia.causal-authority",
+            b"draft-04",
+        )])
+        .unwrap();
+        assert_eq!(
+            context.hash(),
+            [
+                0xff, 0xd0, 0xc4, 0xad, 0x0b, 0x13, 0x3e, 0x8a,
+                0xae, 0x58, 0xb0, 0xa7, 0x9b, 0x51, 0x0f, 0xa9,
+                0x0f, 0x5e, 0xbf, 0xf9, 0x77, 0x51, 0xb5, 0xfc,
+                0x2b, 0x55, 0xa7, 0xff, 0x79, 0x6c, 0x2a, 0x85,
+            ]
+        );
     }
 
     #[test]
