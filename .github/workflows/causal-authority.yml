@@ -10,6 +10,7 @@ on:
       - "src/consent.rs"
       - "src/lib.rs"
       - "src/negotiated_context.rs"
+      - "src/negotiated_context_codec.rs"
       - "src/payload_types.rs"
       - "src/session.rs"
       - "src/wire.rs"
@@ -72,7 +73,7 @@ jobs:
         run: cargo check --no-default-features --features causal-authority,handshake --all-targets
       - name: Clippy strict negotiation feature boundary
         run: cargo clippy --no-default-features --features causal-authority,handshake --all-targets -- -D warnings
-      - name: Test negotiated context, offers, binding, and authority profile
+      - name: Test negotiated context, offers, binding, hostile-byte codec, and authority profile
         run: cargo test --no-default-features --features causal-authority,handshake --lib
 
   node:
