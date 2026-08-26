@@ -31,8 +31,10 @@
 //! - **[`authority_session`]** — recommended live-session authority path. It
 //!   authenticates request fingerprints through Xenia's current/previous rekey
 //!   epochs before signing or verifying exact authority.
-//! - **[`negotiated_context`]** — canonical selected-capability contexts for
-//!   binding negotiated protocol state into an authenticated handshake.
+//! - **[`negotiated_context`]** — canonical capability offers, deterministic
+//!   selected contexts, and negotiation binding primitives.
+//! - **[`negotiated_context_codec`]** — bounded canonical decoding for untrusted
+//!   capability offers and selected contexts; alternate encodings fail closed.
 //! - **[`authority_negotiation`]** — exact causal-authority draft-04 capability
 //!   identity and selected-context checks when `causal-authority` + `handshake`
 //!   are enabled together.
@@ -125,6 +127,9 @@ pub mod handshake;
 
 #[cfg(feature = "handshake")]
 pub mod negotiated_context;
+
+#[cfg(feature = "handshake")]
+pub mod negotiated_context_codec;
 
 #[cfg(all(feature = "causal-authority", feature = "handshake"))]
 pub mod authority_negotiation;
