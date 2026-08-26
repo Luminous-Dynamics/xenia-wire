@@ -1,18 +1,24 @@
 // Copyright (c) 2026 Tristan Stoltz / Luminous Dynamics
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-//! Causal-authority capability profile for authenticated handshake negotiation.
+//! Causal-authority capability policy for Xenia handshake negotiation.
 //!
 //! This module is available only when both `causal-authority` and `handshake`
-//! are enabled. It defines the exact capability identifier that a strict
-//! draft-04 deployment must include in its authenticated negotiated context.
+//! are enabled. It defines the exact draft-04 capability identity and two
+//! deliberately different trust levels:
 //!
-//! The helpers here intentionally do not accept a boolean such as
-//! `supports_causal_authority`. Authority availability is represented by exact
-//! canonical bytes inside [`crate::negotiated_context::NegotiatedContextV1`].
-//! [`StrictCausalAuthorityViewerHandshake`] additionally proves that the host's
-//! signed handshake carried that exact context before yielding an
-//! [`AuthenticatedCausalAuthorityHandshake`] token.
+//! - [`require_causal_authority_draft04_evidence`] checks a deterministic
+//!   [`NegotiationEvidenceV1`] derived from both peer offers. The evidence is
+//!   canonical but is not authenticated until a future V2 handshake transcript
+//!   covers its negotiation binding.
+//! - [`PinnedCausalAuthorityViewerHandshake`] is a legacy/pre-agreed mode. It
+//!   proves only that the existing host handshake authenticated a caller-pinned
+//!   selected-context hash. It is **not** dynamic two-offer negotiation.
+//!
+//! The distinction is load-bearing. A host-authenticated opaque hash can prove
+//! agreement with a preconfigured expectation, but it cannot prove what the
+//! viewer offered because the legacy HostHello is emitted before any viewer
+//! capability offer exists.
 
 #![cfg(all(feature = "causal-authority", feature = "handshake"))]
 
@@ -21,7 +27,8 @@ use serde_big_array::BigArray;
 
 use crate::handshake::{HandshakeError, SessionKeySchedule, ViewerHandshake};
 use crate::negotiated_context::{
-    NegotiatedCapabilityV1, NegotiatedContextError, NegotiatedContextV1,
+    CapabilityOfferEntryV1, NegotiatedCapabilityV1, NegotiatedContextError, NegotiatedContextV1,
+    NegotiationEvidenceV1,
 };
 
 /// Canonical capability name for request-bound causal authority.
@@ -30,20 +37,23 @@ pub const CAUSAL_AUTHORITY_CAPABILITY_NAME: &[u8] = b"xenia.causal-authority";
 /// Canonical capability version for the draft-04 candidate protocol.
 pub const CAUSAL_AUTHORITY_CAPABILITY_VERSION: &[u8] = b"draft-04";
 
-// Wire sizes copied from the handshake protocol solely for fail-closed
-// HostHello preflight decoding. A conformance test below freezes the shape.
+// Wire sizes copied from the legacy handshake protocol solely for fail-closed
+// pinned HostHello preflight decoding. This mirror is temporary and should
+// disappear when the V2 handshake exposes typed negotiated evidence directly.
 const ML_KEM_768_PK_LEN: usize = 1184;
 const ML_KEM_768_CT_LEN: usize = 1088;
 const ML_DSA_65_PK_LEN: usize = 1952;
 const ML_DSA_65_SIG_LEN: usize = 3309;
 
-/// Private probe matching `handshake::HandshakeMessage` field-for-field under
-/// bincode v1. It exists because the public viewer API intentionally hides raw
-/// handshake internals, while strict authority needs to reject a wrong context
-/// *before* the viewer signs the HostHello.
+/// Private probe matching the legacy `handshake::HandshakeMessage`
+/// field-for-field under bincode v1.
+///
+/// This supports only the pre-agreed pinned-context compatibility path. It must
+/// not be extended into the V2 dynamic negotiation implementation; V2 should
+/// expose its own typed handshake messages rather than mirror private enums.
 #[allow(dead_code, clippy::large_enum_variant)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-enum HandshakeContextProbe {
+enum LegacyHandshakeContextProbe {
     HostHello {
         ed25519_pk: [u8; 32],
         #[serde(with = "BigArray")]
@@ -73,7 +83,7 @@ enum HandshakeContextProbe {
     },
 }
 
-/// Construct the exact draft-04 causal-authority capability identifier.
+/// Construct the exact draft-04 causal-authority selected capability identifier.
 pub fn causal_authority_draft04_capability() -> NegotiatedCapabilityV1 {
     NegotiatedCapabilityV1::new(
         CAUSAL_AUTHORITY_CAPABILITY_NAME.to_vec(),
@@ -82,12 +92,24 @@ pub fn causal_authority_draft04_capability() -> NegotiatedCapabilityV1 {
     .expect("built-in causal-authority capability satisfies negotiated-context bounds")
 }
 
-/// Require that a canonical selected-capability context contains exact
-/// causal-authority draft-04 support.
+/// Construct the exact draft-04 causal-authority offer entry.
 ///
-/// This proves only membership in the supplied canonical context. The context's
-/// hash must additionally be authenticated by the handshake transcript before
-/// an application treats the capability as negotiated.
+/// A strict V2 peer should include this entry in its canonical offer. Both peers
+/// must offer the exact version and deterministic selection must choose it before
+/// causal authority can be enabled.
+pub fn causal_authority_draft04_offer_entry() -> CapabilityOfferEntryV1 {
+    CapabilityOfferEntryV1::new(
+        CAUSAL_AUTHORITY_CAPABILITY_NAME.to_vec(),
+        [CAUSAL_AUTHORITY_CAPABILITY_VERSION.to_vec()],
+    )
+    .expect("built-in causal-authority offer satisfies negotiated-context bounds")
+}
+
+/// Require exact causal-authority draft-04 in a canonical selected context.
+///
+/// This proves only membership in the supplied selected context. Prefer
+/// [`require_causal_authority_draft04_evidence`] when both peer offers are
+/// available so the selection itself has been deterministically recomputed.
 pub fn require_causal_authority_draft04(
     context: &NegotiatedContextV1,
 ) -> Result<(), AuthorityNegotiationError> {
@@ -101,12 +123,23 @@ pub fn require_causal_authority_draft04(
     }
 }
 
+/// Require exact causal-authority draft-04 in deterministic two-offer evidence.
+///
+/// [`NegotiationEvidenceV1`] can only be produced from the canonical host and
+/// viewer offers plus deterministic mutual selection, so this is stronger than
+/// checking a caller-manufactured selected context. The evidence still becomes
+/// *authenticated proof* only when the V2 handshake covers its binding hash.
+pub fn require_causal_authority_draft04_evidence(
+    evidence: &NegotiationEvidenceV1,
+) -> Result<(), AuthorityNegotiationError> {
+    require_causal_authority_draft04(evidence.selected_context())
+}
+
 /// Build a canonical selected context and require exact causal-authority
 /// draft-04 membership.
 ///
-/// Additional capabilities are preserved and therefore affect the context hash;
-/// this prevents a caller from checking only a special-case authority bit while
-/// ignoring the rest of the negotiated protocol surface.
+/// This helper is useful for pre-agreed/pinned policy and deterministic vectors.
+/// It does not prove that a remote peer offered the resulting capability set.
 pub fn causal_authority_context<I>(
     capabilities: I,
 ) -> Result<NegotiatedContextV1, AuthorityNegotiationError>
@@ -118,20 +151,24 @@ where
     Ok(context)
 }
 
-/// Viewer-side handshake that refuses to sign a HostHello unless it carries the
-/// exact expected causal-authority negotiated context.
+/// Viewer-side **pre-agreed pinned-context** handshake compatibility wrapper.
 ///
-/// The ordinary [`ViewerHandshake`] remains available for non-authority use.
-/// Consequential external-action clients should prefer this wrapper once the
-/// native host has been configured to derive the same canonical context hash.
-pub struct StrictCausalAuthorityViewerHandshake {
+/// This wrapper refuses to sign a legacy HostHello unless its transcript-bound
+/// opaque context hash exactly equals a caller-preconfigured selected context.
+/// That is useful for static deployments where both sides are configured out of
+/// band, but it is not dynamic capability negotiation because the viewer never
+/// contributes an authenticated offer to the legacy ceremony.
+///
+/// New consequential deployments should migrate to the V2 two-offer handshake
+/// tracked by `xenia-peer#148` once that ceremony is implemented and validated.
+pub struct PinnedCausalAuthorityViewerHandshake {
     inner: ViewerHandshake,
     expected_context: NegotiatedContextV1,
 }
 
-impl StrictCausalAuthorityViewerHandshake {
-    /// Generate a fresh viewer identity and require the supplied selected
-    /// capability set, which must contain exact causal-authority draft-04.
+impl PinnedCausalAuthorityViewerHandshake {
+    /// Generate a fresh viewer identity and pin the supplied selected capability
+    /// context, which must contain exact causal-authority draft-04.
     pub fn new<I>(capabilities: I) -> Result<Self, AuthorityHandshakeError>
     where
         I: IntoIterator<Item = NegotiatedCapabilityV1>,
@@ -143,7 +180,7 @@ impl StrictCausalAuthorityViewerHandshake {
     }
 
     /// Reconstruct the viewer identity from persisted Ed25519/ML-DSA seeds and
-    /// require the supplied selected capability set.
+    /// pin the supplied selected capability context.
     pub fn from_identity<I>(
         ed25519_secret: &[u8],
         ml_dsa_seed: &[u8],
@@ -163,59 +200,65 @@ impl StrictCausalAuthorityViewerHandshake {
         self.inner.ed25519_public_key()
     }
 
-    /// Canonical capability context that this handshake requires.
+    /// Canonical selected context pinned by this compatibility handshake.
     pub fn expected_context(&self) -> &NegotiatedContextV1 {
         &self.expected_context
     }
 
-    /// Process HostHello only if its transcript-bound context exactly matches
-    /// this strict causal-authority profile.
+    /// Process legacy HostHello only if its transcript-bound context exactly
+    /// matches the pinned causal-authority selected context.
     ///
-    /// The preflight happens before `ViewerHandshake::begin` signs HostHello,
-    /// preventing a viewer from accidentally consenting to a downgraded context
-    /// and detecting it only after doing cryptographic work.
+    /// The check occurs before `ViewerHandshake::begin` signs HostHello. It
+    /// proves a pre-agreed context match only; it does not create a viewer offer.
     pub fn begin(&mut self, hello_bytes: &[u8]) -> Result<Vec<u8>, AuthorityHandshakeError> {
-        let observed = observed_context_from_host_hello(hello_bytes)?;
+        let observed = observed_context_from_legacy_host_hello(hello_bytes)?;
         self.expected_context
             .require_observed_hash(observed)
             .map_err(AuthorityNegotiationError::from)?;
         Ok(self.inner.begin(hello_bytes)?)
     }
 
-    /// Verify HostFinalize and yield a typed proof that the strict expected
-    /// causal-authority context participated in the authenticated handshake.
+    /// Verify legacy HostFinalize and yield a typed proof of the authenticated
+    /// **pinned** selected context.
+    ///
+    /// The result intentionally is not named a negotiated-handshake proof; it
+    /// carries no authenticated viewer offer and therefore cannot satisfy V2's
+    /// dynamic negotiation claim.
     pub fn finish(
         &mut self,
         finalize_bytes: &[u8],
-    ) -> Result<AuthenticatedCausalAuthorityHandshake, AuthorityHandshakeError> {
+    ) -> Result<AuthenticatedPinnedCausalAuthorityContext, AuthorityHandshakeError> {
         let key_schedule = self.inner.finish(finalize_bytes)?;
-        Ok(AuthenticatedCausalAuthorityHandshake {
+        Ok(AuthenticatedPinnedCausalAuthorityContext {
             key_schedule,
-            negotiated_context: self.expected_context.clone(),
+            pinned_selected_context: self.expected_context.clone(),
         })
     }
 }
 
-/// Successful strict handshake proof for downstream authority-aware code.
+/// Successful legacy handshake proof for a pre-agreed pinned authority context.
 ///
 /// This type has no public constructor. Safe Rust callers obtain it only after
-/// [`StrictCausalAuthorityViewerHandshake::finish`] verifies the ordinary Xenia
-/// hybrid-PQ handshake signatures after the strict HostHello context preflight.
+/// [`PinnedCausalAuthorityViewerHandshake::finish`] verifies the normal hybrid-PQ
+/// host finalize after the pinned HostHello context check.
+///
+/// It is **not** evidence that both peers dynamically offered or negotiated the
+/// capability. V2 will use a distinct authenticated negotiation proof type.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AuthenticatedCausalAuthorityHandshake {
+pub struct AuthenticatedPinnedCausalAuthorityContext {
     key_schedule: SessionKeySchedule,
-    negotiated_context: NegotiatedContextV1,
+    pinned_selected_context: NegotiatedContextV1,
 }
 
-impl AuthenticatedCausalAuthorityHandshake {
+impl AuthenticatedPinnedCausalAuthorityContext {
     /// Transcript-bound session key schedule from the authenticated handshake.
     pub fn key_schedule(&self) -> &SessionKeySchedule {
         &self.key_schedule
     }
 
-    /// Canonical selected capabilities authenticated by the strict handshake.
-    pub fn negotiated_context(&self) -> &NegotiatedContextV1 {
-        &self.negotiated_context
+    /// Pre-agreed selected context whose hash the host authenticated.
+    pub fn pinned_selected_context(&self) -> &NegotiatedContextV1 {
+        &self.pinned_selected_context
     }
 
     /// Consume the proof and return the key schedule for session installation.
@@ -224,13 +267,31 @@ impl AuthenticatedCausalAuthorityHandshake {
     }
 }
 
-fn observed_context_from_host_hello(
+/// Compatibility alias for the earlier overly broad type name.
+///
+/// The old name suggested dynamic negotiation. It is retained temporarily so
+/// draft consumers can migrate, but its semantics are only pinned-context
+/// authentication.
+#[deprecated(
+    note = "this legacy wrapper authenticates only a pre-agreed HostHello context; use PinnedCausalAuthorityViewerHandshake or the future V2 two-offer handshake for real negotiation"
+)]
+pub type StrictCausalAuthorityViewerHandshake = PinnedCausalAuthorityViewerHandshake;
+
+/// Compatibility alias for the earlier overly broad proof name.
+///
+/// This proof authenticates a pinned context, not a two-offer negotiated result.
+#[deprecated(
+    note = "this is pinned-context authentication, not dynamic negotiation; use AuthenticatedPinnedCausalAuthorityContext or the future V2 authenticated negotiation proof"
+)]
+pub type AuthenticatedCausalAuthorityHandshake = AuthenticatedPinnedCausalAuthorityContext;
+
+fn observed_context_from_legacy_host_hello(
     hello_bytes: &[u8],
 ) -> Result<Option<[u8; 32]>, AuthorityHandshakeError> {
-    let message: HandshakeContextProbe = bincode::deserialize(hello_bytes)
-        .map_err(HandshakeError::from)?;
+    let message: LegacyHandshakeContextProbe =
+        bincode::deserialize(hello_bytes).map_err(HandshakeError::from)?;
     match message {
-        HandshakeContextProbe::HostHello {
+        LegacyHandshakeContextProbe::HostHello {
             negotiated_context_hash,
             ..
         } => Ok(negotiated_context_hash),
@@ -246,14 +307,14 @@ pub enum AuthorityNegotiationError {
     Context(#[from] NegotiatedContextError),
     /// The selected capability set does not contain exact draft-04 causal
     /// authority support.
-    #[error("causal-authority draft-04 was not negotiated")]
+    #[error("causal-authority draft-04 was not selected")]
     CausalAuthorityNotNegotiated,
 }
 
-/// Strict causal-authority handshake failure.
+/// Pinned-context causal-authority handshake failure.
 #[derive(Debug, thiserror::Error)]
 pub enum AuthorityHandshakeError {
-    /// Canonical negotiation profile construction or verification failed.
+    /// Canonical policy construction or pinned-context verification failed.
     #[error(transparent)]
     Negotiation(#[from] AuthorityNegotiationError),
     /// The underlying Xenia hybrid-PQ handshake failed.
@@ -264,6 +325,15 @@ pub enum AuthorityHandshakeError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::negotiated_context::{CapabilityOfferV1, negotiate_capabilities};
+
+    fn offer_entry(name: &[u8], versions: &[&[u8]]) -> CapabilityOfferEntryV1 {
+        CapabilityOfferEntryV1::new(
+            name.to_vec(),
+            versions.iter().map(|version| version.to_vec()),
+        )
+        .unwrap()
+    }
 
     #[test]
     fn exact_draft04_capability_is_required() {
@@ -280,9 +350,33 @@ mod tests {
     }
 
     #[test]
-    fn additional_selected_capabilities_are_bound_into_hash() {
-        let authority_only = causal_authority_context([causal_authority_draft04_capability()])
+    fn two_offer_evidence_requires_exact_mutual_draft04() {
+        let host = CapabilityOfferV1::from_entries([offer_entry(
+            b"xenia.causal-authority",
+            &[b"draft-04", b"draft-03"],
+        )])
+        .unwrap();
+        let viewer = CapabilityOfferV1::from_entries([causal_authority_draft04_offer_entry()])
             .unwrap();
+        let evidence = negotiate_capabilities(&host, &viewer).unwrap();
+        assert!(require_causal_authority_draft04_evidence(&evidence).is_ok());
+
+        let downgraded_viewer = CapabilityOfferV1::from_entries([offer_entry(
+            b"xenia.causal-authority",
+            &[b"draft-03"],
+        )])
+        .unwrap();
+        let downgraded = negotiate_capabilities(&host, &downgraded_viewer).unwrap();
+        assert_eq!(
+            require_causal_authority_draft04_evidence(&downgraded).unwrap_err(),
+            AuthorityNegotiationError::CausalAuthorityNotNegotiated
+        );
+    }
+
+    #[test]
+    fn additional_selected_capabilities_are_bound_into_hash() {
+        let authority_only =
+            causal_authority_context([causal_authority_draft04_capability()]).unwrap();
         let authority_plus_rekey = causal_authority_context([
             causal_authority_draft04_capability(),
             NegotiatedCapabilityV1::new(b"xenia.operator-rekey".to_vec(), b"v1".to_vec())
@@ -295,9 +389,9 @@ mod tests {
     }
 
     #[test]
-    fn host_hello_preflight_extracts_exact_context() {
+    fn legacy_host_hello_preflight_extracts_exact_pinned_context() {
         let context = causal_authority_context([causal_authority_draft04_capability()]).unwrap();
-        let hello = HandshakeContextProbe::HostHello {
+        let hello = LegacyHandshakeContextProbe::HostHello {
             ed25519_pk: [1; 32],
             ml_dsa_pk: [2; ML_DSA_65_PK_LEN],
             kem_pk: [3; ML_KEM_768_PK_LEN],
@@ -305,20 +399,23 @@ mod tests {
             negotiated_context_hash: Some(context.hash()),
         };
         let bytes = bincode::serialize(&hello).unwrap();
-        assert_eq!(observed_context_from_host_hello(&bytes).unwrap(), Some(context.hash()));
+        assert_eq!(
+            observed_context_from_legacy_host_hello(&bytes).unwrap(),
+            Some(context.hash())
+        );
     }
 
     #[test]
-    fn strict_viewer_rejects_missing_or_downgraded_context_before_signing() {
+    fn pinned_preflight_rejects_missing_or_wrong_context_before_signing() {
         let context = causal_authority_context([causal_authority_draft04_capability()]).unwrap();
-        let missing = HandshakeContextProbe::HostHello {
+        let missing = LegacyHandshakeContextProbe::HostHello {
             ed25519_pk: [1; 32],
             ml_dsa_pk: [2; ML_DSA_65_PK_LEN],
             kem_pk: [3; ML_KEM_768_PK_LEN],
             nonce: [4; 32],
             negotiated_context_hash: None,
         };
-        let wrong = HandshakeContextProbe::HostHello {
+        let wrong = LegacyHandshakeContextProbe::HostHello {
             ed25519_pk: [1; 32],
             ml_dsa_pk: [2; ML_DSA_65_PK_LEN],
             kem_pk: [3; ML_KEM_768_PK_LEN],
@@ -328,13 +425,19 @@ mod tests {
 
         assert_eq!(
             context
-                .require_observed_hash(observed_context_from_host_hello(&bincode::serialize(&missing).unwrap()).unwrap())
+                .require_observed_hash(
+                    observed_context_from_legacy_host_hello(&bincode::serialize(&missing).unwrap())
+                        .unwrap()
+                )
                 .unwrap_err(),
             NegotiatedContextError::MissingNegotiatedContext
         );
         assert_eq!(
             context
-                .require_observed_hash(observed_context_from_host_hello(&bincode::serialize(&wrong).unwrap()).unwrap())
+                .require_observed_hash(
+                    observed_context_from_legacy_host_hello(&bincode::serialize(&wrong).unwrap())
+                        .unwrap()
+                )
                 .unwrap_err(),
             NegotiatedContextError::NegotiatedContextMismatch
         );
