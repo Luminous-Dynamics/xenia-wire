@@ -20,9 +20,11 @@ on:
       - "test-vectors/13_causal_authority_v1.json"
       - "test-vectors/14_negotiated_context_v1.json"
       - "test-vectors/15_capability_negotiation_v1.json"
+      - "test-vectors/16_handshake_v2_contract.json"
       - "test-vectors/conformance/verify-causal-authority.mjs"
       - "test-vectors/conformance/verify-negotiated-context.mjs"
       - "test-vectors/conformance/verify-capability-negotiation.mjs"
+      - "test-vectors/conformance/verify-handshake-v2-contract.mjs"
       - ".github/workflows/causal-authority.yml"
   workflow_dispatch:
 
@@ -90,3 +92,5 @@ jobs:
         run: node test-vectors/conformance/verify-negotiated-context.mjs
       - name: Reproduce capability offers, deterministic selection, and binding
         run: node test-vectors/conformance/verify-capability-negotiation.mjs
+      - name: Verify V2 envelope budget and V5 context vector
+        run: node test-vectors/conformance/verify-handshake-v2-contract.mjs
