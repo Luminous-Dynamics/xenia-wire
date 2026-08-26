@@ -31,14 +31,18 @@
 //! - **[`authority_session`]** — recommended live-session authority path. It
 //!   authenticates request fingerprints through Xenia's current/previous rekey
 //!   epochs before signing or verifying exact authority.
+//! - **[`negotiated_context`]** — canonical selected-capability contexts for
+//!   binding negotiated protocol state into an authenticated handshake.
+//! - **[`authority_negotiation`]** — exact causal-authority draft-04 capability
+//!   identity and selected-context checks when `causal-authority` + `handshake`
+//!   are enabled together.
 //!
 //! ## What this crate deliberately does NOT do
 //!
 //! - **No transport.** Sealed bytes are returned to the caller; the
 //!   caller ships them over TCP / WebSocket / QUIC / whatever.
-//! - **No handshake.** Session keys arrive from somewhere else
-//!   (ML-KEM-768 in real deployments). Call [`Session::install_key`]
-//!   directly in tests or early prototypes.
+//! - **No handshake by default.** Session keys may arrive from somewhere else;
+//!   the optional `handshake` feature provides the viewer-side PQC handshake.
 //! - **No application lifecycle.** Session creation/teardown and durable
 //!   authority consumption remain application concerns.
 //! - **No domain semantics.** Xenia binds canonical application bytes and
@@ -88,6 +92,7 @@
 //! | `lz4`              | no      | Adds LZ4-before-AEAD variants for frames. |
 //! | `consent`          | no      | Adds signed consent ceremony + session gating. |
 //! | `causal-authority` | no      | Experimental exact request-bound authority; implies `consent`. |
+//! | `handshake`        | no      | Viewer-side hybrid-PQ handshake + negotiated-context primitives. |
 //!
 //! ## License
 //!
@@ -117,6 +122,12 @@ pub mod authority_session;
 
 #[cfg(feature = "handshake")]
 pub mod handshake;
+
+#[cfg(feature = "handshake")]
+pub mod negotiated_context;
+
+#[cfg(all(feature = "causal-authority", feature = "handshake"))]
+pub mod authority_negotiation;
 
 #[cfg(feature = "handshake")]
 pub mod handshake_highsec;
