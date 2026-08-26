@@ -45,9 +45,9 @@ function canonicalize(capabilities) {
   normalized.sort(compareCapability);
   for (let i = 1; i < normalized.length; i += 1) {
     assert.notEqual(
-      compareCapability(normalized[i - 1], normalized[i]),
+      Buffer.compare(normalized[i - 1].name, normalized[i].name),
       0,
-      "duplicate capability must fail closed",
+      "one capability name must not select multiple versions",
     );
   }
 
@@ -81,5 +81,16 @@ const downgraded = canonicalize([
 ]);
 const downgradedDigest = crypto.createHash("sha256").update(downgraded).digest("hex");
 assert.notEqual(downgradedDigest, authorityOnly.sha256, "draft-03 must not collide with draft-04");
+
+// A selected context maps each exact capability name to one version. Carrying
+// draft-03 and draft-04 simultaneously is ambiguous and must fail closed rather
+// than satisfying a policy that merely searches for draft-04 membership.
+assert.throws(
+  () => canonicalize([
+    { name_utf8: "xenia.causal-authority", version_utf8: "draft-03" },
+    { name_utf8: "xenia.causal-authority", version_utf8: "draft-04" },
+  ]),
+  /one capability name must not select multiple versions/,
+);
 
 console.log("negotiated-context-v1 conformance: PASS");
