@@ -1,0 +1,61 @@
+name: Causal Authority Conformance
+
+on:
+  pull_request:
+    paths:
+      - "Cargo.toml"
+      - "src/authority.rs"
+      - "src/consent.rs"
+      - "src/lib.rs"
+      - "src/payload_types.rs"
+      - "src/wire.rs"
+      - "tests/causal_authority_vectors.rs"
+      - "test-vectors/13_causal_authority_v1.json"
+      - "test-vectors/conformance/verify-causal-authority.mjs"
+      - ".github/workflows/causal-authority.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: causal-authority-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  RUSTFLAGS: -D warnings
+  RUSTDOCFLAGS: -D warnings
+
+jobs:
+  rust:
+    name: Rust causal-authority only
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.94
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: cargo fmt --check
+      - name: Check exact feature boundary
+        run: cargo check --no-default-features --features causal-authority --all-targets
+      - name: Clippy exact feature boundary
+        run: cargo clippy --no-default-features --features causal-authority --all-targets -- -D warnings
+      - name: Test exact feature boundary
+        run: cargo test --no-default-features --features causal-authority
+      - name: Reproduce deterministic Rust vector
+        run: cargo test --no-default-features --features causal-authority --test causal_authority_vectors -- --nocapture
+
+  node:
+    name: Independent Node vector reproduction
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Reproduce canonical bytes, signatures, digests, and authority id
+        run: node test-vectors/conformance/verify-causal-authority.mjs
