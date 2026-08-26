@@ -3,89 +3,114 @@
 
 //! Experimental typed authority profile carried by consent `causal_binding`.
 //!
-//! This module is deliberately opt-in behind the `causal-authority` feature.
-//! It does not change the envelope, consent-request, consent-response, or
-//! revocation wire layouts. Instead, it gives the already-reserved
-//! [`crate::consent::CausalPredicate::opaque`] field a domain-separated,
-//! canonical profile for binding a signed Xenia consent ceremony to one exact
-//! external action subject.
+//! Exact external authority needs a stronger approval primitive than the
+//! draft-03 `ConsentResponse`: that response signs a request id + session
+//! fingerprint, but not the exact request body. This module therefore adds an
+//! opt-in bound response whose signature commits to a domain-separated digest
+//! of the complete signed [`ConsentRequest`].
 //!
-//! A verifier must validate the signed request *and* signed approval together.
-//! A ledger `Approval` event or human-readable scope string alone is not an
-//! external-action authorization.
+//! The extension is deliberately experimental and feature-gated. It does not
+//! redefine draft-03 consent semantics.
 
 #![cfg(feature = "causal-authority")]
 
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
+use serde_big_array::BigArray;
+use sha2::{Digest, Sha256};
 
-use crate::WireError;
 use crate::consent::{
-    CausalPredicate, ConsentRequest, ConsentResponse, ConsentRevocation, PUBLIC_KEY_LEN,
+    CausalPredicate, ConsentRequest, ConsentRevocation, ConsentScope, PUBLIC_KEY_LEN,
+    SIGNATURE_LEN,
 };
+use crate::{Sealable, WireError};
 
 /// Human-readable profile identifier carried in `CausalPredicate::description`.
 pub const EXTERNAL_ACTION_AUTHORITY_PROFILE: &str = "xenia.external-action-authority.v1";
 
-/// Domain separator that prefixes the canonical opaque payload.
-///
-/// The terminating NUL prevents concatenation ambiguity if future profile names
-/// share this prefix.
+/// Domain separator prefixing the canonical authority payload.
 pub const EXTERNAL_ACTION_AUTHORITY_MAGIC: &[u8] = b"xenia.external-action-authority.v1\0";
 
+/// Domain separator for the digest of the complete signed consent request.
+pub const AUTHORITY_REQUEST_DIGEST_DOMAIN: &[u8] = b"xenia.causal-authority.request-digest.v1\0";
+
+/// Domain separator for the durable approval-instance identifier.
+pub const AUTHORITY_INSTANCE_ID_DOMAIN: &[u8] = b"xenia.causal-authority.instance-id.v1\0";
+
+/// Maximum size of each application-defined canonical identifier.
+pub const MAX_AUTHORITY_IDENTIFIER_BYTES: usize = 1024;
+
+/// Maximum complete `CausalPredicate::opaque` size accepted by this profile.
+pub const MAX_CAUSAL_AUTHORITY_OPAQUE_BYTES: usize = 8 * 1024;
+
+/// Maximum human-readable response reason size.
+pub const MAX_AUTHORITY_RESPONSE_REASON_BYTES: usize = 4096;
+
+/// Maximum human-readable request reason accepted by the authority verifier.
+pub const MAX_AUTHORITY_REQUEST_REASON_BYTES: usize = 4096;
+
+/// Maximum serialized bound-response size accepted by `Sealable::from_bin`.
+pub const MAX_CAUSAL_AUTHORITY_RESPONSE_BYTES: usize = 16 * 1024;
+
+/// Clock-skew tolerance for signed response/revocation issue times.
+pub const AUTHORITY_CLOCK_SKEW_MS: u64 = 30_000;
+
 /// Reuse policy attached to an external action authorization.
-///
-/// Xenia wire can cryptographically bind this policy but cannot itself persist
-/// cross-session consumption state. A caller accepting [`SingleUse`](Self::SingleUse)
-/// MUST durably record consumption keyed by `subject_id` before or atomically with
-/// the consequential action.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AuthorityUsePolicy {
-    /// The authority may authorize at most one consequential action.
+    /// The approval may authorize at most one consequential action.
+    ///
+    /// Xenia binds this requirement but cannot persist consumption. Consumers
+    /// must atomically/durably consume `VerifiedExternalActionAuthority::authority_id`.
     SingleUse,
-    /// The authority may be reused only within the same Xenia consent session,
-    /// until expiry or revocation, for the exact bound subject.
+    /// Reuse is permitted only for the exact bound subject in the same Xenia
+    /// session until expiry or revocation.
     SessionBoundReusable,
 }
 
 /// Canonical semantic payload for one externally authorized action.
 ///
-/// This struct is serialized with bincode v1, prefixed by
-/// [`EXTERNAL_ACTION_AUTHORITY_MAGIC`], and stored in
-/// [`CausalPredicate::opaque`]. The whole `CausalPredicate` is then covered by
-/// the existing `ConsentRequestCore` signature.
+/// `target`, `capability`, and `max_scope` are canonical application bytes, not
+/// human-readable strings. This avoids Unicode/case/normalization ambiguity
+/// between independent verifiers. Human-readable explanation belongs in the
+/// enclosing signed consent request/response `reason` fields.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExternalActionAuthorityV1 {
-    /// Stable caller-defined subject identifier, normally an intent UUID encoded
-    /// as 16 bytes. It must not be all zeroes.
+    /// Stable caller-defined subject identifier, typically an immutable intent
+    /// UUID encoded as 16 bytes. Must not be all zeroes.
     pub subject_id: [u8; 16],
-    /// Exact target identifier understood by the consuming application.
-    pub target: String,
-    /// Exact capability being delegated, e.g. `nixos.rebuild`.
-    pub capability: String,
+    /// Exact canonical target identifier bytes.
+    pub target: Vec<u8>,
+    /// Exact canonical capability identifier bytes.
+    pub capability: Vec<u8>,
     /// Digest of the canonical action representation.
     pub action_digest: [u8; 32],
-    /// Digest of the canonical action parameters.
+    /// Digest of the canonical action parameters. Hash an explicit empty
+    /// canonical parameter representation rather than using all zeroes.
     pub parameters_digest: [u8; 32],
-    /// Exact maximum application-defined scope. Consumers must compare it using
-    /// their canonical scope semantics and must never silently broaden it.
-    pub max_scope: String,
+    /// Exact canonical maximum-scope identifier bytes.
+    pub max_scope: Vec<u8>,
     /// Absolute Unix-epoch expiry in milliseconds.
     pub expires_at_ms: u64,
-    /// Whether the bound authority is single-use or session-bound reusable.
+    /// Whether this approval is single-use or session-bound reusable.
     pub use_policy: AuthorityUsePolicy,
 }
 
 impl ExternalActionAuthorityV1 {
     /// Encode this authority as the reserved Xenia causal predicate.
-    pub fn to_causal_predicate(&self) -> Result<CausalPredicate, WireError> {
-        self.validate_shape()
-            .map_err(|e| WireError::Codec(format!("external authority: {e}")))?;
+    pub fn to_causal_predicate(&self) -> Result<CausalPredicate, ExternalAuthorityError> {
+        self.validate_shape()?;
+        let encoded = bincode::serialize(self).map_err(|_| ExternalAuthorityError::Encoding)?;
+        let total_len = EXTERNAL_ACTION_AUTHORITY_MAGIC
+            .len()
+            .saturating_add(encoded.len());
+        if total_len > MAX_CAUSAL_AUTHORITY_OPAQUE_BYTES {
+            return Err(ExternalAuthorityError::BindingTooLarge);
+        }
 
-        let encoded = bincode::serialize(self).map_err(WireError::encode)?;
-        let mut opaque = Vec::with_capacity(EXTERNAL_ACTION_AUTHORITY_MAGIC.len() + encoded.len());
+        let mut opaque = Vec::with_capacity(total_len);
         opaque.extend_from_slice(EXTERNAL_ACTION_AUTHORITY_MAGIC);
         opaque.extend_from_slice(&encoded);
-
         Ok(CausalPredicate {
             description: EXTERNAL_ACTION_AUTHORITY_PROFILE.to_owned(),
             opaque,
@@ -94,24 +119,26 @@ impl ExternalActionAuthorityV1 {
 
     /// Decode and validate a causal predicate carrying this exact profile.
     ///
-    /// Unknown profiles fail closed. The payload is re-serialized and compared
-    /// byte-for-byte to reject non-canonical encodings or trailing data.
+    /// Unknown profiles fail closed. Re-serialization must exactly reproduce the
+    /// payload, which rejects trailing/non-canonical encodings.
     pub fn from_causal_predicate(
         predicate: &CausalPredicate,
     ) -> Result<Self, ExternalAuthorityError> {
         if predicate.description != EXTERNAL_ACTION_AUTHORITY_PROFILE {
             return Err(ExternalAuthorityError::UnsupportedProfile);
         }
+        if predicate.opaque.len() > MAX_CAUSAL_AUTHORITY_OPAQUE_BYTES {
+            return Err(ExternalAuthorityError::BindingTooLarge);
+        }
 
         let payload = predicate
             .opaque
             .strip_prefix(EXTERNAL_ACTION_AUTHORITY_MAGIC)
             .ok_or(ExternalAuthorityError::UnsupportedProfile)?;
-
         let decoded: Self =
             bincode::deserialize(payload).map_err(|_| ExternalAuthorityError::MalformedBinding)?;
         let canonical =
-            bincode::serialize(&decoded).map_err(|_| ExternalAuthorityError::MalformedBinding)?;
+            bincode::serialize(&decoded).map_err(|_| ExternalAuthorityError::Encoding)?;
         if canonical.as_slice() != payload {
             return Err(ExternalAuthorityError::MalformedBinding);
         }
@@ -123,14 +150,14 @@ impl ExternalActionAuthorityV1 {
         if self.subject_id.iter().all(|byte| *byte == 0) {
             return Err(ExternalAuthorityError::ZeroSubjectId);
         }
-        if self.target.trim().is_empty() {
-            return Err(ExternalAuthorityError::EmptyTarget);
+        validate_identifier(&self.target, IdentifierKind::Target)?;
+        validate_identifier(&self.capability, IdentifierKind::Capability)?;
+        validate_identifier(&self.max_scope, IdentifierKind::Scope)?;
+        if self.action_digest.iter().all(|byte| *byte == 0) {
+            return Err(ExternalAuthorityError::ZeroActionDigest);
         }
-        if self.capability.trim().is_empty() {
-            return Err(ExternalAuthorityError::EmptyCapability);
-        }
-        if self.max_scope.trim().is_empty() {
-            return Err(ExternalAuthorityError::EmptyScope);
+        if self.parameters_digest.iter().all(|byte| *byte == 0) {
+            return Err(ExternalAuthorityError::ZeroParametersDigest);
         }
         if self.expires_at_ms == 0 {
             return Err(ExternalAuthorityError::InvalidExpiry);
@@ -139,79 +166,284 @@ impl ExternalActionAuthorityV1 {
     }
 }
 
-/// Result of verifying a complete Xenia approval ceremony carrying an exact
-/// external action authority profile.
+#[derive(Clone, Copy)]
+enum IdentifierKind {
+    Target,
+    Capability,
+    Scope,
+}
+
+fn validate_identifier(bytes: &[u8], kind: IdentifierKind) -> Result<(), ExternalAuthorityError> {
+    if bytes.is_empty() {
+        return Err(match kind {
+            IdentifierKind::Target => ExternalAuthorityError::EmptyTarget,
+            IdentifierKind::Capability => ExternalAuthorityError::EmptyCapability,
+            IdentifierKind::Scope => ExternalAuthorityError::EmptyScope,
+        });
+    }
+    if bytes.len() > MAX_AUTHORITY_IDENTIFIER_BYTES {
+        return Err(match kind {
+            IdentifierKind::Target => ExternalAuthorityError::TargetTooLong,
+            IdentifierKind::Capability => ExternalAuthorityError::CapabilityTooLong,
+            IdentifierKind::Scope => ExternalAuthorityError::ScopeTooLong,
+        });
+    }
+    Ok(())
+}
+
+/// Signed responder statement for exact external authority.
+///
+/// Unlike draft-03 `ConsentResponseCore`, this body commits to
+/// `request_digest`, which hashes the complete signed `ConsentRequest`.
+/// Canonical field order is load-bearing:
+/// `request_id`, `request_digest`, `responder_pubkey`, `session_fingerprint`,
+/// `approved`, `issued_at_ms`, `reason`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CausalAuthorityResponseCore {
+    /// Consent request identifier.
+    pub request_id: u64,
+    /// Domain-separated SHA-256 digest of the complete signed request.
+    pub request_digest: [u8; 32],
+    /// Responder device public key.
+    pub responder_pubkey: [u8; PUBLIC_KEY_LEN],
+    /// Session fingerprint copied from the exact request being approved.
+    pub session_fingerprint: [u8; 32],
+    /// Approval/denial decision.
+    pub approved: bool,
+    /// Unix-epoch issue time in milliseconds.
+    pub issued_at_ms: u64,
+    /// Human-readable reason. It is signed but not machine authorization.
+    pub reason: String,
+}
+
+/// Signed response that approves or denies one exact signed request.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CausalAuthorityResponse {
+    /// Signed response body.
+    pub core: CausalAuthorityResponseCore,
+    /// Ed25519 signature over `bincode::serialize(&core)`.
+    #[serde(with = "BigArray")]
+    pub signature: [u8; SIGNATURE_LEN],
+}
+
+impl CausalAuthorityResponse {
+    /// Sign an explicitly constructed core.
+    pub fn sign(core: CausalAuthorityResponseCore, signing_key: &SigningKey) -> Self {
+        let bytes = bincode::serialize(&core).expect("causal authority response core serializes");
+        let signature = signing_key.sign(&bytes);
+        Self {
+            core,
+            signature: signature.to_bytes(),
+        }
+    }
+
+    /// Build and sign a response bound to the exact signed request bytes.
+    pub fn sign_for_request(
+        request: &ConsentRequest,
+        approved: bool,
+        issued_at_ms: u64,
+        reason: impl Into<String>,
+        signing_key: &SigningKey,
+    ) -> Result<Self, ExternalAuthorityError> {
+        let reason = reason.into();
+        if reason.as_bytes().len() > MAX_AUTHORITY_RESPONSE_REASON_BYTES {
+            return Err(ExternalAuthorityError::ResponseReasonTooLong);
+        }
+        Ok(Self::sign(
+            CausalAuthorityResponseCore {
+                request_id: request.core.request_id,
+                request_digest: authority_request_digest(request)?,
+                responder_pubkey: signing_key.verifying_key().to_bytes(),
+                session_fingerprint: request.core.session_fingerprint,
+                approved,
+                issued_at_ms,
+                reason,
+            },
+            signing_key,
+        ))
+    }
+
+    /// Verify the response signature and optional expected responder key.
+    pub fn verify(&self, expected_pubkey: Option<&[u8; PUBLIC_KEY_LEN]>) -> bool {
+        if self.core.reason.as_bytes().len() > MAX_AUTHORITY_RESPONSE_REASON_BYTES {
+            return false;
+        }
+        if expected_pubkey.is_some_and(|expected| expected != &self.core.responder_pubkey) {
+            return false;
+        }
+        let Ok(pk) = VerifyingKey::from_bytes(&self.core.responder_pubkey) else {
+            return false;
+        };
+        let Ok(signature) = Signature::from_slice(&self.signature) else {
+            return false;
+        };
+        let Ok(bytes) = bincode::serialize(&self.core) else {
+            return false;
+        };
+        pk.verify(&bytes, &signature).is_ok()
+    }
+}
+
+impl Sealable for CausalAuthorityResponse {
+    fn to_bin(&self) -> Result<Vec<u8>, WireError> {
+        bincode::serialize(self).map_err(WireError::encode)
+    }
+
+    fn from_bin(bytes: &[u8]) -> Result<Self, WireError> {
+        if bytes.len() > MAX_CAUSAL_AUTHORITY_RESPONSE_BYTES {
+            return Err(WireError::Codec("decode: causal authority response too large".into()));
+        }
+        bincode::deserialize(bytes).map_err(WireError::decode)
+    }
+}
+
+/// Compute the digest a responder signs when approving an exact request.
+///
+/// The complete signed `ConsentRequest` is hashed, not only its core. This binds
+/// the approval to the exact requester-authenticated object and remains robust
+/// if a future requester signature algorithm becomes non-deterministic.
+pub fn authority_request_digest(
+    request: &ConsentRequest,
+) -> Result<[u8; 32], ExternalAuthorityError> {
+    let bytes = bincode::serialize(request).map_err(|_| ExternalAuthorityError::Encoding)?;
+    let mut hasher = Sha256::new();
+    hasher.update(AUTHORITY_REQUEST_DIGEST_DOMAIN);
+    hasher.update(&bytes);
+    Ok(hasher.finalize().into())
+}
+
+/// Derive a stable identifier for one exact responder approval instance.
+///
+/// Consumers enforcing `SingleUse` should durably/atomically consume this id,
+/// not merely the caller-defined `subject_id`.
+pub fn authority_instance_id(response: &CausalAuthorityResponse) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(AUTHORITY_INSTANCE_ID_DOMAIN);
+    hasher.update(response.core.request_digest);
+    hasher.update(response.core.responder_pubkey);
+    hasher.update(response.signature);
+    hasher.finalize().into()
+}
+
+/// Result of verifying a complete exact-authority ceremony.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VerifiedExternalActionAuthority {
-    /// The exact machine-readable subject covered by the signed request.
+    /// Exact machine-readable subject carried by the signed request.
     pub authority: ExternalActionAuthorityV1,
+    /// Stable id for durable single-use consumption.
+    pub authority_id: [u8; 32],
+    /// Digest of the exact signed request approved by the responder.
+    pub request_digest: [u8; 32],
     /// Xenia consent request identifier.
     pub request_id: u64,
     /// Signed requester device key.
     pub requester_pubkey: [u8; PUBLIC_KEY_LEN],
-    /// Signed responder device key that approved the request.
+    /// Signed responder device key.
     pub responder_pubkey: [u8; PUBLIC_KEY_LEN],
-    /// Session fingerprint shared by request and response.
+    /// Trusted session fingerprint shared by request and response.
     pub session_fingerprint: [u8; 32],
+    /// Session-level consent scope contained in the exact approved request.
+    pub consent_scope: ConsentScope,
     /// Consent request expiry in Unix seconds.
     pub consent_valid_until: u64,
+    /// Bound response issue time in Unix milliseconds.
+    pub approved_at_ms: u64,
 }
 
-/// Semantic failures returned by external-action authority verification.
+/// Semantic failures returned by exact external-authority verification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum ExternalAuthorityError {
-    /// The consent request signature/key binding did not verify.
+    /// Serialization failed while constructing canonical bytes.
+    #[error("external authority canonical encoding failed")]
+    Encoding,
+    /// Signed request signature/key binding is invalid.
     #[error("invalid consent request signature or requester key")]
     InvalidRequestSignature,
-    /// The consent response signature/key binding did not verify.
-    #[error("invalid consent response signature or responder key")]
+    /// Bound response signature/key binding is invalid.
+    #[error("invalid causal authority response signature or responder key")]
     InvalidResponseSignature,
-    /// Request and response refer to different request identifiers.
-    #[error("consent response refers to a different request")]
+    /// Request and response carry different request ids.
+    #[error("causal authority response refers to a different request id")]
     RequestIdMismatch,
-    /// The signed request is not bound to the expected live session fingerprint.
+    /// Response does not approve the exact signed request bytes supplied.
+    #[error("causal authority response request digest mismatch")]
+    RequestDigestMismatch,
+    /// Request is not bound to the expected live session fingerprint.
     #[error("consent request session fingerprint mismatch")]
     RequestFingerprintMismatch,
-    /// The signed response is not bound to the expected live session fingerprint.
-    #[error("consent response session fingerprint mismatch")]
+    /// Response is not bound to the expected live session fingerprint.
+    #[error("causal authority response session fingerprint mismatch")]
     ResponseFingerprintMismatch,
-    /// The responder explicitly denied the request.
-    #[error("consent request was denied")]
+    /// Responder explicitly denied the request.
+    #[error("external action authority was denied")]
     Denied,
-    /// No causal authority profile was present on the signed request.
+    /// Signed request reason exceeds the profile's authority limit.
+    #[error("consent request reason is too long for causal authority")]
+    RequestReasonTooLong,
+    /// Signed response reason exceeds the profile's authority limit.
+    #[error("causal authority response reason is too long")]
+    ResponseReasonTooLong,
+    /// Bound response issue time is implausibly in the future.
+    #[error("causal authority response issue time is in the future")]
+    ResponseFromFuture,
+    /// Bound response was issued after the enclosing request expired.
+    #[error("causal authority response was issued after consent expiry")]
+    ResponseAfterRequestExpiry,
+    /// Bound response was issued after the exact action authority expired.
+    #[error("causal authority response was issued after action-authority expiry")]
+    ResponseAfterAuthorityExpiry,
+    /// No causal authority profile exists on the signed request.
     #[error("signed consent request has no causal authority binding")]
     MissingCausalBinding,
-    /// The causal profile is unknown or has the wrong domain separator.
+    /// Causal profile id/domain is unknown.
     #[error("unsupported causal authority profile")]
     UnsupportedProfile,
-    /// The causal profile bytes are malformed or non-canonical.
+    /// Causal profile bytes are malformed/non-canonical.
     #[error("malformed causal authority binding")]
     MalformedBinding,
-    /// The external subject identifier is all zeroes.
+    /// Causal profile exceeds the profile size bound.
+    #[error("causal authority binding is too large")]
+    BindingTooLarge,
+    /// Subject id is all zeroes.
     #[error("external authority subject id must be non-zero")]
     ZeroSubjectId,
-    /// The target is empty.
+    /// Target identifier is empty.
     #[error("external authority target is empty")]
     EmptyTarget,
-    /// The capability is empty.
+    /// Target identifier exceeds the profile bound.
+    #[error("external authority target is too long")]
+    TargetTooLong,
+    /// Capability identifier is empty.
     #[error("external authority capability is empty")]
     EmptyCapability,
-    /// The application scope is empty.
+    /// Capability identifier exceeds the profile bound.
+    #[error("external authority capability is too long")]
+    CapabilityTooLong,
+    /// Scope identifier is empty.
     #[error("external authority scope is empty")]
     EmptyScope,
-    /// The external authority has an invalid zero expiry.
+    /// Scope identifier exceeds the profile bound.
+    #[error("external authority scope is too long")]
+    ScopeTooLong,
+    /// Action digest uses the reserved all-zero sentinel.
+    #[error("external authority action digest must be non-zero")]
+    ZeroActionDigest,
+    /// Parameter digest uses the reserved all-zero sentinel.
+    #[error("external authority parameters digest must be non-zero")]
+    ZeroParametersDigest,
+    /// Authority expiry is zero.
     #[error("external authority expiry is invalid")]
     InvalidExpiry,
-    /// The signed consent request has expired.
+    /// Signed request is expired at verification time.
     #[error("signed consent request has expired")]
     RequestExpired,
-    /// The exact external authority has expired.
+    /// Exact action authority is expired at verification time.
     #[error("external action authority has expired")]
     AuthorityExpired,
-    /// The external authority claims to survive longer than the consent request.
+    /// Action authority claims to outlive the signed consent request.
     #[error("external authority outlives signed consent request")]
     AuthorityOutlivesRequest,
-    /// A matching revocation has an invalid signer, signature, or timestamp.
+    /// A matching revocation has an invalid signer/signature/time.
     #[error("invalid matching consent revocation")]
     InvalidRevocation,
     /// A valid matching revocation terminates the authority.
@@ -219,21 +451,19 @@ pub enum ExternalAuthorityError {
     Revoked,
 }
 
-/// Verify one exact external-action authorization carried by a signed Xenia
-/// request/approval pair, including any matching revocations supplied by the
-/// caller.
+/// Verify one exact external-action authorization.
 ///
-/// `expected_session_fingerprint` must come from the trusted live-session or
-/// transcript-verification path; merely checking that the two embedded
-/// fingerprints equal each other is not sufficient replay protection.
+/// This verifier intentionally does not accept a draft-03 `ConsentResponse`.
+/// Exact authority requires [`CausalAuthorityResponse`], whose responder
+/// signature commits to the complete signed request digest.
 ///
-/// The caller is responsible for supplying all relevant revocations from its
-/// canonical evidence source. For [`AuthorityUsePolicy::SingleUse`], the caller
-/// must additionally enforce durable one-time consumption of `subject_id`.
+/// `expected_session_fingerprint` must come from a trusted live-session or
+/// transcript-verification path. The caller must supply the complete relevant
+/// revocation view from its canonical evidence source.
 #[allow(clippy::too_many_arguments)]
 pub fn verify_approved_external_action_authority(
     request: &ConsentRequest,
-    response: &ConsentResponse,
+    response: &CausalAuthorityResponse,
     revocations: &[ConsentRevocation],
     expected_requester_pubkey: &[u8; PUBLIC_KEY_LEN],
     expected_responder_pubkey: &[u8; PUBLIC_KEY_LEN],
@@ -243,23 +473,36 @@ pub fn verify_approved_external_action_authority(
     if !request.verify(Some(expected_requester_pubkey)) {
         return Err(ExternalAuthorityError::InvalidRequestSignature);
     }
+    if request.core.reason.as_bytes().len() > MAX_AUTHORITY_REQUEST_REASON_BYTES {
+        return Err(ExternalAuthorityError::RequestReasonTooLong);
+    }
+    if &request.core.session_fingerprint != expected_session_fingerprint {
+        return Err(ExternalAuthorityError::RequestFingerprintMismatch);
+    }
+
     if !response.verify(Some(expected_responder_pubkey)) {
         return Err(ExternalAuthorityError::InvalidResponseSignature);
     }
     if request.core.request_id != response.core.request_id {
         return Err(ExternalAuthorityError::RequestIdMismatch);
     }
-    if &request.core.session_fingerprint != expected_session_fingerprint {
-        return Err(ExternalAuthorityError::RequestFingerprintMismatch);
-    }
     if &response.core.session_fingerprint != expected_session_fingerprint {
         return Err(ExternalAuthorityError::ResponseFingerprintMismatch);
     }
-    if !response.core.approved {
-        return Err(ExternalAuthorityError::Denied);
+    let request_digest = authority_request_digest(request)?;
+    if response.core.request_digest != request_digest {
+        return Err(ExternalAuthorityError::RequestDigestMismatch);
+    }
+
+    let future_limit = now_ms.saturating_add(AUTHORITY_CLOCK_SKEW_MS);
+    if response.core.issued_at_ms > future_limit {
+        return Err(ExternalAuthorityError::ResponseFromFuture);
     }
 
     let request_expiry_ms = request.core.valid_until.saturating_mul(1_000);
+    if response.core.issued_at_ms >= request_expiry_ms {
+        return Err(ExternalAuthorityError::ResponseAfterRequestExpiry);
+    }
     if now_ms >= request_expiry_ms {
         return Err(ExternalAuthorityError::RequestExpired);
     }
@@ -270,12 +513,17 @@ pub fn verify_approved_external_action_authority(
         .as_ref()
         .ok_or(ExternalAuthorityError::MissingCausalBinding)?;
     let authority = ExternalActionAuthorityV1::from_causal_predicate(predicate)?;
-
     if authority.expires_at_ms > request_expiry_ms {
         return Err(ExternalAuthorityError::AuthorityOutlivesRequest);
     }
+    if response.core.issued_at_ms >= authority.expires_at_ms {
+        return Err(ExternalAuthorityError::ResponseAfterAuthorityExpiry);
+    }
     if now_ms >= authority.expires_at_ms {
         return Err(ExternalAuthorityError::AuthorityExpired);
+    }
+    if !response.core.approved {
+        return Err(ExternalAuthorityError::Denied);
     }
 
     for revocation in revocations {
@@ -290,9 +538,8 @@ pub fn verify_approved_external_action_authority(
         if !known_party || !revocation.verify(Some(revoker)) {
             return Err(ExternalAuthorityError::InvalidRevocation);
         }
-
         let issued_at_ms = revocation.core.issued_at.saturating_mul(1_000);
-        if issued_at_ms > now_ms {
+        if issued_at_ms > future_limit {
             return Err(ExternalAuthorityError::InvalidRevocation);
         }
         return Err(ExternalAuthorityError::Revoked);
@@ -300,21 +547,22 @@ pub fn verify_approved_external_action_authority(
 
     Ok(VerifiedExternalActionAuthority {
         authority,
+        authority_id: authority_instance_id(response),
+        request_digest,
         request_id: request.core.request_id,
         requester_pubkey: request.core.requester_pubkey,
         responder_pubkey: response.core.responder_pubkey,
         session_fingerprint: request.core.session_fingerprint,
+        consent_scope: request.core.scope.clone(),
         consent_valid_until: request.core.valid_until,
+        approved_at_ms: response.core.issued_at_ms,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::consent::{
-        ConsentRequestCore, ConsentResponseCore, ConsentRevocationCore, ConsentScope,
-    };
-    use ed25519_dalek::SigningKey;
+    use crate::consent::{ConsentRequestCore, ConsentRevocationCore};
 
     const FP: [u8; 32] = [0xA5; 32];
 
@@ -329,21 +577,25 @@ mod tests {
     fn authority(expires_at_ms: u64) -> ExternalActionAuthorityV1 {
         ExternalActionAuthorityV1 {
             subject_id: [0x33; 16],
-            target: "host:workstation-17".into(),
-            capability: "nixos.rebuild".into(),
+            target: b"host:workstation-17".to_vec(),
+            capability: b"nixos.rebuild".to_vec(),
             action_digest: [0x44; 32],
             parameters_digest: [0x55; 32],
-            max_scope: "host:workstation-17".into(),
+            max_scope: b"host:workstation-17".to_vec(),
             expires_at_ms,
             use_policy: AuthorityUsePolicy::SingleUse,
         }
     }
 
     fn request(binding: ExternalActionAuthorityV1) -> ConsentRequest {
+        request_with_id(binding, 7)
+    }
+
+    fn request_with_id(binding: ExternalActionAuthorityV1, request_id: u64) -> ConsentRequest {
         let sk = requester();
         ConsentRequest::sign(
             ConsentRequestCore {
-                request_id: 7,
+                request_id,
                 requester_pubkey: sk.verifying_key().to_bytes(),
                 session_fingerprint: FP,
                 valid_until: 20,
@@ -355,23 +607,20 @@ mod tests {
         )
     }
 
-    fn response(approved: bool, request_id: u64) -> ConsentResponse {
-        let sk = responder();
-        ConsentResponse::sign(
-            ConsentResponseCore {
-                request_id,
-                responder_pubkey: sk.verifying_key().to_bytes(),
-                session_fingerprint: FP,
-                approved,
-                reason: String::new(),
-            },
-            &sk,
+    fn response(request: &ConsentRequest, approved: bool) -> CausalAuthorityResponse {
+        CausalAuthorityResponse::sign_for_request(
+            request,
+            approved,
+            10_000,
+            "operator decision",
+            &responder(),
         )
+        .unwrap()
     }
 
     fn verify(
         request: &ConsentRequest,
-        response: &ConsentResponse,
+        response: &CausalAuthorityResponse,
         revocations: &[ConsentRevocation],
         now_ms: u64,
     ) -> Result<VerifiedExternalActionAuthority, ExternalAuthorityError> {
@@ -399,13 +648,31 @@ mod tests {
     }
 
     #[test]
-    fn exact_signed_request_and_approval_verify() {
+    fn exact_bound_request_and_approval_verify() {
         let req = request(authority(15_000));
-        let resp = response(true, 7);
-        let verified = verify(&req, &resp, &[], 10_000).unwrap();
-        assert_eq!(verified.authority.capability, "nixos.rebuild");
-        assert_eq!(verified.authority.action_digest, [0x44; 32]);
-        assert_eq!(verified.authority.parameters_digest, [0x55; 32]);
+        let resp = response(&req, true);
+        let verified = verify(&req, &resp, &[], 11_000).unwrap();
+        assert_eq!(verified.authority.capability, b"nixos.rebuild".to_vec());
+        assert_eq!(verified.request_digest, authority_request_digest(&req).unwrap());
+        assert_eq!(verified.authority_id, authority_instance_id(&resp));
+    }
+
+    #[test]
+    fn two_valid_same_id_requests_cannot_share_one_approval() {
+        let req_a = request(authority(15_000));
+        let mut alternate = authority(15_000);
+        alternate.action_digest = [0x99; 32];
+        let req_b = request(alternate);
+        assert!(req_a.verify(Some(&requester().verifying_key().to_bytes())));
+        assert!(req_b.verify(Some(&requester().verifying_key().to_bytes())));
+        assert_eq!(req_a.core.request_id, req_b.core.request_id);
+        assert_eq!(req_a.core.session_fingerprint, req_b.core.session_fingerprint);
+
+        let approval_for_a = response(&req_a, true);
+        assert_eq!(
+            verify(&req_b, &approval_for_a, &[], 11_000),
+            Err(ExternalAuthorityError::RequestDigestMismatch)
+        );
     }
 
     #[test]
@@ -417,19 +684,20 @@ mod tests {
         .unwrap();
         decoded.action_digest = [0x99; 32];
         req.core.causal_binding = Some(decoded.to_causal_predicate().unwrap());
-        let resp = response(true, 7);
+        let resp = response(&request(authority(15_000)), true);
         assert_eq!(
-            verify(&req, &resp, &[], 10_000),
+            verify(&req, &resp, &[], 11_000),
             Err(ExternalAuthorityError::InvalidRequestSignature)
         );
     }
 
     #[test]
-    fn response_for_other_request_is_rejected() {
+    fn response_for_other_request_id_is_rejected() {
         let req = request(authority(15_000));
-        let resp = response(true, 8);
+        let other = request_with_id(authority(15_000), 8);
+        let resp = response(&other, true);
         assert_eq!(
-            verify(&req, &resp, &[], 10_000),
+            verify(&req, &resp, &[], 11_000),
             Err(ExternalAuthorityError::RequestIdMismatch)
         );
     }
@@ -437,9 +705,9 @@ mod tests {
     #[test]
     fn denial_is_not_authority() {
         let req = request(authority(15_000));
-        let resp = response(false, 7);
+        let resp = response(&req, false);
         assert_eq!(
-            verify(&req, &resp, &[], 10_000),
+            verify(&req, &resp, &[], 11_000),
             Err(ExternalAuthorityError::Denied)
         );
     }
@@ -447,20 +715,44 @@ mod tests {
     #[test]
     fn authority_cannot_outlive_request() {
         let req = request(authority(20_001));
-        let resp = response(true, 7);
+        let resp = response(&req, true);
         assert_eq!(
-            verify(&req, &resp, &[], 10_000),
+            verify(&req, &resp, &[], 11_000),
             Err(ExternalAuthorityError::AuthorityOutlivesRequest)
         );
     }
 
     #[test]
-    fn authority_expiry_is_enforced() {
-        let req = request(authority(12_000));
-        let resp = response(true, 7);
+    fn response_after_authority_expiry_is_rejected() {
+        let req = request(authority(9_999));
+        let resp = CausalAuthorityResponse::sign_for_request(
+            &req,
+            true,
+            10_000,
+            "late approval",
+            &responder(),
+        )
+        .unwrap();
         assert_eq!(
-            verify(&req, &resp, &[], 12_000),
-            Err(ExternalAuthorityError::AuthorityExpired)
+            verify(&req, &resp, &[], 10_001),
+            Err(ExternalAuthorityError::ResponseAfterAuthorityExpiry)
+        );
+    }
+
+    #[test]
+    fn future_response_is_rejected() {
+        let req = request(authority(15_000));
+        let resp = CausalAuthorityResponse::sign_for_request(
+            &req,
+            true,
+            50_001,
+            "future approval",
+            &responder(),
+        )
+        .unwrap();
+        assert_eq!(
+            verify(&req, &resp, &[], 20_000),
+            Err(ExternalAuthorityError::ResponseAfterRequestExpiry)
         );
     }
 
@@ -473,17 +765,27 @@ mod tests {
             opaque: b"anything".to_vec(),
         });
         req = ConsentRequest::sign(req.core, &sk);
-        let resp = response(true, 7);
+        let resp = response(&req, true);
         assert_eq!(
-            verify(&req, &resp, &[], 10_000),
+            verify(&req, &resp, &[], 11_000),
             Err(ExternalAuthorityError::UnsupportedProfile)
+        );
+    }
+
+    #[test]
+    fn oversized_identifier_fails_closed() {
+        let mut oversized = authority(15_000);
+        oversized.target = vec![0x41; MAX_AUTHORITY_IDENTIFIER_BYTES + 1];
+        assert_eq!(
+            oversized.to_causal_predicate(),
+            Err(ExternalAuthorityError::TargetTooLong)
         );
     }
 
     #[test]
     fn matching_valid_revocation_terminates_authority() {
         let req = request(authority(15_000));
-        let resp = response(true, 7);
+        let resp = response(&req, true);
         let sk = responder();
         let revocation = ConsentRevocation::sign(
             ConsentRevocationCore {
@@ -504,7 +806,7 @@ mod tests {
     #[test]
     fn wrong_session_fingerprint_is_rejected() {
         let req = request(authority(15_000));
-        let resp = response(true, 7);
+        let resp = response(&req, true);
         assert_eq!(
             verify_approved_external_action_authority(
                 &req,
@@ -513,9 +815,40 @@ mod tests {
                 &requester().verifying_key().to_bytes(),
                 &responder().verifying_key().to_bytes(),
                 &[0xCC; 32],
-                10_000,
+                11_000,
             ),
             Err(ExternalAuthorityError::RequestFingerprintMismatch)
         );
+    }
+
+    #[test]
+    fn bound_response_is_sealable() {
+        let req = request(authority(15_000));
+        let resp = response(&req, true);
+        let bytes = resp.to_bin().unwrap();
+        let decoded = CausalAuthorityResponse::from_bin(&bytes).unwrap();
+        assert_eq!(decoded, resp);
+    }
+
+    #[test]
+    fn approval_instance_id_changes_with_signed_decision() {
+        let req = request(authority(15_000));
+        let first = CausalAuthorityResponse::sign_for_request(
+            &req,
+            true,
+            10_000,
+            "first",
+            &responder(),
+        )
+        .unwrap();
+        let second = CausalAuthorityResponse::sign_for_request(
+            &req,
+            true,
+            10_001,
+            "second",
+            &responder(),
+        )
+        .unwrap();
+        assert_ne!(authority_instance_id(&first), authority_instance_id(&second));
     }
 }
