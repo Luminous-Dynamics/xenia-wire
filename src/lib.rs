@@ -35,6 +35,8 @@
 //!   selected contexts, and negotiation binding primitives.
 //! - **[`negotiated_context_codec`]** — bounded canonical decoding for untrusted
 //!   capability offers and selected contexts; alternate encodings fail closed.
+//! - **[`negotiation_policy`]** — local minimum/allow-list policy over an
+//!   authenticated selected context, with a separate audit hash.
 //! - **[`authority_negotiation`]** — exact causal-authority draft-04 capability
 //!   identity and selected-context checks when `causal-authority` + `handshake`
 //!   are enabled together.
@@ -130,6 +132,9 @@ pub mod negotiated_context;
 
 #[cfg(feature = "handshake")]
 pub mod negotiated_context_codec;
+
+#[cfg(feature = "handshake")]
+pub mod negotiation_policy;
 
 #[cfg(all(feature = "causal-authority", feature = "handshake"))]
 pub mod authority_negotiation;
