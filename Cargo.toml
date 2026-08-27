@@ -31,6 +31,10 @@ lz4 = ["dep:lz4_flex"]
 # revocation terminates) + HKDF-SHA-256 session fingerprint binding.
 # Corresponds to SPEC.md draft-03 §12.
 consent = ["dep:ed25519-dalek", "dep:serde-big-array", "dep:hkdf", "dep:sha2"]
+# Experimental typed profile carried in ConsentRequestCore::causal_binding.
+# Opt-in so draft-03 consent behavior remains unchanged unless a caller
+# deliberately activates the external-action-authority extension.
+causal-authority = ["consent"]
 # Viewer-side PQC handshake (ML-KEM-768 + Ed25519 + ML-DSA-65 + HKDF-SHA-256).
 # A from-scratch reimplementation of the viewer half of xenia-peer's native
 # handshake, wire-compatible byte-for-byte, so a browser/WASM client (e.g. the

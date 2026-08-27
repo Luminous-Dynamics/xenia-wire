@@ -24,19 +24,33 @@
 //!   Available under the default `reference-frame` feature.
 //! - **[`seal_frame_lz4`] / [`open_frame_lz4`]** — LZ4-before-AEAD
 //!   compression variants. Available under the `lz4` feature.
+//! - **[`consent`]** — signed draft-03 request/response/revocation ceremony.
+//! - **[`authority`]** — experimental exact external-action authority. Unlike
+//!   ordinary consent responses, its responder statement commits to the digest
+//!   of the complete signed request. Available only with `causal-authority`.
+//! - **[`authority_session`]** — recommended live-session authority path. It
+//!   authenticates request fingerprints through Xenia's current/previous rekey
+//!   epochs before signing or verifying exact authority.
+//! - **[`negotiated_context`]** — canonical capability offers, deterministic
+//!   selected contexts, and negotiation binding primitives.
+//! - **[`negotiated_context_codec`]** — bounded canonical decoding for untrusted
+//!   capability offers and selected contexts; alternate encodings fail closed.
+//! - **[`negotiation_policy`]** — local minimum/allow-list policy over an
+//!   authenticated selected context, with a separate audit hash.
+//! - **[`authority_negotiation`]** — exact causal-authority draft-04 capability
+//!   identity and selected-context checks when `causal-authority` + `handshake`
+//!   are enabled together.
 //!
 //! ## What this crate deliberately does NOT do
 //!
 //! - **No transport.** Sealed bytes are returned to the caller; the
 //!   caller ships them over TCP / WebSocket / QUIC / whatever.
-//! - **No handshake.** Session keys arrive from somewhere else
-//!   (ML-KEM-768 in real deployments). Call [`Session::install_key`]
-//!   directly in tests or early prototypes.
-//! - **No state machine.** `Session` has no lifecycle — no connecting,
-//!   authenticating, closing. Those are application concerns.
-//! - **No domain semantics.** The reference [`Frame`] / [`Input`] types
-//!   carry opaque byte payloads. Implement [`Sealable`] on your own
-//!   types for anything real.
+//! - **No handshake by default.** Session keys may arrive from somewhere else;
+//!   the optional `handshake` feature provides the viewer-side PQC handshake.
+//! - **No application lifecycle.** Session creation/teardown and durable
+//!   authority consumption remain application concerns.
+//! - **No domain semantics.** Xenia binds canonical application bytes and
+//!   digests; consuming applications define what those bytes mean.
 //!
 //! ## Quick start
 //!
@@ -76,10 +90,13 @@
 //!
 //! ## Feature flags
 //!
-//! | Feature           | Default | Description                                          |
-//! |-------------------|---------|------------------------------------------------------|
-//! | `reference-frame` | yes     | Ships [`Frame`] + [`Input`] reference types.         |
-//! | `lz4`             | no      | Adds LZ4-before-AEAD variants for frame sealing.     |
+//! | Feature            | Default | Description |
+//! |--------------------|---------|-------------|
+//! | `reference-frame`  | yes     | Ships [`Frame`] + [`Input`] reference types. |
+//! | `lz4`              | no      | Adds LZ4-before-AEAD variants for frames. |
+//! | `consent`          | no      | Adds signed consent ceremony + session gating. |
+//! | `causal-authority` | no      | Experimental exact request-bound authority; implies `consent`. |
+//! | `handshake`        | no      | Viewer-side hybrid-PQ handshake + negotiated-context primitives. |
 //!
 //! ## License
 //!
@@ -101,8 +118,26 @@ mod frame;
 #[cfg(feature = "consent")]
 pub mod consent;
 
+#[cfg(feature = "causal-authority")]
+pub mod authority;
+
+#[cfg(feature = "causal-authority")]
+pub mod authority_session;
+
 #[cfg(feature = "handshake")]
 pub mod handshake;
+
+#[cfg(feature = "handshake")]
+pub mod negotiated_context;
+
+#[cfg(feature = "handshake")]
+pub mod negotiated_context_codec;
+
+#[cfg(feature = "handshake")]
+pub mod negotiation_policy;
+
+#[cfg(all(feature = "causal-authority", feature = "handshake"))]
+pub mod authority_negotiation;
 
 #[cfg(feature = "handshake")]
 pub mod handshake_highsec;
@@ -112,7 +147,8 @@ pub mod operator_rekey;
 
 pub use error::WireError;
 pub use payload_types::{
-    PAYLOAD_TYPE_APPLICATION_MIN, PAYLOAD_TYPE_ATTESTED_ACTION, PAYLOAD_TYPE_CONSENT_REQUEST,
+    PAYLOAD_TYPE_APPLICATION_MIN, PAYLOAD_TYPE_ATTESTED_ACTION,
+    PAYLOAD_TYPE_CAUSAL_AUTHORITY_RESPONSE, PAYLOAD_TYPE_CONSENT_REQUEST,
     PAYLOAD_TYPE_CONSENT_RESPONSE, PAYLOAD_TYPE_CONSENT_REVOCATION, PAYLOAD_TYPE_FRAME,
     PAYLOAD_TYPE_FRAME_LZ4, PAYLOAD_TYPE_INPUT,
 };
