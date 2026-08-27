@@ -10,6 +10,7 @@
 
 #![cfg(all(feature = "causal-authority", feature = "handshake"))]
 
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::authority_activation_evidence::AuthorityActivationReceiptV1;
@@ -26,7 +27,7 @@ pub const AUTHORITY_REKEY_PROFILE_BINDING_V1_DOMAIN: &[u8] =
 pub const AUTHORITY_REKEY_PROFILE_BINDING_SCHEMA_VERSION: u8 = 1;
 
 /// Immutable local choice of rekey domain for one authority activation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AuthorityRekeyProfileBindingV1 {
     /// Binding schema version.
     pub schema_version: u8,
@@ -245,5 +246,18 @@ mod tests {
         )
         .unwrap();
         assert_ne!(lane.binding_id, operator.binding_id);
+    }
+
+    #[test]
+    fn deserialized_binding_must_revalidate() {
+        let activation = activation();
+        let binding = AuthorityRekeyProfileBindingV1::new(
+            &activation,
+            RekeyTransitionProfileV1::OperatorChannelV1,
+        )
+        .unwrap();
+        let bytes = bincode::serialize(&binding).unwrap();
+        let decoded: AuthorityRekeyProfileBindingV1 = bincode::deserialize(&bytes).unwrap();
+        decoded.validate(&activation).unwrap();
     }
 }
