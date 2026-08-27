@@ -21,6 +21,7 @@ on:
       - "src/session.rs"
       - "src/wire.rs"
       - "tests/authority_rekey_transition_crosscheck.rs"
+      - "tests/authority_rekey_profile_binding_vectors.rs"
       - "tests/causal_authority_adversarial.rs"
       - "tests/causal_authority_session.rs"
       - "tests/causal_authority_vectors.rs"
@@ -90,6 +91,8 @@ jobs:
         run: cargo clippy --no-default-features --features causal-authority,handshake --all-targets -- -D warnings
       - name: Test negotiation, policy, hostile-byte codec, V2 contract, activation, lineage, transition evidence, profile binding, and authority profile
         run: cargo test --no-default-features --features causal-authority,handshake --lib
+      - name: Reproduce rekey profile binding Rust vectors
+        run: cargo test --no-default-features --features causal-authority,handshake --test authority_rekey_profile_binding_vectors
       - name: Cross-check transition evidence against production operator-rekey hash
         run: cargo test --no-default-features --features causal-authority,handshake,operator-rekey --test authority_rekey_transition_crosscheck
 
