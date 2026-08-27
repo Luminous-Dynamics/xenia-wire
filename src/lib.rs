@@ -37,6 +37,8 @@
 //!   capability offers and selected contexts; alternate encodings fail closed.
 //! - **[`negotiation_policy`]** — local minimum/allow-list policy over an
 //!   authenticated selected context, with a separate audit hash.
+//! - **[`handshake_v2_contract`]** — non-production independent reproduction of
+//!   candidate dynamic-negotiation V2 message bytes and signature transcripts.
 //! - **[`authority_negotiation`]** — exact causal-authority draft-04 capability
 //!   identity and selected-context checks when `causal-authority` + `handshake`
 //!   are enabled together.
@@ -135,6 +137,9 @@ pub mod negotiated_context_codec;
 
 #[cfg(feature = "handshake")]
 pub mod negotiation_policy;
+
+#[cfg(feature = "handshake")]
+pub mod handshake_v2_contract;
 
 #[cfg(all(feature = "causal-authority", feature = "handshake"))]
 pub mod authority_negotiation;
