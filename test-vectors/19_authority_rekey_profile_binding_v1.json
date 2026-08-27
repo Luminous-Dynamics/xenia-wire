@@ -1,0 +1,18 @@
+{
+  "schema": "xenia-authority-rekey-profile-binding-v1",
+  "domain_utf8": "xenia.authority-rekey-profile-binding.v1\\0",
+  "lineage_id_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "activation_id_hex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "profiles": {
+    "lane_session_v1": {
+      "code": 1,
+      "binding_id_sha256_hex": "72de9b13331335d95f31a007c2eb37e97a4e890caa277f6a83e85c07cd1858a7"
+    },
+    "operator_channel_v1": {
+      "code": 2,
+      "required_capability_name_utf8": "xenia.operator-rekey",
+      "required_capability_version_utf8": "v1",
+      "binding_id_sha256_hex": "d1a0eca840e4dbb803466203d20ff2d7a31b9e97967eb84a4fff41b29375cafd"
+    }
+  }
+}

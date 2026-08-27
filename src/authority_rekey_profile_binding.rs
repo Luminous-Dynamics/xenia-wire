@@ -5,8 +5,9 @@
 //!
 //! A contiguous hash chain is not by itself permission to switch from Xenia's
 //! lane/session rekey semantics to the distinct operator-channel rekey semantics
-//! (or vice versa). Consequential session state should create one profile binding
-//! at activation and require every accepted transition to match it.
+//! (or vice versa). The binding is also constrained by the selected capability
+//! context committed by the activation receipt: an operator-channel binding can
+//! exist only when exact `xenia.operator-rekey / v1` was selected.
 
 #![cfg(all(feature = "causal-authority", feature = "handshake"))]
 
@@ -19,12 +20,17 @@ use crate::authority_rekey_transition_evidence::{
     AuthorityRekeyTransitionEvidenceError, AuthorityRekeyTransitionEvidenceV1,
     RekeyTransitionProfileV1, advance_lineage_after_verified_transition,
 };
+use crate::negotiated_context::NegotiatedContextV1;
 
 /// Domain separator for the profile binding identity.
 pub const AUTHORITY_REKEY_PROFILE_BINDING_V1_DOMAIN: &[u8] =
     b"xenia.authority-rekey-profile-binding.v1\0";
 /// Profile-binding schema version.
 pub const AUTHORITY_REKEY_PROFILE_BINDING_SCHEMA_VERSION: u8 = 1;
+/// Exact negotiated capability required before operator-channel rekey may be used.
+pub const OPERATOR_REKEY_CAPABILITY_NAME: &[u8] = b"xenia.operator-rekey";
+/// Exact operator-rekey capability version supported by this binding profile.
+pub const OPERATOR_REKEY_CAPABILITY_VERSION: &[u8] = b"v1";
 
 /// Immutable local choice of rekey domain for one authority activation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -42,11 +48,19 @@ pub struct AuthorityRekeyProfileBindingV1 {
 }
 
 impl AuthorityRekeyProfileBindingV1 {
-    /// Pin a rekey profile to an existing authority activation.
+    /// Pin a rekey profile to an activation and the exact selected capability
+    /// context committed by that activation.
+    ///
+    /// For [`RekeyTransitionProfileV1::OperatorChannelV1`], exact
+    /// `xenia.operator-rekey / v1` must be present. This prevents local code
+    /// from enabling an operator rekey protocol that the authenticated
+    /// negotiation never selected.
     pub fn new(
         activation: &AuthorityActivationReceiptV1,
+        selected_context: &NegotiatedContextV1,
         profile: RekeyTransitionProfileV1,
     ) -> Result<Self, AuthorityRekeyProfileBindingError> {
+        validate_selected_context(activation, selected_context, profile)?;
         require_nonzero(&activation.lineage_id)?;
         require_nonzero(&activation.activation_id)?;
         let binding_id = binding_id(&activation.lineage_id, &activation.activation_id, profile);
@@ -59,10 +73,15 @@ impl AuthorityRekeyProfileBindingV1 {
         })
     }
 
-    /// Validate a deserialized binding against its activation receipt.
+    /// Validate a persisted binding against both its activation receipt and the
+    /// selected capability context committed by that activation.
+    ///
+    /// Callers loading untrusted/persisted evidence must use this method before
+    /// treating the binding as an authority-session invariant.
     pub fn validate(
         &self,
         activation: &AuthorityActivationReceiptV1,
+        selected_context: &NegotiatedContextV1,
     ) -> Result<(), AuthorityRekeyProfileBindingError> {
         if self.schema_version != AUTHORITY_REKEY_PROFILE_BINDING_SCHEMA_VERSION {
             return Err(AuthorityRekeyProfileBindingError::UnsupportedSchemaVersion);
@@ -70,6 +89,7 @@ impl AuthorityRekeyProfileBindingV1 {
         if self.lineage_id != activation.lineage_id || self.activation_id != activation.activation_id {
             return Err(AuthorityRekeyProfileBindingError::ActivationMismatch);
         }
+        validate_selected_context(activation, selected_context, self.profile)?;
         require_nonzero(&self.lineage_id)?;
         require_nonzero(&self.activation_id)?;
         let expected = binding_id(&self.lineage_id, &self.activation_id, self.profile);
@@ -80,6 +100,10 @@ impl AuthorityRekeyProfileBindingV1 {
     }
 
     /// Canonical fixed-width binding bytes.
+    ///
+    /// The activation id already commits the authenticated V5 negotiation
+    /// lineage. The selected-context check is nevertheless repeated explicitly
+    /// at construction/validation to prevent confused local profile selection.
     pub fn canonical_bytes(&self) -> Vec<u8> {
         let mut out = Vec::with_capacity(
             AUTHORITY_REKEY_PROFILE_BINDING_V1_DOMAIN.len() + 1 + 32 + 32 + 1,
@@ -93,19 +117,21 @@ impl AuthorityRekeyProfileBindingV1 {
     }
 }
 
-/// Preferred profile-pinned authority-lineage advancement path.
+/// Preferred profile- and capability-bound authority-lineage advancement path.
 ///
 /// The underlying rekey proposal must already have passed Xenia's real
 /// cryptographic/protocol verifier. This additionally proves the public context
 /// is self-consistent, rooted in this activation, contiguous with the local
-/// chain, and in the one rekey domain selected for this activation.
+/// chain, in the one rekey domain selected for this activation, and compatible
+/// with the selected capability set committed by the handshake activation.
 pub fn advance_profile_bound_lineage_after_verified_transition(
     lineage: &AuthorityLineageEpochEvidenceV1,
     activation: &AuthorityActivationReceiptV1,
+    selected_context: &NegotiatedContextV1,
     profile_binding: &AuthorityRekeyProfileBindingV1,
     transition: &AuthorityRekeyTransitionEvidenceV1,
 ) -> Result<AuthorityLineageEpochEvidenceV1, AuthorityRekeyProfileBindingError> {
-    profile_binding.validate(activation)?;
+    profile_binding.validate(activation, selected_context)?;
     if lineage.lineage_id != profile_binding.lineage_id
         || lineage.activation_id != profile_binding.activation_id
     {
@@ -116,6 +142,25 @@ pub fn advance_profile_bound_lineage_after_verified_transition(
     }
     advance_lineage_after_verified_transition(lineage, activation, transition)
         .map_err(AuthorityRekeyProfileBindingError::Transition)
+}
+
+fn validate_selected_context(
+    activation: &AuthorityActivationReceiptV1,
+    selected_context: &NegotiatedContextV1,
+    profile: RekeyTransitionProfileV1,
+) -> Result<(), AuthorityRekeyProfileBindingError> {
+    if selected_context.hash() != activation.selected_context_hash {
+        return Err(AuthorityRekeyProfileBindingError::SelectedContextMismatch);
+    }
+    if profile == RekeyTransitionProfileV1::OperatorChannelV1
+        && !selected_context.contains(
+            OPERATOR_REKEY_CAPABILITY_NAME,
+            OPERATOR_REKEY_CAPABILITY_VERSION,
+        )
+    {
+        return Err(AuthorityRekeyProfileBindingError::OperatorRekeyNotNegotiated);
+    }
+    Ok(())
 }
 
 fn binding_id(
@@ -151,6 +196,14 @@ pub enum AuthorityRekeyProfileBindingError {
     /// Binding does not belong to the supplied activation.
     #[error("authority rekey profile binding does not match activation")]
     ActivationMismatch,
+    /// Supplied selected context does not match the selected-context commitment
+    /// carried by the activation receipt.
+    #[error("selected capability context does not match authority activation")]
+    SelectedContextMismatch,
+    /// Operator-channel rekey was requested without exact negotiated
+    /// `xenia.operator-rekey / v1` support.
+    #[error("operator rekey v1 was not selected by authenticated capability negotiation")]
+    OperatorRekeyNotNegotiated,
     /// Stored binding identity does not match canonical fields.
     #[error("authority rekey profile binding id mismatch")]
     BindingIdMismatch,
@@ -168,11 +221,30 @@ pub enum AuthorityRekeyProfileBindingError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::authority_activation_evidence::AuthorityActivationReceiptV1;
     use crate::authority_lineage_epoch_evidence::AuthorityLineageEpochEvidenceV1;
     use crate::authority_rekey_transition_evidence::RekeyTransitionReasonV1;
+    use crate::negotiated_context::NegotiatedCapabilityV1;
 
-    fn activation() -> AuthorityActivationReceiptV1 {
+    fn cap(name: &[u8], version: &[u8]) -> NegotiatedCapabilityV1 {
+        NegotiatedCapabilityV1::new(name.to_vec(), version.to_vec()).unwrap()
+    }
+
+    fn selected_with_operator() -> NegotiatedContextV1 {
+        NegotiatedContextV1::from_capabilities([
+            cap(b"xenia.causal-authority", b"draft-04"),
+            cap(OPERATOR_REKEY_CAPABILITY_NAME, OPERATOR_REKEY_CAPABILITY_VERSION),
+        ])
+        .unwrap()
+    }
+
+    fn selected_without_operator() -> NegotiatedContextV1 {
+        NegotiatedContextV1::from_capabilities([
+            cap(b"xenia.causal-authority", b"draft-04"),
+        ])
+        .unwrap()
+    }
+
+    fn activation(selected_context: &NegotiatedContextV1) -> AuthorityActivationReceiptV1 {
         AuthorityActivationReceiptV1 {
             schema_version: 1,
             handshake_transcript_hash: [0x11; 32],
@@ -180,7 +252,7 @@ mod tests {
             final_v5_context_hash: [0x33; 32],
             host_offer_hash: [0x44; 32],
             viewer_offer_hash: [0x55; 32],
-            selected_context_hash: [0x66; 32],
+            selected_context_hash: selected_context.hash(),
             negotiation_binding_hash: [0x77; 32],
             local_policy_hash: [0x88; 32],
             host_identity_fingerprint: [0x99; 32],
@@ -190,11 +262,57 @@ mod tests {
     }
 
     #[test]
+    fn operator_profile_requires_exact_negotiated_operator_rekey_v1() {
+        let no_operator = selected_without_operator();
+        let activation = activation(&no_operator);
+        assert!(matches!(
+            AuthorityRekeyProfileBindingV1::new(
+                &activation,
+                &no_operator,
+                RekeyTransitionProfileV1::OperatorChannelV1,
+            ),
+            Err(AuthorityRekeyProfileBindingError::OperatorRekeyNotNegotiated)
+        ));
+
+        let wrong_version = NegotiatedContextV1::from_capabilities([
+            cap(b"xenia.causal-authority", b"draft-04"),
+            cap(OPERATOR_REKEY_CAPABILITY_NAME, b"v0"),
+        ])
+        .unwrap();
+        let activation = activation(&wrong_version);
+        assert!(matches!(
+            AuthorityRekeyProfileBindingV1::new(
+                &activation,
+                &wrong_version,
+                RekeyTransitionProfileV1::OperatorChannelV1,
+            ),
+            Err(AuthorityRekeyProfileBindingError::OperatorRekeyNotNegotiated)
+        ));
+    }
+
+    #[test]
+    fn selected_context_must_match_activation_commitment() {
+        let selected = selected_with_operator();
+        let activation = activation(&selected);
+        let different = selected_without_operator();
+        assert!(matches!(
+            AuthorityRekeyProfileBindingV1::new(
+                &activation,
+                &different,
+                RekeyTransitionProfileV1::LaneSessionV1,
+            ),
+            Err(AuthorityRekeyProfileBindingError::SelectedContextMismatch)
+        ));
+    }
+
+    #[test]
     fn profile_binding_rejects_mid_lineage_domain_switch() {
-        let activation = activation();
+        let selected = selected_with_operator();
+        let activation = activation(&selected);
         let initial = AuthorityLineageEpochEvidenceV1::initial(&activation).unwrap();
         let binding = AuthorityRekeyProfileBindingV1::new(
             &activation,
+            &selected,
             RekeyTransitionProfileV1::OperatorChannelV1,
         )
         .unwrap();
@@ -209,6 +327,7 @@ mod tests {
         let epoch_one = advance_profile_bound_lineage_after_verified_transition(
             &initial,
             &activation,
+            &selected,
             &binding,
             &operator,
         )
@@ -225,6 +344,7 @@ mod tests {
             advance_profile_bound_lineage_after_verified_transition(
                 &epoch_one,
                 &activation,
+                &selected,
                 &binding,
                 &lane,
             ),
@@ -233,31 +353,37 @@ mod tests {
     }
 
     #[test]
-    fn different_profile_produces_different_binding_identity() {
-        let activation = activation();
+    fn persisted_binding_revalidates_and_profile_changes_identity() {
+        let selected = selected_with_operator();
+        let activation = activation(&selected);
+        let operator = AuthorityRekeyProfileBindingV1::new(
+            &activation,
+            &selected,
+            RekeyTransitionProfileV1::OperatorChannelV1,
+        )
+        .unwrap();
         let lane = AuthorityRekeyProfileBindingV1::new(
             &activation,
+            &selected,
             RekeyTransitionProfileV1::LaneSessionV1,
         )
         .unwrap();
-        let operator = AuthorityRekeyProfileBindingV1::new(
-            &activation,
-            RekeyTransitionProfileV1::OperatorChannelV1,
-        )
-        .unwrap();
-        assert_ne!(lane.binding_id, operator.binding_id);
+        assert_ne!(operator.binding_id, lane.binding_id);
+
+        let bytes = bincode::serialize(&operator).unwrap();
+        let decoded: AuthorityRekeyProfileBindingV1 = bincode::deserialize(&bytes).unwrap();
+        decoded.validate(&activation, &selected).unwrap();
     }
 
     #[test]
-    fn deserialized_binding_must_revalidate() {
-        let activation = activation();
-        let binding = AuthorityRekeyProfileBindingV1::new(
+    fn lane_profile_does_not_require_operator_capability() {
+        let selected = selected_without_operator();
+        let activation = activation(&selected);
+        AuthorityRekeyProfileBindingV1::new(
             &activation,
-            RekeyTransitionProfileV1::OperatorChannelV1,
+            &selected,
+            RekeyTransitionProfileV1::LaneSessionV1,
         )
         .unwrap();
-        let bytes = bincode::serialize(&binding).unwrap();
-        let decoded: AuthorityRekeyProfileBindingV1 = bincode::deserialize(&bytes).unwrap();
-        decoded.validate(&activation).unwrap();
     }
 }
