@@ -39,6 +39,8 @@
 //!   authenticated selected context, with a separate audit hash.
 //! - **[`handshake_v2_contract`]** — non-production independent reproduction of
 //!   candidate dynamic-negotiation V2 message bytes and signature transcripts.
+//! - **[`authority_activation_evidence`]** — durable policy-bound evidence that
+//!   separates authenticated session lineage from local authority activation.
 //! - **[`authority_negotiation`]** — exact causal-authority draft-04 capability
 //!   identity and selected-context checks when `causal-authority` + `handshake`
 //!   are enabled together.
@@ -140,6 +142,9 @@ pub mod negotiation_policy;
 
 #[cfg(feature = "handshake")]
 pub mod handshake_v2_contract;
+
+#[cfg(all(feature = "causal-authority", feature = "handshake"))]
+pub mod authority_activation_evidence;
 
 #[cfg(all(feature = "causal-authority", feature = "handshake"))]
 pub mod authority_negotiation;

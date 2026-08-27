@@ -5,6 +5,7 @@ on:
     paths:
       - "Cargo.toml"
       - "src/authority.rs"
+      - "src/authority_activation_evidence.rs"
       - "src/authority_negotiation.rs"
       - "src/authority_session.rs"
       - "src/consent.rs"
@@ -23,10 +24,12 @@ on:
       - "test-vectors/14_negotiated_context_v1.json"
       - "test-vectors/15_capability_negotiation_v1.json"
       - "test-vectors/16_handshake_v2_contract.json"
+      - "test-vectors/17_authority_activation_receipt_v1.json"
       - "test-vectors/conformance/verify-causal-authority.mjs"
       - "test-vectors/conformance/verify-negotiated-context.mjs"
       - "test-vectors/conformance/verify-capability-negotiation.mjs"
       - "test-vectors/conformance/verify-handshake-v2-contract.mjs"
+      - "test-vectors/conformance/verify-authority-activation-receipt.mjs"
       - ".github/workflows/causal-authority.yml"
   workflow_dispatch:
 
@@ -77,7 +80,7 @@ jobs:
         run: cargo check --no-default-features --features causal-authority,handshake --all-targets
       - name: Clippy strict negotiation feature boundary
         run: cargo clippy --no-default-features --features causal-authority,handshake --all-targets -- -D warnings
-      - name: Test negotiation, policy, hostile-byte codec, V2 contract, and authority profile
+      - name: Test negotiation, policy, hostile-byte codec, V2 contract, activation evidence, and authority profile
         run: cargo test --no-default-features --features causal-authority,handshake --lib
 
   node:
@@ -96,3 +99,5 @@ jobs:
         run: node test-vectors/conformance/verify-capability-negotiation.mjs
       - name: Verify V2 envelope budget and V5 context vector
         run: node test-vectors/conformance/verify-handshake-v2-contract.mjs
+      - name: Reproduce policy-bound authority activation receipt
+        run: node test-vectors/conformance/verify-authority-activation-receipt.mjs
