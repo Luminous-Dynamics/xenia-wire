@@ -41,6 +41,8 @@
 //!   candidate dynamic-negotiation V2 message bytes and signature transcripts.
 //! - **[`authority_activation_evidence`]** — durable policy-bound evidence that
 //!   separates authenticated session lineage from local authority activation.
+//! - **[`authority_lineage_epoch_evidence`]** — durable continuity evidence for
+//!   the existing verified Xenia rekey epoch chain.
 //! - **[`authority_negotiation`]** — exact causal-authority draft-04 capability
 //!   identity and selected-context checks when `causal-authority` + `handshake`
 //!   are enabled together.
@@ -145,6 +147,9 @@ pub mod handshake_v2_contract;
 
 #[cfg(all(feature = "causal-authority", feature = "handshake"))]
 pub mod authority_activation_evidence;
+
+#[cfg(all(feature = "causal-authority", feature = "handshake"))]
+pub mod authority_lineage_epoch_evidence;
 
 #[cfg(all(feature = "causal-authority", feature = "handshake"))]
 pub mod authority_negotiation;
