@@ -43,6 +43,10 @@
 //!   separates authenticated session lineage from local authority activation.
 //! - **[`authority_lineage_epoch_evidence`]** — durable continuity evidence for
 //!   the existing verified Xenia rekey epoch chain.
+//! - **[`authority_rekey_transition_evidence`]** — self-describing public rekey
+//!   context evidence that recomputes the exact existing lane/operator epoch hash.
+//! - **[`authority_rekey_profile_binding`]** — pins one rekey protocol domain to
+//!   an activation so a contiguous lineage cannot silently switch semantics.
 //! - **[`authority_negotiation`]** — exact causal-authority draft-04 capability
 //!   identity and selected-context checks when `causal-authority` + `handshake`
 //!   are enabled together.
@@ -150,6 +154,12 @@ pub mod authority_activation_evidence;
 
 #[cfg(all(feature = "causal-authority", feature = "handshake"))]
 pub mod authority_lineage_epoch_evidence;
+
+#[cfg(all(feature = "causal-authority", feature = "handshake"))]
+pub mod authority_rekey_transition_evidence;
+
+#[cfg(all(feature = "causal-authority", feature = "handshake"))]
+pub mod authority_rekey_profile_binding;
 
 #[cfg(all(feature = "causal-authority", feature = "handshake"))]
 pub mod authority_negotiation;

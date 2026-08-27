@@ -7,6 +7,7 @@ on:
       - "src/authority.rs"
       - "src/authority_activation_evidence.rs"
       - "src/authority_lineage_epoch_evidence.rs"
+      - "src/authority_rekey_transition_evidence.rs"
       - "src/authority_negotiation.rs"
       - "src/authority_session.rs"
       - "src/consent.rs"
@@ -18,6 +19,7 @@ on:
       - "src/payload_types.rs"
       - "src/session.rs"
       - "src/wire.rs"
+      - "tests/authority_rekey_transition_crosscheck.rs"
       - "tests/causal_authority_adversarial.rs"
       - "tests/causal_authority_session.rs"
       - "tests/causal_authority_vectors.rs"
@@ -83,8 +85,10 @@ jobs:
         run: cargo check --no-default-features --features causal-authority,handshake --all-targets
       - name: Clippy strict negotiation feature boundary
         run: cargo clippy --no-default-features --features causal-authority,handshake --all-targets -- -D warnings
-      - name: Test negotiation, policy, hostile-byte codec, V2 contract, activation, lineage, and authority profile
+      - name: Test negotiation, policy, hostile-byte codec, V2 contract, activation, lineage, transition evidence, and authority profile
         run: cargo test --no-default-features --features causal-authority,handshake --lib
+      - name: Cross-check transition evidence against production operator-rekey hash
+        run: cargo test --no-default-features --features causal-authority,handshake,operator-rekey --test authority_rekey_transition_crosscheck
 
   node:
     name: Independent Node vector reproduction
