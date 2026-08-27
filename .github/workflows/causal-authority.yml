@@ -8,6 +8,7 @@ on:
       - "src/authority_negotiation.rs"
       - "src/authority_session.rs"
       - "src/consent.rs"
+      - "src/handshake_v2_contract.rs"
       - "src/lib.rs"
       - "src/negotiated_context.rs"
       - "src/negotiated_context_codec.rs"
@@ -76,7 +77,7 @@ jobs:
         run: cargo check --no-default-features --features causal-authority,handshake --all-targets
       - name: Clippy strict negotiation feature boundary
         run: cargo clippy --no-default-features --features causal-authority,handshake --all-targets -- -D warnings
-      - name: Test negotiation, policy, hostile-byte codec, and authority profile
+      - name: Test negotiation, policy, hostile-byte codec, V2 contract, and authority profile
         run: cargo test --no-default-features --features causal-authority,handshake --lib
 
   node:
