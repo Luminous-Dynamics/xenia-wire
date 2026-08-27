@@ -8,6 +8,7 @@ on:
       - "src/authority_activation_evidence.rs"
       - "src/authority_lineage_epoch_evidence.rs"
       - "src/authority_rekey_transition_evidence.rs"
+      - "src/authority_rekey_profile_binding.rs"
       - "src/authority_negotiation.rs"
       - "src/authority_session.rs"
       - "src/consent.rs"
@@ -29,12 +30,14 @@ on:
       - "test-vectors/16_handshake_v2_contract.json"
       - "test-vectors/17_authority_activation_receipt_v1.json"
       - "test-vectors/18_authority_lineage_epoch_v1.json"
+      - "test-vectors/19_authority_rekey_profile_binding_v1.json"
       - "test-vectors/conformance/verify-causal-authority.mjs"
       - "test-vectors/conformance/verify-negotiated-context.mjs"
       - "test-vectors/conformance/verify-capability-negotiation.mjs"
       - "test-vectors/conformance/verify-handshake-v2-contract.mjs"
       - "test-vectors/conformance/verify-authority-activation-receipt.mjs"
       - "test-vectors/conformance/verify-authority-lineage-epoch.mjs"
+      - "test-vectors/conformance/verify-authority-rekey-profile-binding.mjs"
       - ".github/workflows/causal-authority.yml"
   workflow_dispatch:
 
@@ -85,7 +88,7 @@ jobs:
         run: cargo check --no-default-features --features causal-authority,handshake --all-targets
       - name: Clippy strict negotiation feature boundary
         run: cargo clippy --no-default-features --features causal-authority,handshake --all-targets -- -D warnings
-      - name: Test negotiation, policy, hostile-byte codec, V2 contract, activation, lineage, transition evidence, and authority profile
+      - name: Test negotiation, policy, hostile-byte codec, V2 contract, activation, lineage, transition evidence, profile binding, and authority profile
         run: cargo test --no-default-features --features causal-authority,handshake --lib
       - name: Cross-check transition evidence against production operator-rekey hash
         run: cargo test --no-default-features --features causal-authority,handshake,operator-rekey --test authority_rekey_transition_crosscheck
@@ -110,3 +113,5 @@ jobs:
         run: node test-vectors/conformance/verify-authority-activation-receipt.mjs
       - name: Reproduce authority lineage epoch evidence
         run: node test-vectors/conformance/verify-authority-lineage-epoch.mjs
+      - name: Reproduce rekey profile binding identities
+        run: node test-vectors/conformance/verify-authority-rekey-profile-binding.mjs
