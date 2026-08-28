@@ -26,10 +26,12 @@ use xenia_wire::consent::{
     ConsentState,
 };
 use xenia_wire::{
-    open_consent_request, open_consent_response, open_consent_revocation, open_frame, open_input,
-    seal_consent_request, seal_consent_response, seal_consent_revocation, seal_frame, seal_input,
-    Frame, Input, Session,
+    Frame, Input, Session, open_consent_request, open_consent_response, open_consent_revocation,
+    open_frame, open_input, seal_consent_request, seal_consent_response, seal_consent_revocation,
+    seal_frame, seal_input,
 };
+
+mod capabilities_v2;
 
 mod handshake;
 pub use handshake::{WasmHandshake, WasmSessionKeySchedule};
@@ -40,8 +42,8 @@ mod hdc;
 
 mod session;
 pub use session::{
-    open_lane_frame_inner, open_lane_frame_js, ClipboardContent, OpenedLaneFrame, WasmLaneSession,
-    WasmRekeyState,
+    ClipboardContent, OpenedLaneFrame, WasmLaneSession, WasmRekeyState, open_lane_frame_inner,
+    open_lane_frame_js,
 };
 
 /// Install the panic hook so Rust panics surface in the browser console
