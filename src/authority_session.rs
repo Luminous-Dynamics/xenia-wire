@@ -3,29 +3,43 @@
 
 //! Public safety facade for exact authority bound to a live Xenia Wire session.
 //!
-//! The generic implementation staged in `authority_session_core` remains private
-//! so this public API can enforce a transport-specific invariant: [`crate::Session`]
-//! owns one AEAD key, therefore its authority-preserving rekey path is the
-//! operator-channel domain only. The distinct `LaneSessionV1` domain belongs to
-//! xenia-peer's native multi-lane session layer and is not exposed here.
+//! The low-level request/session helpers remain available with `causal-authority`
+//! alone. With `handshake` enabled, the generic negotiated-session implementation
+//! is kept private so this public API can enforce a transport-specific invariant:
+//! [`crate::Session`] owns one AEAD key, therefore its authority-preserving rekey
+//! path is the operator-channel domain only. The distinct `LaneSessionV1` domain
+//! belongs to xenia-peer's native multi-lane session layer and is not exposed
+//! through the Wire-owned session facade.
 
 #[path = "authority_session_core.rs"]
 mod core;
 
 pub use core::{
-    AuthenticatedAuthorityActivation, AuthenticatedNegotiatedHandshake, AuthoritySessionError,
-    NegotiatedAuthoritySessionError, VerifiedAuthorityRekey,
-    sign_causal_authority_response_for_session,
+    AuthoritySessionError, sign_causal_authority_response_for_session,
     verify_approved_external_action_authority_for_session,
 };
 
+#[cfg(feature = "handshake")]
+pub use core::{
+    AuthenticatedAuthorityActivation, AuthenticatedNegotiatedHandshake,
+    NegotiatedAuthoritySessionError, VerifiedAuthorityRekey,
+};
+
+#[cfg(feature = "handshake")]
 use crate::Session;
+#[cfg(feature = "handshake")]
 use crate::authority::{CausalAuthorityResponse, VerifiedExternalActionAuthority};
+#[cfg(feature = "handshake")]
 use crate::authority_activation_evidence::AuthorityActivationReceiptV1;
+#[cfg(feature = "handshake")]
 use crate::authority_lineage_epoch_evidence::AuthorityLineageEpochEvidenceV1;
+#[cfg(feature = "handshake")]
 use crate::authority_rekey_profile_binding::AuthorityRekeyProfileBindingV1;
+#[cfg(feature = "handshake")]
 use crate::authority_rekey_transition_evidence::RekeyTransitionProfileV1;
+#[cfg(feature = "handshake")]
 use crate::consent::{ConsentRequest, ConsentRevocation, PUBLIC_KEY_LEN};
+#[cfg(feature = "handshake")]
 use crate::negotiated_context::NegotiatedContextV1;
 
 /// Authority-capable single-key envelope session.
@@ -34,16 +48,18 @@ use crate::negotiated_context::NegotiatedContextV1;
 /// rekey profile to [`RekeyTransitionProfileV1::OperatorChannelV1`]. There is no
 /// public constructor accepting an arbitrary profile, so safe downstream code
 /// cannot attach multi-lane rekey semantics to a one-key [`Session`].
+#[cfg(feature = "handshake")]
 pub struct NegotiatedAuthoritySession {
     inner: core::NegotiatedAuthoritySession,
 }
 
+#[cfg(feature = "handshake")]
 impl NegotiatedAuthoritySession {
     /// Activate negotiated authority on a single-key Xenia Wire session.
     ///
-    /// The activation still proves that the raw session's current AEAD key
-    /// matches the authenticated V2 key schedule. In addition, this facade
-    /// always pins operator-channel rekey semantics; exact negotiated
+    /// The activation proves that the raw session's current AEAD key matches the
+    /// authenticated V2 key schedule. This facade additionally pins
+    /// operator-channel rekey semantics; exact negotiated
     /// `xenia.operator-rekey / v1` support is therefore required by the existing
     /// profile-binding gate.
     pub fn activate(
@@ -89,7 +105,7 @@ impl NegotiatedAuthoritySession {
     }
 
     /// Internal evidence-returning verifier used by the public session-bound
-    /// online-use API. External callers should prefer
+    /// online-use API. External negotiated-authority callers should prefer
     /// `verify_session_bound_authority`, whose token borrows this session.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn verify_approved_external_action_authority(
