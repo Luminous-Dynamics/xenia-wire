@@ -11,16 +11,16 @@
 //! belongs to xenia-peer's native multi-lane session layer and is not exposed
 //! through the Wire-owned session facade.
 
-#[path = "authority_session_core.rs"]
-mod core;
+#[path = "authority_session_impl.rs"]
+mod private_impl;
 
-pub use core::{
+pub use private_impl::{
     AuthoritySessionError, sign_causal_authority_response_for_session,
     verify_approved_external_action_authority_for_session,
 };
 
 #[cfg(feature = "handshake")]
-pub use core::{
+pub use private_impl::{
     AuthenticatedAuthorityActivation, AuthenticatedNegotiatedHandshake,
     NegotiatedAuthoritySessionError, VerifiedAuthorityRekey,
 };
@@ -50,7 +50,7 @@ use crate::negotiated_context::NegotiatedContextV1;
 /// cannot attach multi-lane rekey semantics to a one-key [`Session`].
 #[cfg(feature = "handshake")]
 pub struct NegotiatedAuthoritySession {
-    inner: core::NegotiatedAuthoritySession,
+    inner: private_impl::NegotiatedAuthoritySession,
 }
 
 #[cfg(feature = "handshake")]
@@ -66,7 +66,7 @@ impl NegotiatedAuthoritySession {
         session: Session,
         activation: AuthenticatedAuthorityActivation,
     ) -> Result<Self, NegotiatedAuthoritySessionError> {
-        let inner = core::NegotiatedAuthoritySession::activate(
+        let inner = private_impl::NegotiatedAuthoritySession::activate(
             session,
             activation,
             RekeyTransitionProfileV1::OperatorChannelV1,
@@ -175,7 +175,7 @@ mod tests {
         ])
         .unwrap();
         let negotiation = negotiate_capabilities(&host, &viewer).unwrap();
-        let base_v4 = core::array::from_fn(|index| index as u8);
+        let base_v4 = ::core::array::from_fn(|index| index as u8);
         let v5 = compose_v5_context(&base_v4, &negotiation.binding_hash());
         let schedule = SessionKeySchedule {
             aead: AEAD,
