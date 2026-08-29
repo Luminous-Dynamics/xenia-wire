@@ -28,9 +28,10 @@
 //! - **[`authority`]** — experimental exact external-action authority. Unlike
 //!   ordinary consent responses, its responder statement commits to the digest
 //!   of the complete signed request. Available only with `causal-authority`.
-//! - **[`authority_session`]** — recommended live-session authority path. It
-//!   authenticates request fingerprints through Xenia's current/previous rekey
-//!   epochs before signing or verifying exact authority.
+//! - **[`authority_session`]** — negotiated authority type-state and live-session
+//!   binding. The owned authority session hides unrestricted key replacement.
+//! - **[`authority_live_use`]** — session-borrowed online verification so a
+//!   verified action cannot silently outlive a rekey or authority teardown.
 //! - **[`negotiated_context`]** — canonical capability offers, deterministic
 //!   selected contexts, and negotiation binding primitives.
 //! - **[`negotiated_context_codec`]** — bounded canonical decoding for untrusted
@@ -133,6 +134,9 @@ pub mod authority;
 
 #[cfg(feature = "causal-authority")]
 pub mod authority_session;
+
+#[cfg(all(feature = "causal-authority", feature = "handshake"))]
+pub mod authority_live_use;
 
 #[cfg(feature = "handshake")]
 pub mod handshake;
