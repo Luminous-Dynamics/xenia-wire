@@ -15,6 +15,35 @@
 //! therefore remains tied to the same activation and key epoch for the duration
 //! of the online-use decision. Durable single-use reservation/consumption remains
 //! an application/execution-layer responsibility keyed by `authority_id`.
+//!
+//! The borrow boundary is compiler-enforced:
+//!
+//! ```compile_fail
+//! use xenia_wire::authority::CausalAuthorityResponse;
+//! use xenia_wire::authority_session::NegotiatedAuthoritySession;
+//! use xenia_wire::consent::{ConsentRequest, PUBLIC_KEY_LEN};
+//!
+//! fn cannot_mutate_while_live_use_exists(
+//!     session: &mut NegotiatedAuthoritySession,
+//!     request: &ConsentRequest,
+//!     response: &CausalAuthorityResponse,
+//!     requester: &[u8; PUBLIC_KEY_LEN],
+//!     responder: &[u8; PUBLIC_KEY_LEN],
+//! ) {
+//!     let live = session
+//!         .verify_session_bound_authority(
+//!             request,
+//!             response,
+//!             &[],
+//!             requester,
+//!             responder,
+//!             1,
+//!         )
+//!         .unwrap();
+//!     session.tick(); // rejected: `live` still immutably borrows `session`
+//!     drop(live);
+//! }
+//! ```
 
 #![cfg(all(feature = "causal-authority", feature = "handshake"))]
 
