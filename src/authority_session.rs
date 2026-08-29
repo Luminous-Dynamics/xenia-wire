@@ -11,13 +11,12 @@
 //! the exact request-bound authority verifier.
 //!
 //! With `handshake` enabled this module also stages the ownership boundary for
-//! dynamically negotiated authority. The important invariant is that a raw
-//! [`crate::Session`] remains a generic transport primitive whose
-//! [`crate::Session::install_key`] method is intentionally unrestricted, while a
-//! [`NegotiatedAuthoritySession`] *owns* that raw session and exposes no mutable
-//! `Session` reference. Arbitrary key replacement is therefore possible only by
-//! consuming the authority wrapper via [`NegotiatedAuthoritySession::into_raw_session`],
-//! which tears down authority state.
+//! dynamically negotiated authority. A raw [`crate::Session`] remains a generic
+//! transport primitive whose [`crate::Session::install_key`] method is
+//! intentionally unrestricted. [`NegotiatedAuthoritySession`] instead owns that
+//! raw session and exposes no mutable `Session` reference. Arbitrary key
+//! replacement is possible only by consuming the authority wrapper via
+//! [`NegotiatedAuthoritySession::into_raw_session`], which tears authority down.
 //!
 //! The negotiated proof constructors below are crate-private until the real V2
 //! handshake state machine exists. Safe external Rust code therefore cannot
@@ -55,6 +54,8 @@ use crate::authority_rekey_transition_evidence::{
     AuthorityRekeyTransitionEvidenceV1, RekeyTransitionProfileV1,
 };
 #[cfg(feature = "handshake")]
+use crate::handshake::SessionKeySchedule;
+#[cfg(feature = "handshake")]
 use crate::handshake_v2_contract::compose_v5_context;
 #[cfg(feature = "handshake")]
 use crate::negotiated_context::{
@@ -77,11 +78,6 @@ pub enum AuthoritySessionError {
 
 /// Sign a bound authority response only after authenticating the request against
 /// this live Xenia session.
-///
-/// `Session::verify_consent_request` probes both the current session key and all
-/// still-valid previous keys in the rekey grace window. A request signed moments
-/// before a rekey can therefore still be approved safely after the rekey, while a
-/// request from an unrelated session fails closed.
 #[allow(clippy::too_many_arguments)]
 pub fn sign_causal_authority_response_for_session(
     session: &Session,
@@ -106,15 +102,6 @@ pub fn sign_causal_authority_response_for_session(
 }
 
 /// Verify exact external authority against a live Xenia session.
-///
-/// This is the recommended online verification path. The session first proves
-/// that the request fingerprint belongs to its current or rekey-grace key
-/// material. Only after that proof succeeds is the request's embedded
-/// fingerprint promoted to the `expected_session_fingerprint` supplied to the
-/// lower-level exact verifier.
-///
-/// Offline evidence systems that independently authenticate a transcript may use
-/// `authority::verify_approved_external_action_authority` directly instead.
 #[allow(clippy::too_many_arguments)]
 pub fn verify_approved_external_action_authority_for_session(
     session: &Session,
@@ -143,9 +130,10 @@ pub fn verify_approved_external_action_authority_for_session(
 /// Authenticated facts produced by a completed dynamic V2 handshake.
 ///
 /// This type intentionally has no public constructor and is not serializable.
-/// The future V2 handshake state machine may construct it only *after* both
-/// transcript signature suites verify and both peers' canonical offers have
-/// deterministically produced the observed V5 context.
+/// The future V2 handshake state machine may construct it only after both
+/// transcript signature suites verify. The authenticated key schedule is folded
+/// into the proof here so later authority activation can prove that the raw
+/// transport session really uses this handshake's AEAD key.
 #[cfg(feature = "handshake")]
 pub struct AuthenticatedNegotiatedHandshake {
     host_offer: CapabilityOfferV1,
@@ -155,6 +143,7 @@ pub struct AuthenticatedNegotiatedHandshake {
     final_v5_context_hash: [u8; 32],
     handshake_transcript_hash: [u8; 32],
     host_identity_fingerprint: [u8; 32],
+    session_aead_key: Zeroizing<[u8; 32]>,
 }
 
 #[cfg(feature = "handshake")]
@@ -162,20 +151,23 @@ impl AuthenticatedNegotiatedHandshake {
     /// Construct authenticated negotiation state from facts already verified by
     /// the real V2 cryptographic state machine.
     ///
-    /// Kept crate-private so no external caller can turn hashes into a proof.
-    #[allow(clippy::too_many_arguments)]
+    /// `key_schedule.transcript_hash` and `host_identity_fingerprint` are used
+    /// directly instead of accepting detached caller-supplied copies. Kept
+    /// crate-private so no external caller can turn hashes or keys into a proof.
     pub(crate) fn from_verified_v2_parts(
         host_offer: CapabilityOfferV1,
         viewer_offer: CapabilityOfferV1,
         base_v4_context_hash: [u8; 32],
         observed_final_v5_context_hash: [u8; 32],
-        handshake_transcript_hash: [u8; 32],
-        host_identity_fingerprint: [u8; 32],
+        key_schedule: SessionKeySchedule,
     ) -> Result<Self, NegotiatedAuthoritySessionError> {
         require_nonzero(base_v4_context_hash)?;
         require_nonzero(observed_final_v5_context_hash)?;
-        require_nonzero(handshake_transcript_hash)?;
-        require_nonzero(host_identity_fingerprint)?;
+        require_nonzero(key_schedule.transcript_hash)?;
+        require_nonzero(key_schedule.host_identity_fingerprint)?;
+        if key_schedule.aead.iter().all(|byte| *byte == 0) {
+            return Err(NegotiatedAuthoritySessionError::ZeroSessionKey);
+        }
 
         let negotiation = negotiate_capabilities(&host_offer, &viewer_offer)?;
         let expected_v5 = compose_v5_context(&base_v4_context_hash, &negotiation.binding_hash());
@@ -189,8 +181,9 @@ impl AuthenticatedNegotiatedHandshake {
             selected_context: negotiation.selected_context().clone(),
             base_v4_context_hash,
             final_v5_context_hash: expected_v5,
-            handshake_transcript_hash,
-            host_identity_fingerprint,
+            handshake_transcript_hash: key_schedule.transcript_hash,
+            host_identity_fingerprint: key_schedule.host_identity_fingerprint,
+            session_aead_key: Zeroizing::new(key_schedule.aead),
         })
     }
 
@@ -229,6 +222,7 @@ impl AuthenticatedNegotiatedHandshake {
         Ok(AuthenticatedAuthorityActivation {
             receipt,
             selected_context: self.selected_context,
+            session_aead_key: self.session_aead_key,
         })
     }
 }
@@ -236,11 +230,14 @@ impl AuthenticatedNegotiatedHandshake {
 /// Authenticated negotiated authority after local policy narrowing.
 ///
 /// No public constructor exists. Safe callers obtain this only by consuming an
-/// [`AuthenticatedNegotiatedHandshake`] through local policy evaluation.
+/// [`AuthenticatedNegotiatedHandshake`] through local policy evaluation. The
+/// authenticated AEAD key remains private and exists only long enough to bind a
+/// moved raw [`Session`] to this exact handshake lineage.
 #[cfg(feature = "handshake")]
 pub struct AuthenticatedAuthorityActivation {
     receipt: AuthorityActivationReceiptV1,
     selected_context: NegotiatedContextV1,
+    session_aead_key: Zeroizing<[u8; 32]>,
 }
 
 #[cfg(feature = "handshake")]
@@ -308,16 +305,19 @@ pub struct NegotiatedAuthoritySession {
 
 #[cfg(feature = "handshake")]
 impl NegotiatedAuthoritySession {
-    /// Activate authority on an already-keyed raw session using an authenticated,
-    /// locally accepted V2 authority proof.
+    /// Activate authority on a raw session only after proving that its *current*
+    /// key is the AEAD key carried by this exact authenticated V2 handshake.
+    ///
+    /// The `Session` is moved into the wrapper after the check; safe caller code
+    /// therefore cannot retain another unrestricted handle and mutate the key
+    /// while authority state remains live. A proof from handshake/session A
+    /// cannot activate an unrelated keyed session B.
     pub fn activate(
         session: Session,
         activation: AuthenticatedAuthorityActivation,
         rekey_profile: RekeyTransitionProfileV1,
     ) -> Result<Self, NegotiatedAuthoritySessionError> {
-        if !session.has_key() {
-            return Err(NegotiatedAuthoritySessionError::SessionHasNoKey);
-        }
+        require_session_matches_authenticated_key(&session, &activation.session_aead_key)?;
         let profile_binding = AuthorityRekeyProfileBindingV1::new(
             &activation.receipt,
             &activation.selected_context,
@@ -334,9 +334,6 @@ impl NegotiatedAuthoritySession {
     }
 
     /// Immutable raw-session view for observability and fingerprint verification.
-    ///
-    /// No mutable view is exposed because that would reopen unrestricted key
-    /// installation while authority state remains live.
     pub fn session(&self) -> &Session {
         &self.session
     }
@@ -420,6 +417,45 @@ impl NegotiatedAuthoritySession {
     }
 }
 
+#[cfg(feature = "handshake")]
+fn require_session_matches_authenticated_key(
+    session: &Session,
+    authenticated_aead_key: &Zeroizing<[u8; 32]>,
+) -> Result<(), NegotiatedAuthoritySessionError> {
+    if !session.has_key() {
+        return Err(NegotiatedAuthoritySessionError::SessionHasNoKey);
+    }
+
+    // Reuse Session's canonical fingerprint derivation instead of duplicating
+    // its HKDF parameters here. The temporary session adopts the candidate
+    // session's local nonce-domain identifiers but installs the V2-authenticated
+    // AEAD key; equality at a fixed request id proves the current raw key is the
+    // same key without exposing either key through a public API.
+    let actual = session
+        .session_fingerprint(0)
+        .map_err(|_| NegotiatedAuthoritySessionError::SessionHasNoKey)?;
+    let mut expected_session = Session::with_source_id(*session.source_id(), session.epoch());
+    expected_session.install_key(**authenticated_aead_key);
+    let expected = expected_session
+        .session_fingerprint(0)
+        .map_err(|_| NegotiatedAuthoritySessionError::SessionHasNoKey)?;
+
+    if ct_eq_32(&actual, &expected) {
+        Ok(())
+    } else {
+        Err(NegotiatedAuthoritySessionError::SessionKeyScheduleMismatch)
+    }
+}
+
+#[cfg(feature = "handshake")]
+fn ct_eq_32(left: &[u8; 32], right: &[u8; 32]) -> bool {
+    let mut diff = 0u8;
+    for index in 0..32 {
+        diff |= left[index] ^ right[index];
+    }
+    diff == 0
+}
+
 /// Failure while constructing or advancing negotiated authority session state.
 #[cfg(feature = "handshake")]
 #[derive(Debug, thiserror::Error)]
@@ -449,9 +485,15 @@ pub enum NegotiatedAuthoritySessionError {
     /// A required cryptographic commitment was the all-zero sentinel.
     #[error("authenticated negotiated handshake contains an all-zero commitment")]
     ZeroCommitment,
+    /// The authenticated V2 session schedule contained an all-zero AEAD key.
+    #[error("authenticated V2 session schedule contains an all-zero AEAD key")]
+    ZeroSessionKey,
     /// Authority cannot be attached to a session with no installed key.
     #[error("cannot activate negotiated authority on an unkeyed Xenia session")]
     SessionHasNoKey,
+    /// Raw session current key does not equal the authenticated V2 AEAD schedule.
+    #[error("raw Xenia session key does not match authenticated V2 session schedule")]
+    SessionKeyScheduleMismatch,
     /// A cryptographically verified authority rekey may not install the all-zero key.
     #[error("verified authority rekey produced an all-zero session key")]
     ZeroRekeyKey,
@@ -475,6 +517,8 @@ mod negotiated_session_tests {
     };
     use crate::negotiated_context::{CapabilityOfferEntryV1, NegotiatedCapabilityV1};
 
+    const AUTHENTICATED_AEAD_KEY: [u8; 32] = [0x55; 32];
+
     fn entry(name: &[u8], versions: &[&[u8]]) -> CapabilityOfferEntryV1 {
         CapabilityOfferEntryV1::new(
             name.to_vec(),
@@ -497,6 +541,20 @@ mod negotiated_session_tests {
         (host, viewer)
     }
 
+    fn schedule(aead: [u8; 32]) -> SessionKeySchedule {
+        SessionKeySchedule {
+            aead,
+            control: [0x31; 32],
+            video: [0x32; 32],
+            audio: [0x33; 32],
+            telemetry: [0x34; 32],
+            rekey: [0x35; 32],
+            context: [0x36; 32],
+            transcript_hash: [0x11; 32],
+            host_identity_fingerprint: [0x22; 32],
+        }
+    }
+
     fn authenticated_handshake() -> AuthenticatedNegotiatedHandshake {
         let (host, viewer) = offers();
         let negotiation = negotiate_capabilities(&host, &viewer).unwrap();
@@ -507,8 +565,7 @@ mod negotiated_session_tests {
             viewer,
             base_v4,
             v5,
-            [0x11; 32],
-            [0x22; 32],
+            schedule(AUTHENTICATED_AEAD_KEY),
         )
         .unwrap()
     }
@@ -522,7 +579,7 @@ mod negotiated_session_tests {
             .narrow_to_causal_authority(&policy)
             .unwrap();
         let mut session = Session::new();
-        session.install_key([0x55; 32]);
+        session.install_key(AUTHENTICATED_AEAD_KEY);
         NegotiatedAuthoritySession::activate(session, activation, profile).unwrap()
     }
 
@@ -535,10 +592,27 @@ mod negotiated_session_tests {
                 viewer,
                 [0x33; 32],
                 [0x44; 32],
-                [0x55; 32],
-                [0x66; 32],
+                schedule(AUTHENTICATED_AEAD_KEY),
             ),
             Err(NegotiatedAuthoritySessionError::NegotiatedV5Mismatch)
+        ));
+    }
+
+    #[test]
+    fn zero_handshake_aead_key_cannot_enter_authenticated_proof() {
+        let (host, viewer) = offers();
+        let negotiation = negotiate_capabilities(&host, &viewer).unwrap();
+        let base_v4 = [0x33; 32];
+        let v5 = compose_v5_context(&base_v4, &negotiation.binding_hash());
+        assert!(matches!(
+            AuthenticatedNegotiatedHandshake::from_verified_v2_parts(
+                host,
+                viewer,
+                base_v4,
+                v5,
+                schedule([0; 32]),
+            ),
+            Err(NegotiatedAuthoritySessionError::ZeroSessionKey)
         ));
     }
 
@@ -572,6 +646,27 @@ mod negotiated_session_tests {
     }
 
     #[test]
+    fn proof_from_session_a_cannot_activate_unrelated_session_b() {
+        let policy = NegotiationPolicyV1::minimum_required([
+            causal_authority_draft04_capability(),
+        ])
+        .unwrap();
+        let activation = authenticated_handshake()
+            .narrow_to_causal_authority(&policy)
+            .unwrap();
+        let mut unrelated = Session::new();
+        unrelated.install_key([0x56; 32]);
+        assert!(matches!(
+            NegotiatedAuthoritySession::activate(
+                unrelated,
+                activation,
+                RekeyTransitionProfileV1::OperatorChannelV1,
+            ),
+            Err(NegotiatedAuthoritySessionError::SessionKeyScheduleMismatch)
+        ));
+    }
+
+    #[test]
     fn verified_rekey_advances_key_and_lineage_together() {
         let mut authority = activated_session(RekeyTransitionProfileV1::OperatorChannelV1);
         let before = authority.session().session_fingerprint(7).unwrap();
@@ -582,7 +677,8 @@ mod negotiated_session_tests {
             RekeyTransitionReasonV1::OperatorInterval,
         )
         .unwrap();
-        let verified = VerifiedAuthorityRekey::from_verified_transition(transition, [0x77; 32]).unwrap();
+        let verified =
+            VerifiedAuthorityRekey::from_verified_transition(transition, [0x77; 32]).unwrap();
         authority.apply_verified_rekey(verified).unwrap();
 
         assert_eq!(authority.lineage().key_epoch, 1);
@@ -601,7 +697,8 @@ mod negotiated_session_tests {
             RekeyTransitionReasonV1::LaneManual,
         )
         .unwrap();
-        let verified = VerifiedAuthorityRekey::from_verified_transition(lane, [0x88; 32]).unwrap();
+        let verified =
+            VerifiedAuthorityRekey::from_verified_transition(lane, [0x88; 32]).unwrap();
         assert!(authority.apply_verified_rekey(verified).is_err());
         assert_eq!(authority.lineage().key_epoch, 0);
         assert_eq!(before, authority.session().session_fingerprint(9).unwrap());
@@ -635,7 +732,8 @@ mod negotiated_session_tests {
     fn selected_context_profile_gate_still_applies_at_activation() {
         let selected = NegotiatedContextV1::from_capabilities([
             causal_authority_draft04_capability(),
-            NegotiatedCapabilityV1::new(b"xenia.operator-rekey".to_vec(), b"v1".to_vec()).unwrap(),
+            NegotiatedCapabilityV1::new(b"xenia.operator-rekey".to_vec(), b"v1".to_vec())
+                .unwrap(),
         ])
         .unwrap();
         assert!(selected.contains(b"xenia.operator-rekey", b"v1"));
