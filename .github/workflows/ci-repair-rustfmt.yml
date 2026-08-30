@@ -19,17 +19,74 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.94.1
         with:
           components: rustfmt
+      - name: Apply asserted CI repairs
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected exactly one match, found {count}: {old!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          replace_once(
+              "src/wire.rs",
+              "use crate::payload_types;\n",
+              "#[cfg(any(feature = \"reference-frame\", feature = \"lz4\", feature = \"consent\"))]\nuse crate::payload_types;\n",
+          )
+
+          replace_once(
+              "src/authority_rekey_profile_binding.rs",
+              "        let activation = activation(&no_operator);\n",
+              "        let no_operator_activation = activation(&no_operator);\n",
+          )
+          replace_once(
+              "src/authority_rekey_profile_binding.rs",
+              "                &activation,\n                &no_operator,\n",
+              "                &no_operator_activation,\n                &no_operator,\n",
+          )
+          replace_once(
+              "src/authority_rekey_profile_binding.rs",
+              "        let activation = activation(&wrong_version);\n",
+              "        let wrong_version_activation = activation(&wrong_version);\n",
+          )
+          replace_once(
+              "src/authority_rekey_profile_binding.rs",
+              "                &activation,\n                &wrong_version,\n",
+              "                &wrong_version_activation,\n                &wrong_version,\n",
+          )
+
+          replace_once(
+              "src/authority_session.rs",
+              "#[path = \"authority_session_impl.rs\"]\nmod private_impl;\n",
+              "#[allow(dead_code)] // byte-preserved staging implementation hidden by the public facade\n#[path = \"authority_session_impl.rs\"]\nmod private_impl;\n",
+          )
+          replace_once(
+              "src/authority_session.rs",
+              "    pub(crate) fn from_verified_v2_parts(\n",
+              "    #[allow(dead_code)] // integration point for the future live V2 state machine\n    pub(crate) fn from_verified_v2_parts(\n",
+          )
+          replace_once(
+              "src/authority_session.rs",
+              "    pub(crate) fn apply_verified_rekey(\n",
+              "    #[allow(dead_code)] // replaced by an integrated operator-rekey operation in the next tranche\n    pub(crate) fn apply_verified_rekey(\n",
+          )
+          PY
       - name: Format exact branch
         run: cargo fmt --all
-      - name: Commit formatter output if needed
+      - name: Commit repair output if needed
         shell: bash
         run: |
           if git diff --quiet; then
-            echo "rustfmt already clean"
+            echo "repair already clean"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- '*.rs'
-          git commit -m "style: apply pinned rustfmt"
+          git add src tests
+          git commit -m "fix(ci): repair authority feature gates and formatting"
           git push origin HEAD:causal-authority-ci-repair-v1
