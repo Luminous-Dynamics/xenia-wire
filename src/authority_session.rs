@@ -229,9 +229,15 @@ impl ReceivedOperatorRekey {
         &self.sealed_ack
     }
 
-    /// Consume the receipt and return the opaque sealed Ack bytes.
-    pub fn into_sealed_ack(self) -> Vec<u8> {
-        self.sealed_ack
+    /// Consume the receipt without discarding its durable evidence.
+    pub fn into_parts(
+        self,
+    ) -> (
+        Vec<u8>,
+        AuthorityRekeyTransitionEvidenceV1,
+        AuthorityLineageEpochEvidenceV1,
+    ) {
+        (self.sealed_ack, self.transition, self.lineage)
     }
 
     /// Durable public transition evidence for the accepted Proposal.
