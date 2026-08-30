@@ -15,6 +15,7 @@
 //!    its private authenticated schedule itself before local authority policy may
 //!    narrow the session into [`NegotiatedAuthoritySession`].
 
+#[allow(dead_code)] // byte-preserved staging implementation hidden by the public facade
 #[path = "authority_session_impl.rs"]
 mod private_impl;
 
@@ -25,6 +26,9 @@ pub use private_impl::{
 
 #[cfg(feature = "handshake")]
 pub use private_impl::NegotiatedAuthoritySessionError;
+
+#[cfg(all(feature = "handshake", feature = "operator-rekey"))]
+pub use crate::authority_operator_rekey::OperatorAuthorityRekeyError;
 
 #[cfg(feature = "handshake")]
 use zeroize::Zeroizing;
@@ -40,6 +44,8 @@ use crate::authority_lineage_epoch_evidence::AuthorityLineageEpochEvidenceV1;
 use crate::authority_rekey_profile_binding::AuthorityRekeyProfileBindingV1;
 #[cfg(feature = "handshake")]
 use crate::authority_rekey_transition_evidence::RekeyTransitionProfileV1;
+#[cfg(all(feature = "handshake", feature = "operator-rekey"))]
+use crate::authority_rekey_transition_evidence::AuthorityRekeyTransitionEvidenceV1;
 #[cfg(feature = "handshake")]
 use crate::consent::{ConsentRequest, ConsentRevocation, PUBLIC_KEY_LEN};
 #[cfg(feature = "handshake")]
@@ -82,6 +88,7 @@ pub struct AuthenticatedNegotiatedHandshake {
 impl AuthenticatedNegotiatedHandshake {
     /// Construct the public type-state proof from facts already authenticated by
     /// the real V2 cryptographic state machine.
+    #[allow(dead_code)] // integration point for the future live V2 state machine
     pub(crate) fn from_verified_v2_parts(
         host_offer: CapabilityOfferV1,
         viewer_offer: CapabilityOfferV1,
@@ -165,22 +172,34 @@ impl InstalledNegotiatedSession {
     /// Consume installed negotiation through local policy and create the only
     /// public authority-capable Wire session type.
     ///
-    /// The private implementation repeats schedule-key binding as defense in
-    /// depth, while this facade always pins the single-key session to
-    /// `OperatorChannelV1`.
+    /// The private implementation performs the existing authenticated-key,
+    /// profile and capability checks once. The public facade then takes direct
+    /// ownership of the validated session plus immutable evidence so no generic
+    /// key-install staging hook remains in the live authority path.
     pub fn narrow_to_causal_authority(
         self,
         policy: &NegotiationPolicyV1,
     ) -> Result<NegotiatedAuthoritySession, AuthoritySessionTransitionError> {
         let activation = self.negotiation.narrow_to_causal_authority(policy)?;
-        let inner = private_impl::NegotiatedAuthoritySession::activate(
+        let validated = private_impl::NegotiatedAuthoritySession::activate(
             self.session,
             activation,
             RekeyTransitionProfileV1::OperatorChannelV1,
         )?;
+
+        let activation = *validated.activation_receipt();
+        let selected_context = validated.selected_context().clone();
+        let rekey_profile_binding = *validated.rekey_profile_binding();
+        let lineage = *validated.lineage();
+        let session = validated.into_raw_session();
+
         Ok(NegotiatedAuthoritySession {
-            inner,
-            _session_rekey_root: self.session_rekey_root,
+            session,
+            activation,
+            selected_context,
+            rekey_profile_binding,
+            lineage,
+            session_rekey_root: self.session_rekey_root,
         })
     }
 
@@ -190,50 +209,122 @@ impl InstalledNegotiatedSession {
     }
 }
 
+/// Result of accepting one authenticated operator-rekey Proposal while
+/// preserving the negotiated authority lineage.
+///
+/// The Ack is already AEAD-sealed under the new key at sequence zero. The
+/// transport owner should send it as opaque bytes; the next envelope sealed by
+/// this authority session will use sequence one.
+#[cfg(all(feature = "handshake", feature = "operator-rekey"))]
+pub struct ReceivedOperatorRekey {
+    sealed_ack: Vec<u8>,
+    transition: AuthorityRekeyTransitionEvidenceV1,
+    lineage: AuthorityLineageEpochEvidenceV1,
+}
+
+#[cfg(all(feature = "handshake", feature = "operator-rekey"))]
+impl ReceivedOperatorRekey {
+    /// Sealed new-key Ack ready for the transport owner to send.
+    pub fn sealed_ack(&self) -> &[u8] {
+        &self.sealed_ack
+    }
+
+    /// Consume the receipt and return the opaque sealed Ack bytes.
+    pub fn into_sealed_ack(self) -> Vec<u8> {
+        self.sealed_ack
+    }
+
+    /// Durable public transition evidence for the accepted Proposal.
+    pub fn transition(&self) -> &AuthorityRekeyTransitionEvidenceV1 {
+        &self.transition
+    }
+
+    /// Authority lineage after the committed rekey.
+    pub fn lineage(&self) -> &AuthorityLineageEpochEvidenceV1 {
+        &self.lineage
+    }
+}
+
 /// Authority-capable single-key envelope session.
 ///
 /// This type can only be reached through authenticated V2 schedule installation
 /// followed by local policy narrowing. There is no public constructor accepting
-/// an arbitrary raw session, key, activation receipt, or rekey profile.
+/// an arbitrary raw session, key, activation receipt, rekey profile or lineage.
+/// The raw session is never exposed mutably while authority remains live.
 #[cfg(feature = "handshake")]
 pub struct NegotiatedAuthoritySession {
-    inner: private_impl::NegotiatedAuthoritySession,
-    // Retained privately for the future integrated operator-rekey verifier. It is
-    // intentionally not exposed until proposal authentication + key derivation are
-    // wired as one operation.
-    _session_rekey_root: Zeroizing<[u8; 32]>,
+    session: Session,
+    activation: AuthorityActivationReceiptV1,
+    selected_context: NegotiatedContextV1,
+    rekey_profile_binding: AuthorityRekeyProfileBindingV1,
+    lineage: AuthorityLineageEpochEvidenceV1,
+    session_rekey_root: Zeroizing<[u8; 32]>,
 }
 
 #[cfg(feature = "handshake")]
 impl NegotiatedAuthoritySession {
     /// Immutable view of the owned raw envelope session.
     pub fn session(&self) -> &Session {
-        self.inner.session()
+        &self.session
     }
 
     /// Durable local-policy-bound activation receipt.
     pub fn activation_receipt(&self) -> &AuthorityActivationReceiptV1 {
-        self.inner.activation_receipt()
+        &self.activation
     }
 
     /// Authenticated selected capability context.
     pub fn selected_context(&self) -> &NegotiatedContextV1 {
-        self.inner.selected_context()
+        &self.selected_context
     }
 
     /// Immutable operator-channel rekey-profile binding.
     pub fn rekey_profile_binding(&self) -> &AuthorityRekeyProfileBindingV1 {
-        self.inner.rekey_profile_binding()
+        &self.rekey_profile_binding
     }
 
     /// Current authority rekey-lineage position.
     pub fn lineage(&self) -> &AuthorityLineageEpochEvidenceV1 {
-        self.inner.lineage()
+        &self.lineage
     }
 
     /// Advance wall-clock session maintenance without exposing mutable raw state.
     pub fn tick(&mut self) {
-        self.inner.tick();
+        self.session.tick();
+    }
+
+    /// Authenticate and accept one sealed operator-channel rekey Proposal.
+    ///
+    /// The caller supplies only the opaque old-key envelope. This method owns
+    /// decryption, Proposal decoding, epoch/hash/profile/lineage verification,
+    /// replacement-key derivation from the private authenticated rekey root,
+    /// sequence-zero Ack preparation, key installation and lineage advancement.
+    /// No public API accepts a decoded Proposal or caller-supplied replacement
+    /// key.
+    ///
+    /// On rejection, the live key, outbound nonce counter, activation and
+    /// authority lineage remain unchanged. A cryptographically authenticated
+    /// envelope may still consume receive replay-window state before a later
+    /// semantic check rejects it; that is intentional anti-replay behavior.
+    #[cfg(feature = "operator-rekey")]
+    pub fn receive_operator_rekey_proposal(
+        &mut self,
+        envelope: &[u8],
+    ) -> Result<ReceivedOperatorRekey, OperatorAuthorityRekeyError> {
+        let accepted = crate::authority_operator_rekey::receive_and_commit_operator_rekey(
+            &mut self.session,
+            &mut self.lineage,
+            &self.activation,
+            &self.selected_context,
+            &self.rekey_profile_binding,
+            &self.session_rekey_root,
+            envelope,
+        )?;
+        Ok(ReceivedOperatorRekey {
+            sealed_ack: accepted.sealed_ack,
+            transition: accepted.transition,
+            lineage: accepted.lineage,
+        })
     }
 
     /// Internal evidence-returning verifier used by the public session-bound
@@ -249,7 +340,8 @@ impl NegotiatedAuthoritySession {
         expected_responder_pubkey: &[u8; PUBLIC_KEY_LEN],
         now_ms: u64,
     ) -> Result<VerifiedExternalActionAuthority, AuthoritySessionError> {
-        self.inner.verify_approved_external_action_authority(
+        verify_approved_external_action_authority_for_session(
+            &self.session,
             request,
             response,
             revocations,
@@ -259,18 +351,9 @@ impl NegotiatedAuthoritySession {
         )
     }
 
-    /// Crate-internal staging hook for the future integrated operator-rekey
-    /// verifier. External code cannot package an arbitrary key/evidence pair.
-    pub(crate) fn apply_verified_rekey(
-        &mut self,
-        verified: private_impl::VerifiedAuthorityRekey,
-    ) -> Result<(), NegotiatedAuthoritySessionError> {
-        self.inner.apply_verified_rekey(verified)
-    }
-
     /// Explicitly tear authority state down and recover the unrestricted raw session.
     pub fn into_raw_session(self) -> Session {
-        self.inner.into_raw_session()
+        self.session
     }
 }
 
@@ -279,11 +362,14 @@ mod tests {
     use super::*;
     use crate::authority_negotiation::causal_authority_draft04_capability;
     use crate::handshake_v2_contract::compose_v5_context;
-    use crate::negotiated_context::{
-        CapabilityOfferEntryV1, negotiate_capabilities,
+    use crate::negotiated_context::{CapabilityOfferEntryV1, negotiate_capabilities};
+    #[cfg(feature = "operator-rekey")]
+    use crate::operator_rekey::{
+        OperatorRekeyMessage, OperatorRekeyReason, PAYLOAD_TYPE_OPERATOR_REKEY, propose,
     };
 
     const AEAD: [u8; 32] = [0x55; 32];
+    const REKEY_ROOT: [u8; 32] = [0x35; 32];
 
     fn entry(name: &[u8], versions: &[&[u8]]) -> CapabilityOfferEntryV1 {
         CapabilityOfferEntryV1::new(
@@ -313,7 +399,7 @@ mod tests {
             video: [0x32; 32],
             audio: [0x33; 32],
             telemetry: [0x34; 32],
-            rekey: [0x35; 32],
+            rekey: REKEY_ROOT,
             context: [0x36; 32],
             transcript_hash: [0x11; 32],
             host_identity_fingerprint: [0x22; 32],
@@ -322,6 +408,15 @@ mod tests {
             host, viewer, base_v4, v5, schedule,
         )
         .unwrap()
+    }
+
+    fn authority_session() -> NegotiatedAuthoritySession {
+        let installed = proof().install_into(Session::with_source_id([0x31; 8], 9)).unwrap();
+        let policy = NegotiationPolicyV1::minimum_required([
+            causal_authority_draft04_capability(),
+        ])
+        .unwrap();
+        installed.narrow_to_causal_authority(&policy).unwrap()
     }
 
     #[test]
@@ -384,5 +479,46 @@ mod tests {
             ),
             Err(AuthoritySessionTransitionError::ZeroRekeyRoot)
         ));
+    }
+
+    #[cfg(feature = "operator-rekey")]
+    #[test]
+    fn live_facade_accepts_only_sealed_operator_proposal_and_returns_new_key_ack() {
+        let mut authority = authority_session();
+        let before = authority.session().session_fingerprint(19).unwrap();
+        let proposal = propose(
+            1,
+            authority.activation_receipt().handshake_transcript_hash,
+            authority.lineage().current_epoch_hash,
+            OperatorRekeyReason::Interval,
+        )
+        .unwrap();
+
+        let mut sender = Session::new();
+        sender.install_key(AEAD);
+        let envelope = sender
+            .seal(&proposal.encode().unwrap(), PAYLOAD_TYPE_OPERATOR_REKEY)
+            .unwrap();
+
+        let accepted = authority.receive_operator_rekey_proposal(&envelope).unwrap();
+        assert_eq!(authority.lineage().key_epoch, 1);
+        assert_eq!(authority.session().nonce_counter(), 1);
+        assert_ne!(before, authority.session().session_fingerprint(19).unwrap());
+        assert_eq!(accepted.lineage(), authority.lineage());
+
+        let new_key = crate::operator_rekey::derive_operator_rekey_key(
+            &REKEY_ROOT,
+            &authority.lineage().current_epoch_hash,
+        );
+        let mut ack_receiver = Session::new();
+        ack_receiver.install_key(new_key);
+        let plaintext = ack_receiver.open(accepted.sealed_ack()).unwrap();
+        assert_eq!(
+            OperatorRekeyMessage::decode(&plaintext).unwrap(),
+            OperatorRekeyMessage::Ack {
+                key_epoch: 1,
+                epoch_hash: authority.lineage().current_epoch_hash,
+            }
+        );
     }
 }
