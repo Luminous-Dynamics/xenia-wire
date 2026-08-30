@@ -10,22 +10,26 @@
 //!
 //! Rekey control is stricter than ordinary in-flight data: a Proposal must
 //! authenticate under the **exact current** AEAD key, not a superseded key that
-//! remains accepted by [`Session::open`] during rekey grace. Only after that
-//! current-key precheck succeeds do we call the live session's normal `open` to
-//! commit replay-window acceptance.
+//! remains accepted by [`Session::open`] during rekey grace. The authority
+//! facade therefore retains a zeroizing copy of the current key. Before using
+//! that copy, this module proves it still matches the live [`Session`] by
+//! comparing independently derived current-key fingerprints in constant time.
+//! Only after that invariant and the current-key precheck succeed do we call the
+//! live session's normal `open` to commit replay-window acceptance.
 //!
 //! The transition is prepared before any live key/authority mutation:
 //!
 //! 1. route only `PAYLOAD_TYPE_OPERATOR_REKEY`;
-//! 2. require AEAD authentication under the exact current key;
-//! 3. AEAD-open through the live session to enforce its real replay window;
-//! 4. require a Proposal and independently recompute its epoch hash;
-//! 5. construct public operator-transition evidence and precompute the next
+//! 2. prove the private current-key copy still matches the live session;
+//! 3. require AEAD authentication under that exact current key;
+//! 4. AEAD-open through the live session to enforce its real replay window;
+//! 5. require a Proposal and independently recompute its epoch hash;
+//! 6. construct public operator-transition evidence and precompute the next
 //!    profile-bound authority lineage;
-//! 6. derive the replacement key from the private authenticated rekey root;
-//! 7. encode and encrypt the Ack under the replacement key at sequence zero in
+//! 7. derive the replacement key from the private authenticated rekey root;
+//! 8. encode and encrypt the Ack under the replacement key at sequence zero in
 //!    a temporary nonce-domain-identical session;
-//! 8. only after every fallible step succeeds, install the replacement key in
+//! 9. only after every fallible step succeeds, install the replacement key in
 //!    the live session, reserve sequence zero, update the private current-key
 //!    copy, and assign the precomputed lineage.
 //!
@@ -133,11 +137,19 @@ fn prepare_received_operator_rekey(
 
     // Generic `Session::open` deliberately accepts previous keys during grace.
     // Rekey control may not: a superseded key must not be able to drive the next
-    // authority epoch. Verify with a temporary current-key-only session first.
-    // Its replay state is disposable; the real replay decision is committed by
-    // the live `session.open` immediately below.
+    // authority epoch. The retained key copy is therefore security-critical.
+    // Prove it still equals Session's actual current key before using it.
+    let live_fingerprint = session.session_fingerprint(u64::MAX)?;
     let mut current_only = Session::with_source_id(*session.source_id(), session.epoch());
     current_only.install_key(**current_key);
+    let copied_fingerprint = current_only.session_fingerprint(u64::MAX)?;
+    if !ct_eq_32(&live_fingerprint, &copied_fingerprint) {
+        return Err(OperatorAuthorityRekeyError::CurrentKeyInvariantMismatch);
+    }
+
+    // The temporary session has no previous keys, so successful open proves the
+    // envelope authenticates under exactly the current key. Its replay state is
+    // disposable; the live open immediately below owns authoritative replay.
     current_only.open(envelope)?;
 
     // The live open repeats AEAD verification and commits the authoritative
@@ -248,6 +260,15 @@ fn commit_received_operator_rekey(
     }
 }
 
+#[inline]
+fn ct_eq_32(left: &[u8; 32], right: &[u8; 32]) -> bool {
+    let mut diff = 0u8;
+    for index in 0..32 {
+        diff |= left[index] ^ right[index];
+    }
+    diff == 0
+}
+
 /// Receiver-side authority-preserving operator-rekey failure.
 #[derive(Debug, thiserror::Error)]
 pub enum OperatorAuthorityRekeyError {
@@ -255,6 +276,11 @@ pub enum OperatorAuthorityRekeyError {
     /// payload domain. This is checked before AEAD open/replay acceptance.
     #[error("authority operator-rekey handler requires payload type 0x31")]
     UnexpectedPayloadType,
+    /// The facade's retained current-key copy no longer matches the live
+    /// Session's actual current AEAD key. This is an internal invariant failure,
+    /// not a peer protocol error; authority rekey must stop closed.
+    #[error("authority operator-rekey current-key invariant is out of sync with live session")]
+    CurrentKeyInvariantMismatch,
     /// Envelope was authentic but carried an Ack where the receiver requires a
     /// Proposal.
     #[error("authority operator-rekey receiver expected a Proposal, not an Ack")]
