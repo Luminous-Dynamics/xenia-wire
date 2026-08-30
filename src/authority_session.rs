@@ -142,6 +142,8 @@ impl AuthenticatedNegotiatedHandshake {
         Ok(InstalledNegotiatedSession {
             session,
             negotiation: self.inner,
+            #[cfg(feature = "operator-rekey")]
+            current_session_key: self.session_aead_key,
             session_rekey_root: self.session_rekey_root,
         })
     }
@@ -154,6 +156,11 @@ impl AuthenticatedNegotiatedHandshake {
 pub struct InstalledNegotiatedSession {
     session: Session,
     negotiation: private_impl::AuthenticatedNegotiatedHandshake,
+    /// Exact current AEAD key retained only for current-key-only operator rekey
+    /// authentication. Generic [`Session::open`] intentionally accepts previous
+    /// keys during grace; authority-changing rekey control must not.
+    #[cfg(feature = "operator-rekey")]
+    current_session_key: Zeroizing<[u8; 32]>,
     session_rekey_root: Zeroizing<[u8; 32]>,
 }
 
@@ -199,6 +206,8 @@ impl InstalledNegotiatedSession {
             selected_context,
             rekey_profile_binding,
             lineage,
+            #[cfg(feature = "operator-rekey")]
+            current_session_key: self.current_session_key,
             session_rekey_root: self.session_rekey_root,
         })
     }
@@ -264,6 +273,10 @@ pub struct NegotiatedAuthoritySession {
     selected_context: NegotiatedContextV1,
     rekey_profile_binding: AuthorityRekeyProfileBindingV1,
     lineage: AuthorityLineageEpochEvidenceV1,
+    /// Zeroized duplicate of the exact current AEAD key, retained solely to
+    /// reject authority-rekey control authenticated by a superseded grace key.
+    #[cfg(feature = "operator-rekey")]
+    current_session_key: Zeroizing<[u8; 32]>,
     session_rekey_root: Zeroizing<[u8; 32]>,
 }
 
@@ -302,16 +315,17 @@ impl NegotiatedAuthoritySession {
     /// Authenticate and accept one sealed operator-channel rekey Proposal.
     ///
     /// The caller supplies only the opaque old-key envelope. This method owns
-    /// decryption, Proposal decoding, epoch/hash/profile/lineage verification,
-    /// replacement-key derivation from the private authenticated rekey root,
-    /// sequence-zero Ack preparation, key installation and lineage advancement.
-    /// No public API accepts a decoded Proposal or caller-supplied replacement
-    /// key.
+    /// current-key-only authentication, live replay acceptance, Proposal
+    /// decoding, epoch/hash/profile/lineage verification, replacement-key
+    /// derivation from the private authenticated rekey root, sequence-zero Ack
+    /// preparation, key installation and lineage advancement. No public API
+    /// accepts a decoded Proposal or caller-supplied replacement key.
     ///
-    /// On rejection, the live key, outbound nonce counter, activation and
-    /// authority lineage remain unchanged. A cryptographically authenticated
-    /// envelope may still consume receive replay-window state before a later
-    /// semantic check rejects it; that is intentional anti-replay behavior.
+    /// On rejection, the live key, private current-key copy, outbound nonce
+    /// counter, activation and authority lineage remain unchanged. An envelope
+    /// that authenticates under the exact current key may still consume receive
+    /// replay-window state before a later semantic check rejects it; that is
+    /// intentional anti-replay behavior.
     #[cfg(feature = "operator-rekey")]
     pub fn receive_operator_rekey_proposal(
         &mut self,
@@ -319,6 +333,7 @@ impl NegotiatedAuthoritySession {
     ) -> Result<ReceivedOperatorRekey, OperatorAuthorityRekeyError> {
         let accepted = crate::authority_operator_rekey::receive_and_commit_operator_rekey(
             &mut self.session,
+            &mut self.current_session_key,
             &mut self.lineage,
             &self.activation,
             &self.selected_context,
