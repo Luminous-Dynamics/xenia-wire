@@ -142,6 +142,15 @@ pub mod authority_session;
 ))]
 mod authority_operator_rekey;
 
+#[cfg(all(
+    test,
+    feature = "causal-authority",
+    feature = "handshake",
+    feature = "operator-rekey"
+))]
+#[path = "authority_operator_rekey_invariant_tests.rs"]
+mod authority_operator_rekey_invariant_tests;
+
 #[cfg(all(feature = "causal-authority", feature = "handshake"))]
 pub mod authority_live_use;
 
