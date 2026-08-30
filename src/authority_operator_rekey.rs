@@ -20,18 +20,20 @@
 //! The transition is prepared before any live key/authority mutation:
 //!
 //! 1. route only `PAYLOAD_TYPE_OPERATOR_REKEY`;
-//! 2. prove the private current-key copy still matches the live session;
-//! 3. require AEAD authentication under that exact current key;
-//! 4. AEAD-open through the live session to enforce its real replay window;
-//! 5. require a Proposal and independently recompute its epoch hash;
-//! 6. construct public operator-transition evidence and precompute the next
+//! 2. require the private authenticated rekey root to remain nonzero;
+//! 3. prove the private current-key copy still matches the live session;
+//! 4. require AEAD authentication under that exact current key;
+//! 5. AEAD-open through the live session to enforce its real replay window;
+//! 6. require a Proposal and independently recompute its epoch hash;
+//! 7. construct public operator-transition evidence and precompute the next
 //!    profile-bound authority lineage;
-//! 7. derive the replacement key from the private authenticated rekey root;
-//! 8. encode and encrypt the Ack under the replacement key at sequence zero in
+//! 8. derive the replacement key from the private authenticated rekey root and
+//!    require that it actually differs from the current AEAD key;
+//! 9. encode and encrypt the Ack under the replacement key at sequence zero in
 //!    a temporary nonce-domain-identical session;
-//! 9. only after every fallible step succeeds, install the replacement key in
-//!    the live session, reserve sequence zero, update the private current-key
-//!    copy, and assign the precomputed lineage.
+//! 10. only after every fallible step succeeds, install the replacement key in
+//!     the live session, reserve sequence zero, update the private current-key
+//!     copy, and assign the precomputed lineage.
 //!
 //! The prepared token never escapes this module, so there is no public or
 //! crate-wide `commit(new_key, transition)` seam to mispair.
@@ -134,6 +136,9 @@ fn prepare_received_operator_rekey(
     if envelope_payload_type(envelope) != Some(PAYLOAD_TYPE_OPERATOR_REKEY) {
         return Err(OperatorAuthorityRekeyError::UnexpectedPayloadType);
     }
+    if rekey_root.iter().all(|byte| *byte == 0) {
+        return Err(OperatorAuthorityRekeyError::ZeroRekeyRootInvariant);
+    }
 
     // Generic `Session::open` deliberately accepts previous keys during grace.
     // Rekey control may not: a superseded key must not be able to drive the next
@@ -208,6 +213,9 @@ fn prepare_received_operator_rekey(
     if new_key.iter().all(|byte| *byte == 0) {
         return Err(OperatorAuthorityRekeyError::ZeroDerivedKey);
     }
+    if ct_eq_32(&*new_key, &**current_key) {
+        return Err(OperatorAuthorityRekeyError::DerivedKeyDidNotRotate);
+    }
 
     let ack = OperatorRekeyMessage::Ack {
         key_epoch,
@@ -276,6 +284,10 @@ pub enum OperatorAuthorityRekeyError {
     /// payload domain. This is checked before AEAD open/replay acceptance.
     #[error("authority operator-rekey handler requires payload type 0x31")]
     UnexpectedPayloadType,
+    /// The authenticated private rekey root unexpectedly became all zero after
+    /// authority activation. This is an internal state invariant failure.
+    #[error("authority operator-rekey private rekey root is unexpectedly all zero")]
+    ZeroRekeyRootInvariant,
     /// The facade's retained current-key copy no longer matches the live
     /// Session's actual current AEAD key. This is an internal invariant failure,
     /// not a peer protocol error; authority rekey must stop closed.
@@ -292,6 +304,10 @@ pub enum OperatorAuthorityRekeyError {
     /// HKDF produced the forbidden all-zero replacement-key sentinel.
     #[error("operator rekey derived an all-zero replacement key")]
     ZeroDerivedKey,
+    /// HKDF returned the exact current AEAD key, so no cryptographic rotation
+    /// actually occurred even though the epoch context advanced.
+    #[error("operator rekey derived the existing current AEAD key instead of rotating")]
+    DerivedKeyDidNotRotate,
     /// Envelope AEAD/codec or operator proposal self-consistency failed.
     #[error(transparent)]
     Wire(#[from] WireError),
