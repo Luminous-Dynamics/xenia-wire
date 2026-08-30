@@ -185,7 +185,7 @@ fn prepare_received_operator_rekey(
     // The temporary session has the same local nonce domain, but its only use is
     // this one encryption. It is dropped before the live key is committed.
     let mut ack_session = Session::with_source_id(*session.source_id(), session.epoch());
-    ack_session.install_key(**new_key);
+    ack_session.install_key(*new_key);
     let sealed_ack = ack_session.seal(&ack_plaintext, PAYLOAD_TYPE_OPERATOR_REKEY)?;
     debug_assert_eq!(ack_session.nonce_counter(), 1);
 
