@@ -20,7 +20,7 @@ jobs:
         with:
           ref: causal-authority-ci-repair-v1
           fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@1.94.1
+      - uses: dtolnay/rust-toolchain@1.94
         with:
           components: rustfmt
       - name: Apply asserted CI repairs
