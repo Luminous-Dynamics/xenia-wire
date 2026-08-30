@@ -1,10 +1,15 @@
 // Copyright (c) 2026 Tristan Stoltz / Luminous Dynamics
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use super::*;
+use zeroize::Zeroizing;
+
+use crate::Session;
 use crate::authority_activation_evidence::AuthorityActivationReceiptV1;
 use crate::authority_lineage_epoch_evidence::AuthorityLineageEpochEvidenceV1;
 use crate::authority_negotiation::causal_authority_draft04_capability;
+use crate::authority_operator_rekey::{
+    OperatorAuthorityRekeyError, receive_and_commit_operator_rekey,
+};
 use crate::authority_rekey_profile_binding::AuthorityRekeyProfileBindingV1;
 use crate::authority_rekey_transition_evidence::RekeyTransitionProfileV1;
 use crate::negotiated_context::{NegotiatedCapabilityV1, NegotiatedContextV1};
