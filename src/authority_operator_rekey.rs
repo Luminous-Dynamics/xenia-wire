@@ -6,22 +6,28 @@
 //! This module is crate-private on purpose. External callers never hand an
 //! already-decoded [`OperatorRekeyMessage`] or a replacement AEAD key to an
 //! authority session. The receiver starts from a sealed `0x31` envelope and the
-//! live session authenticates it itself.
+//! live authority state authenticates it itself.
+//!
+//! Rekey control is stricter than ordinary in-flight data: a Proposal must
+//! authenticate under the **exact current** AEAD key, not a superseded key that
+//! remains accepted by [`Session::open`] during rekey grace. Only after that
+//! current-key precheck succeeds do we call the live session's normal `open` to
+//! commit replay-window acceptance.
 //!
 //! The transition is prepared before any live key/authority mutation:
 //!
 //! 1. route only `PAYLOAD_TYPE_OPERATOR_REKEY`;
-//! 2. AEAD-open through the live session (which legitimately commits replay
-//!    acceptance for an authenticated envelope);
-//! 3. require a Proposal and independently recompute its epoch hash;
-//! 4. construct public operator-transition evidence and precompute the next
+//! 2. require AEAD authentication under the exact current key;
+//! 3. AEAD-open through the live session to enforce its real replay window;
+//! 4. require a Proposal and independently recompute its epoch hash;
+//! 5. construct public operator-transition evidence and precompute the next
 //!    profile-bound authority lineage;
-//! 5. derive the replacement key from the private authenticated rekey root;
-//! 6. encode and encrypt the Ack under the replacement key at sequence zero in
+//! 6. derive the replacement key from the private authenticated rekey root;
+//! 7. encode and encrypt the Ack under the replacement key at sequence zero in
 //!    a temporary nonce-domain-identical session;
-//! 7. only after every fallible step succeeds, install the replacement key in
-//!    the live session, reserve sequence zero, and assign the precomputed
-//!    lineage.
+//! 8. only after every fallible step succeeds, install the replacement key in
+//!    the live session, reserve sequence zero, update the private current-key
+//!    copy, and assign the precomputed lineage.
 //!
 //! The prepared token never escapes this module, so there is no public or
 //! crate-wide `commit(new_key, transition)` seam to mispair.
@@ -76,13 +82,15 @@ struct PreparedReceivedOperatorRekey {
 /// Authenticate, validate, prepare and commit one received operator-rekey
 /// Proposal as a single receiver-side authority operation.
 ///
-/// On error, the current live AEAD key, outbound nonce counter and authority
-/// lineage are unchanged. An authenticated envelope may nevertheless consume a
-/// replay-window sequence before a later semantic check rejects its plaintext;
-/// that is intentional anti-replay behavior, not authority-state mutation.
+/// On error, the current live AEAD key, private current-key copy, outbound nonce
+/// counter and authority lineage are unchanged. An envelope that authenticates
+/// under the exact current key may nevertheless consume replay-window state
+/// before a later semantic check rejects its plaintext; that is intentional
+/// anti-replay behavior, not authority-state mutation.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn receive_and_commit_operator_rekey(
     session: &mut Session,
+    current_key: &mut Zeroizing<[u8; 32]>,
     lineage: &mut AuthorityLineageEpochEvidenceV1,
     activation: &AuthorityActivationReceiptV1,
     selected_context: &NegotiatedContextV1,
@@ -92,6 +100,7 @@ pub(crate) fn receive_and_commit_operator_rekey(
 ) -> Result<ReceivedOperatorRekeyAcceptance, OperatorAuthorityRekeyError> {
     let prepared = prepare_received_operator_rekey(
         session,
+        current_key,
         lineage,
         activation,
         selected_context,
@@ -99,12 +108,18 @@ pub(crate) fn receive_and_commit_operator_rekey(
         rekey_root,
         envelope,
     )?;
-    Ok(commit_received_operator_rekey(session, lineage, prepared))
+    Ok(commit_received_operator_rekey(
+        session,
+        current_key,
+        lineage,
+        prepared,
+    ))
 }
 
 #[allow(clippy::too_many_arguments)]
 fn prepare_received_operator_rekey(
     session: &mut Session,
+    current_key: &Zeroizing<[u8; 32]>,
     lineage: &AuthorityLineageEpochEvidenceV1,
     activation: &AuthorityActivationReceiptV1,
     selected_context: &NegotiatedContextV1,
@@ -116,9 +131,17 @@ fn prepare_received_operator_rekey(
         return Err(OperatorAuthorityRekeyError::UnexpectedPayloadType);
     }
 
-    // `Session::open` performs AEAD authentication before replay acceptance.
-    // Once this succeeds, replay state is allowed to advance even if a later
-    // semantic rekey check rejects the authenticated plaintext.
+    // Generic `Session::open` deliberately accepts previous keys during grace.
+    // Rekey control may not: a superseded key must not be able to drive the next
+    // authority epoch. Verify with a temporary current-key-only session first.
+    // Its replay state is disposable; the real replay decision is committed by
+    // the live `session.open` immediately below.
+    let mut current_only = Session::with_source_id(*session.source_id(), session.epoch());
+    current_only.install_key(**current_key);
+    current_only.open(envelope)?;
+
+    // The live open repeats AEAD verification and commits the authoritative
+    // replay-window acceptance for the current key epoch.
     let plaintext = session.open(envelope)?;
     let message = OperatorRekeyMessage::decode(&plaintext)?;
 
@@ -200,6 +223,7 @@ fn prepare_received_operator_rekey(
 /// has already succeeded. This function is deliberately infallible.
 fn commit_received_operator_rekey(
     session: &mut Session,
+    current_key: &mut Zeroizing<[u8; 32]>,
     lineage: &mut AuthorityLineageEpochEvidenceV1,
     prepared: PreparedReceivedOperatorRekey,
 ) -> ReceivedOperatorRekeyAcceptance {
@@ -212,7 +236,11 @@ fn commit_received_operator_rekey(
     debug_assert_eq!(reserved, 0);
     debug_assert_eq!(session.nonce_counter(), 1);
 
+    // Keep a private zeroizing copy solely so the next rekey Proposal can be
+    // required to authenticate under the exact current key rather than grace.
+    **current_key = *prepared.new_key;
     *lineage = prepared.next_lineage;
+
     ReceivedOperatorRekeyAcceptance {
         sealed_ack: prepared.sealed_ack,
         transition: prepared.transition,
