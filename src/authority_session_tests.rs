@@ -42,7 +42,7 @@ fn proof() -> AuthenticatedNegotiatedHandshake {
         video: [0x32; 32],
         audio: [0x33; 32],
         telemetry: [0x34; 32],
-        rekey: [0x35; 32],
+        rekey: REKEY_ROOT,
         context: [0x36; 32],
         transcript_hash: [0x11; 32],
         host_identity_fingerprint: [0x22; 32],
@@ -59,6 +59,15 @@ fn authority_session() -> NegotiatedAuthoritySession {
     let policy =
         NegotiationPolicyV1::minimum_required([causal_authority_draft04_capability()]).unwrap();
     installed.narrow_to_causal_authority(&policy).unwrap()
+}
+
+#[cfg(feature = "operator-rekey")]
+fn seal_operator(message: &OperatorRekeyMessage, key: [u8; 32], source_id: [u8; 8]) -> Vec<u8> {
+    let mut sender = Session::with_source_id(source_id, 7);
+    sender.install_key(key);
+    sender
+        .seal(&message.encode().unwrap(), PAYLOAD_TYPE_OPERATOR_REKEY)
+        .unwrap()
 }
 
 #[test]
@@ -134,12 +143,7 @@ fn live_facade_accepts_only_sealed_operator_proposal_and_returns_new_key_ack() {
     )
     .unwrap();
 
-    let mut sender = Session::new();
-    sender.install_key(AEAD);
-    let envelope = sender
-        .seal(&proposal.encode().unwrap(), PAYLOAD_TYPE_OPERATOR_REKEY)
-        .unwrap();
-
+    let envelope = seal_operator(&proposal, AEAD, [0x41; 8]);
     let accepted = authority.receive_operator_rekey_proposal(&envelope).unwrap();
     assert_eq!(authority.lineage().key_epoch, 1);
     assert_eq!(authority.session().nonce_counter(), 1);
@@ -159,5 +163,63 @@ fn live_facade_accepts_only_sealed_operator_proposal_and_returns_new_key_ack() {
             key_epoch: 1,
             epoch_hash: authority.lineage().current_epoch_hash,
         }
+    );
+}
+
+#[cfg(feature = "operator-rekey")]
+#[test]
+fn live_facade_rejects_previous_grace_key_for_next_rekey_epoch() {
+    let mut authority = authority_session();
+
+    let epoch1 = propose(
+        1,
+        authority.activation_receipt().handshake_transcript_hash,
+        authority.lineage().current_epoch_hash,
+        OperatorRekeyReason::Interval,
+    )
+    .unwrap();
+    let epoch1_envelope = seal_operator(&epoch1, AEAD, [0x51; 8]);
+    authority
+        .receive_operator_rekey_proposal(&epoch1_envelope)
+        .unwrap();
+
+    let epoch1_lineage = *authority.lineage();
+    let epoch1_fingerprint = authority.session().session_fingerprint(29).unwrap();
+    let epoch1_nonce = authority.session().nonce_counter();
+    let epoch1_key = crate::operator_rekey::derive_operator_rekey_key(
+        &REKEY_ROOT,
+        &authority.lineage().current_epoch_hash,
+    );
+
+    let epoch2 = propose(
+        2,
+        authority.activation_receipt().handshake_transcript_hash,
+        authority.lineage().current_epoch_hash,
+        OperatorRekeyReason::Manual,
+    )
+    .unwrap();
+
+    // The initial key is still in Session's generic grace set after epoch 1,
+    // but authority-changing control must require the exact current key.
+    let forged_previous_key = seal_operator(&epoch2, AEAD, [0x52; 8]);
+    assert!(authority
+        .receive_operator_rekey_proposal(&forged_previous_key)
+        .is_err());
+    assert_eq!(*authority.lineage(), epoch1_lineage);
+    assert_eq!(
+        authority.session().session_fingerprint(29).unwrap(),
+        epoch1_fingerprint
+    );
+    assert_eq!(authority.session().nonce_counter(), epoch1_nonce);
+
+    // The same canonical epoch-2 Proposal under the exact current key succeeds.
+    let current_key_envelope = seal_operator(&epoch2, epoch1_key, [0x52; 8]);
+    authority
+        .receive_operator_rekey_proposal(&current_key_envelope)
+        .unwrap();
+    assert_eq!(authority.lineage().key_epoch, 2);
+    assert_ne!(
+        authority.session().session_fingerprint(29).unwrap(),
+        epoch1_fingerprint
     );
 }
