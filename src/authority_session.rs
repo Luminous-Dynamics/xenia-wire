@@ -76,11 +76,13 @@ pub enum AuthoritySessionTransitionError {
 /// This public proof has no public constructor and is not serializable. The
 /// future V2 state machine may construct it only after both transcript signature
 /// suites verify. It retains the authenticated AEAD key privately until
-/// [`Self::install_into`] consumes the proof.
+/// [`Self::install_into`] consumes the proof. The rekey root is retained only in
+/// builds that compile the operator-rekey capability.
 #[cfg(feature = "handshake")]
 pub struct AuthenticatedNegotiatedHandshake {
     inner: private_impl::AuthenticatedNegotiatedHandshake,
     session_aead_key: Zeroizing<[u8; 32]>,
+    #[cfg(feature = "operator-rekey")]
     session_rekey_root: Zeroizing<[u8; 32]>,
 }
 
@@ -100,6 +102,7 @@ impl AuthenticatedNegotiatedHandshake {
             return Err(AuthoritySessionTransitionError::ZeroRekeyRoot);
         }
         let aead = Zeroizing::new(key_schedule.aead);
+        #[cfg(feature = "operator-rekey")]
         let rekey = Zeroizing::new(key_schedule.rekey);
         let inner = private_impl::AuthenticatedNegotiatedHandshake::from_verified_v2_parts(
             host_offer,
@@ -111,6 +114,7 @@ impl AuthenticatedNegotiatedHandshake {
         Ok(Self {
             inner,
             session_aead_key: aead,
+            #[cfg(feature = "operator-rekey")]
             session_rekey_root: rekey,
         })
     }
@@ -144,6 +148,7 @@ impl AuthenticatedNegotiatedHandshake {
             negotiation: self.inner,
             #[cfg(feature = "operator-rekey")]
             current_session_key: self.session_aead_key,
+            #[cfg(feature = "operator-rekey")]
             session_rekey_root: self.session_rekey_root,
         })
     }
@@ -161,6 +166,8 @@ pub struct InstalledNegotiatedSession {
     /// keys during grace; authority-changing rekey control must not.
     #[cfg(feature = "operator-rekey")]
     current_session_key: Zeroizing<[u8; 32]>,
+    /// Authenticated KDF root retained only when this build can perform operator rekey.
+    #[cfg(feature = "operator-rekey")]
     session_rekey_root: Zeroizing<[u8; 32]>,
 }
 
@@ -208,6 +215,7 @@ impl InstalledNegotiatedSession {
             lineage,
             #[cfg(feature = "operator-rekey")]
             current_session_key: self.current_session_key,
+            #[cfg(feature = "operator-rekey")]
             session_rekey_root: self.session_rekey_root,
         })
     }
@@ -277,6 +285,8 @@ pub struct NegotiatedAuthoritySession {
     /// reject authority-rekey control authenticated by a superseded grace key.
     #[cfg(feature = "operator-rekey")]
     current_session_key: Zeroizing<[u8; 32]>,
+    /// Private authenticated operator-rekey KDF root.
+    #[cfg(feature = "operator-rekey")]
     session_rekey_root: Zeroizing<[u8; 32]>,
 }
 
