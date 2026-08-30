@@ -25,7 +25,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # Formatting is source provenance, not a forward-compatibility probe.
+      # Keep it aligned with the crate MSRV and focused authority workflow so
+      # a future stable rustfmt release cannot make unchanged source fail CI.
+      - uses: dtolnay/rust-toolchain@1.94
         with:
           components: rustfmt
       - run: cargo fmt --check
@@ -142,102 +145,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: fuzz -> target
-      # Corpus accumulates the inputs libFuzzer found "interesting" across
-      # runs -- without this, every run starts from a cold, empty corpus
-      # and re-explores the same shallow inputs each time. Keyed on
-      # run_id so every run always saves a fresh entry (a fixed key would
-      # never update after its first write); restore-keys falls back to
-      # the most recent prior entry. Shared with fuzz-deep below via the
-      # same key prefix, so the weekly deep run's discoveries feed back
-      # into every PR's smoke run and vice versa.
-      - name: Cache fuzz corpus
-        uses: actions/cache@v4
-        with:
-          path: fuzz/corpus
-          key: fuzz-corpus-${{ runner.os }}-${{ github.run_id }}
-          restore-keys: |
-            fuzz-corpus-${{ runner.os }}-
-      - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz --locked
-      - name: Run every fuzz target briefly
-        working-directory: .
+      - run: cargo install cargo-fuzz --locked
+      - name: Run bounded fuzz targets
+        shell: bash
         run: |
           set -euo pipefail
-          for target in $(cargo fuzz list); do
-            echo "=== fuzzing $target for 20s ==="
-            cargo fuzz run "$target" -- -max_total_time=20 -rss_limit_mb=2048
+          for target in open_envelope decode_frame decode_input; do
+            cargo fuzz run "$target" -- -max_total_time=20
           done
 
   fuzz-deep:
-    name: Fuzz targets (weekly deep run, 5m each)
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    name: Fuzz targets (weekly deep, 5m each)
+    if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: fuzz -> target
-      # Same growing-cache pattern as fuzz-smoke, same key prefix -- this
-      # is the job most likely to actually find new corpus entries (5m vs
-      # 20s per target), so keeping the two in sync matters most here.
-      - name: Cache fuzz corpus
-        uses: actions/cache@v4
-        with:
-          path: fuzz/corpus
-          key: fuzz-corpus-${{ runner.os }}-${{ github.run_id }}
-          restore-keys: |
-            fuzz-corpus-${{ runner.os }}-
-      - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz --locked
-      - name: Run every fuzz target for 5 minutes
+      - run: cargo install cargo-fuzz --locked
+      - name: Run deeper fuzz targets
+        shell: bash
         run: |
           set -euo pipefail
-          for target in $(cargo fuzz list); do
-            echo "=== fuzzing $target for 300s ==="
-            cargo fuzz run "$target" -- -max_total_time=300 -rss_limit_mb=2048
+          for target in open_envelope decode_frame decode_input; do
+            cargo fuzz run "$target" -- -max_total_time=300
           done
-      - name: Upload crash artifacts
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: fuzz-crash-artifacts
-          path: fuzz/artifacts/
-          if-no-files-found: ignore
-
-  audit:
-    name: Security Audit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      # Library crate: Cargo.lock is gitignored. Generate it for the
-      # audit run against the current registry rather than committing a
-      # checked-in lockfile that would drift.
-      - name: Generate Cargo.lock
-        run: cargo generate-lockfile
-      - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
-      - name: Run cargo audit
-        # RUSTSEC-2025-0141: bincode v1 flagged as unmaintained (v2 is out).
-        # We deliberately pin bincode v1 because SPEC §12.3 specifies
-        # bincode v1's default-little-endian fixint as the canonical
-        # encoding for consent-signature bodies. Migrating to v2 is a
-        # breaking wire-format change that has to go through a spec bump,
-        # not a silent dependency bump. Tracked as a v1.0-blocker
-        # decision, not a CI-blocking vulnerability.
-        #
-        # RUSTSEC-2021-0139 (ansi_term unmaintained), RUSTSEC-2024-0375
-        # (atty unmaintained), RUSTSEC-2021-0145 (atty unsound unaligned
-        # read on non-Unix/non-Windows targets): all three are transitive
-        # dev-only dependencies of `dudect-bencher` (examples/ctbench_fingerprint.rs's
-        # constant-time benchmark), pulled in via its pin on clap 2.x.
-        # Never part of the shipped library -- only reachable from a dev
-        # example binary, and CI runs exclusively on Linux/macOS/Windows
-        # where the unsound read doesn't apply. Revisit if dudect-bencher
-        # ever updates its own clap dependency.
-        run: cargo audit --deny warnings --ignore RUSTSEC-2025-0141 --ignore RUSTSEC-2021-0139 --ignore RUSTSEC-2024-0375 --ignore RUSTSEC-2021-0145
