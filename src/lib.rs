@@ -135,6 +135,13 @@ pub mod authority;
 #[cfg(feature = "causal-authority")]
 pub mod authority_session;
 
+#[cfg(all(
+    feature = "causal-authority",
+    feature = "handshake",
+    feature = "operator-rekey"
+))]
+mod authority_operator_rekey;
+
 #[cfg(all(feature = "causal-authority", feature = "handshake"))]
 pub mod authority_live_use;
 
