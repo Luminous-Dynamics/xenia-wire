@@ -5,6 +5,10 @@ on:
     branches:
       - causal-authority-ci-repair-v1
 
+concurrency:
+  group: causal-authority-ci-repair-rustfmt
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
