@@ -63,6 +63,7 @@ jobs:
               "implemented_in_parent_except_single_open_ownership",
               "implemented_in_parent",
               "blocked_on_final_cross_repo_lineage",
+              "blocked_on_transport_owner_integration",
           }
           for entry in invariants:
               assert entry["property"].strip()
@@ -78,11 +79,13 @@ jobs:
                   else:
                       raise AssertionError(f"unsupported evidence selector: {evidence}")
 
-          # The two most important non-claims must remain explicit until source
+          # Promotion-critical non-claims must remain explicit until source
           # implementation replaces them with qualified evidence.
           by_id = {entry["id"]: entry for entry in invariants}
           assert by_id["ARR-008"]["status"] == "blocked_on_session_current_key_api"
           assert by_id["ARR-010"]["status"] == "blocked_on_final_cross_repo_lineage"
+          assert by_id["ARR-011"]["status"] == "blocked_on_transport_owner_integration"
+          assert "send failure" in by_id["ARR-011"]["property"]
           print(f"validated {len(invariants)} receiver successor invariants")
 
       - name: Run bounded receiver transaction model
@@ -104,6 +107,9 @@ jobs:
           assert report["max_depth"] == 6
           assert report["checked_trace_prefixes"] > report["reachable_state_count"]
           assert len(report["state_graph_sha256"]) == 64
+          properties = "\n".join(report["properties_checked"])
+          assert "Ack send failure before or after possible byte escape" in properties
+          assert "authority remains suspended" in properties
           PY
 
       - name: Retain contract provenance
@@ -113,6 +119,9 @@ jobs:
           cp docs/security/AUTHORITY_REKEY_RECEIVER_SUCCESSOR_V1.json "$RUNNER_TEMP/receiver-contract/"
           cp scripts/check_authority_rekey_receiver_model.py "$RUNNER_TEMP/receiver-contract/"
           cp .github/workflows/authority-rekey-receiver-successor.yml "$RUNNER_TEMP/receiver-contract/"
+          model_report="$RUNNER_TEMP/receiver-contract/AUTHORITY_REKEY_RECEIVER_MODEL.json"
+          model_report_sha256="$(sha256sum "$model_report" | awk '{print $1}')"
+          test -n "$model_report_sha256"
           {
             echo "profile=xenia-authority-rekey-receiver-successor-contract-v1"
             echo "claim_boundary=contract-and-bounded-model-only-not-rust-implementation-qualification"
@@ -126,11 +135,12 @@ jobs:
             echo "kernel=$(uname -srmo)"
             echo "registry_sha256=$(sha256sum docs/security/AUTHORITY_REKEY_RECEIVER_SUCCESSOR_V1.json | awk '{print $1}')"
             echo "model_source_sha256=$(sha256sum scripts/check_authority_rekey_receiver_model.py | awk '{print $1}')"
-            echo "model_report_sha256=$(sha256sum \"$RUNNER_TEMP/receiver-contract/AUTHORITY_REKEY_RECEIVER_MODEL.json\" | awk '{print $1}')"
+            echo "model_report_sha256=$model_report_sha256"
             echo "workflow_sha256=$(sha256sum .github/workflows/authority-rekey-receiver-successor.yml | awk '{print $1}')"
             echo "actions_checkout_commit=11d5960a326750d5838078e36cf38b85af677262"
             echo "upload_artifact_action_commit=ea165f8d65b6e75b540449e92b4886f43607fa02"
           } > "$RUNNER_TEMP/receiver-contract/PROVENANCE.txt"
+          grep -Eq '^model_report_sha256=[0-9a-f]{64}$' "$RUNNER_TEMP/receiver-contract/PROVENANCE.txt"
           cat "$RUNNER_TEMP/receiver-contract/PROVENANCE.txt"
 
       - name: Assert source remained immutable
