@@ -58,13 +58,12 @@ fn request_from_previous_key_epoch_can_be_approved_during_rekey_grace() {
     // fingerprint verifier during the configured grace interval.
     session.install_key([0x82; 32]);
     assert_ne!(
-        session.session_fingerprint(request.core.request_id).unwrap(),
+        session
+            .session_fingerprint(request.core.request_id)
+            .unwrap(),
         old_fingerprint
     );
-    assert!(session.verify_consent_request(
-        &request,
-        Some(&requester.verifying_key().to_bytes())
-    ));
+    assert!(session.verify_consent_request(&request, Some(&requester.verifying_key().to_bytes())));
 
     let response = sign_causal_authority_response_for_session(
         &session,

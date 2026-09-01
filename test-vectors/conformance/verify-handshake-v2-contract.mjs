@@ -13,10 +13,13 @@ assert.equal(maxOffer, 8 * 1024);
 
 for (const [name, fixed] of Object.entries(fixture.candidate_bincode_fixed_bytes)) {
   const total = name === "host_finalize_v2" ? fixed : fixed + maxOffer;
+  const headroomName = name.endsWith("_without_offer")
+    ? name.slice(0, -"_without_offer".length)
+    : name;
   assert.ok(total <= maxEnvelope, `${name} exceeds handshake envelope ceiling`);
   assert.equal(
     maxEnvelope - total,
-    fixture.candidate_headroom_at_max_offer[name],
+    fixture.candidate_headroom_at_max_offer[headroomName],
     `${name} headroom drift`,
   );
 }

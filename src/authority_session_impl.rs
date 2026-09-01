@@ -34,8 +34,6 @@ use crate::authority::{
 use crate::consent::{ConsentRequest, ConsentRevocation, PUBLIC_KEY_LEN};
 
 #[cfg(feature = "handshake")]
-use zeroize::Zeroizing;
-#[cfg(feature = "handshake")]
 use crate::authority_activation_evidence::{
     AuthorityActivationEvidenceError, AuthorityActivationReceiptV1,
     derive_authority_activation_receipt,
@@ -63,6 +61,8 @@ use crate::negotiated_context::{
 };
 #[cfg(feature = "handshake")]
 use crate::negotiation_policy::NegotiationPolicyV1;
+#[cfg(feature = "handshake")]
+use zeroize::Zeroizing;
 
 /// Failures specific to binding exact authority to a live Xenia session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -474,7 +474,9 @@ pub enum NegotiatedAuthoritySessionError {
     Lineage(#[from] AuthorityLineageEpochEvidenceError),
     /// Public transition evidence was malformed before it reached profile checks.
     #[error(transparent)]
-    RekeyTransition(#[from] crate::authority_rekey_transition_evidence::AuthorityRekeyTransitionEvidenceError),
+    RekeyTransition(
+        #[from] crate::authority_rekey_transition_evidence::AuthorityRekeyTransitionEvidenceError,
+    ),
     /// The V5 observed in the authenticated handshake does not equal deterministic
     /// recomputation from V4 plus both canonical peer offers.
     #[error("authenticated V2 V5 context does not match deterministic negotiation")]
@@ -513,7 +515,7 @@ mod negotiated_session_tests {
     use super::*;
     use crate::authority_negotiation::causal_authority_draft04_capability;
     use crate::authority_rekey_transition_evidence::{
-        RekeyTransitionReasonV1, RekeyTransitionProfileV1,
+        RekeyTransitionProfileV1, RekeyTransitionReasonV1,
     };
     use crate::negotiated_context::{CapabilityOfferEntryV1, NegotiatedCapabilityV1};
 
@@ -571,10 +573,8 @@ mod negotiated_session_tests {
     }
 
     fn activated_session(profile: RekeyTransitionProfileV1) -> NegotiatedAuthoritySession {
-        let policy = NegotiationPolicyV1::minimum_required([
-            causal_authority_draft04_capability(),
-        ])
-        .unwrap();
+        let policy =
+            NegotiationPolicyV1::minimum_required([causal_authority_draft04_capability()]).unwrap();
         let activation = authenticated_handshake()
             .narrow_to_causal_authority(&policy)
             .unwrap();
@@ -619,7 +619,11 @@ mod negotiated_session_tests {
     #[test]
     fn local_policy_narrowing_is_distinct_from_authenticated_negotiation() {
         let proof = authenticated_handshake();
-        assert!(proof.selected_context().contains(b"xenia.causal-authority", b"draft-04"));
+        assert!(
+            proof
+                .selected_context()
+                .contains(b"xenia.causal-authority", b"draft-04")
+        );
 
         let authority = causal_authority_draft04_capability();
         let strict = NegotiationPolicyV1::allow_list([authority.clone()], [authority]).unwrap();
@@ -628,10 +632,8 @@ mod negotiated_session_tests {
 
     #[test]
     fn authority_requires_an_already_keyed_session() {
-        let policy = NegotiationPolicyV1::minimum_required([
-            causal_authority_draft04_capability(),
-        ])
-        .unwrap();
+        let policy =
+            NegotiationPolicyV1::minimum_required([causal_authority_draft04_capability()]).unwrap();
         let activation = authenticated_handshake()
             .narrow_to_causal_authority(&policy)
             .unwrap();
@@ -647,10 +649,8 @@ mod negotiated_session_tests {
 
     #[test]
     fn proof_from_session_a_cannot_activate_unrelated_session_b() {
-        let policy = NegotiationPolicyV1::minimum_required([
-            causal_authority_draft04_capability(),
-        ])
-        .unwrap();
+        let policy =
+            NegotiationPolicyV1::minimum_required([causal_authority_draft04_capability()]).unwrap();
         let activation = authenticated_handshake()
             .narrow_to_causal_authority(&policy)
             .unwrap();
@@ -697,8 +697,7 @@ mod negotiated_session_tests {
             RekeyTransitionReasonV1::LaneManual,
         )
         .unwrap();
-        let verified =
-            VerifiedAuthorityRekey::from_verified_transition(lane, [0x88; 32]).unwrap();
+        let verified = VerifiedAuthorityRekey::from_verified_transition(lane, [0x88; 32]).unwrap();
         assert!(authority.apply_verified_rekey(verified).is_err());
         assert_eq!(authority.lineage().key_epoch, 0);
         assert_eq!(before, authority.session().session_fingerprint(9).unwrap());
@@ -732,8 +731,7 @@ mod negotiated_session_tests {
     fn selected_context_profile_gate_still_applies_at_activation() {
         let selected = NegotiatedContextV1::from_capabilities([
             causal_authority_draft04_capability(),
-            NegotiatedCapabilityV1::new(b"xenia.operator-rekey".to_vec(), b"v1".to_vec())
-                .unwrap(),
+            NegotiatedCapabilityV1::new(b"xenia.operator-rekey".to_vec(), b"v1".to_vec()).unwrap(),
         ])
         .unwrap();
         assert!(selected.contains(b"xenia.operator-rekey", b"v1"));

@@ -20,8 +20,7 @@ use serde_big_array::BigArray;
 use sha2::{Digest, Sha256};
 
 use crate::consent::{
-    CausalPredicate, ConsentRequest, ConsentRevocation, ConsentScope, PUBLIC_KEY_LEN,
-    SIGNATURE_LEN,
+    CausalPredicate, ConsentRequest, ConsentRevocation, ConsentScope, PUBLIC_KEY_LEN, SIGNATURE_LEN,
 };
 use crate::{Sealable, Session, WireError};
 
@@ -296,7 +295,9 @@ impl Sealable for CausalAuthorityResponse {
 
     fn from_bin(bytes: &[u8]) -> Result<Self, WireError> {
         if bytes.len() > MAX_CAUSAL_AUTHORITY_RESPONSE_BYTES {
-            return Err(WireError::Codec("decode: causal authority response too large".into()));
+            return Err(WireError::Codec(
+                "decode: causal authority response too large".into(),
+            ));
         }
         bincode::deserialize(bytes).map_err(WireError::decode)
     }
@@ -573,7 +574,8 @@ pub fn verify_approved_external_action_authority(
         }
 
         let revoker = &revocation.core.revoker_pubkey;
-        let known_party = revoker == expected_requester_pubkey || revoker == expected_responder_pubkey;
+        let known_party =
+            revoker == expected_requester_pubkey || revoker == expected_responder_pubkey;
         if !known_party || !revocation.verify(Some(revoker)) {
             return Err(ExternalAuthorityError::InvalidRevocation);
         }
@@ -679,7 +681,11 @@ mod tests {
         let expected = authority(15_000);
         let predicate = expected.to_causal_predicate().unwrap();
         assert_eq!(predicate.description, EXTERNAL_ACTION_AUTHORITY_PROFILE);
-        assert!(predicate.opaque.starts_with(EXTERNAL_ACTION_AUTHORITY_MAGIC));
+        assert!(
+            predicate
+                .opaque
+                .starts_with(EXTERNAL_ACTION_AUTHORITY_MAGIC)
+        );
         assert_eq!(
             ExternalActionAuthorityV1::from_causal_predicate(&predicate).unwrap(),
             expected
@@ -692,7 +698,10 @@ mod tests {
         let resp = response(&req, true);
         let verified = verify(&req, &resp, &[], 11_000).unwrap();
         assert_eq!(verified.authority.capability, b"nixos.rebuild".to_vec());
-        assert_eq!(verified.request_digest, authority_request_digest(&req).unwrap());
+        assert_eq!(
+            verified.request_digest,
+            authority_request_digest(&req).unwrap()
+        );
         assert_eq!(verified.authority_id, authority_instance_id(&resp));
     }
 
@@ -705,7 +714,10 @@ mod tests {
         assert!(req_a.verify(Some(&requester().verifying_key().to_bytes())));
         assert!(req_b.verify(Some(&requester().verifying_key().to_bytes())));
         assert_eq!(req_a.core.request_id, req_b.core.request_id);
-        assert_eq!(req_a.core.session_fingerprint, req_b.core.session_fingerprint);
+        assert_eq!(
+            req_a.core.session_fingerprint,
+            req_b.core.session_fingerprint
+        );
 
         let approval_for_a = response(&req_a, true);
         assert_eq!(
@@ -782,13 +794,7 @@ mod tests {
     fn zero_issue_time_is_rejected_at_construction() {
         let req = request(authority(15_000));
         assert_eq!(
-            CausalAuthorityResponse::sign_for_request(
-                &req,
-                true,
-                0,
-                "invalid",
-                &responder(),
-            ),
+            CausalAuthorityResponse::sign_for_request(&req, true, 0, "invalid", &responder(),),
             Err(ExternalAuthorityError::InvalidResponseIssueTime)
         );
     }
@@ -921,22 +927,15 @@ mod tests {
     #[test]
     fn approval_instance_id_changes_with_signed_decision() {
         let req = request(authority(15_000));
-        let first = CausalAuthorityResponse::sign_for_request(
-            &req,
-            true,
-            10_000,
-            "first",
-            &responder(),
-        )
-        .unwrap();
-        let second = CausalAuthorityResponse::sign_for_request(
-            &req,
-            true,
-            10_001,
-            "second",
-            &responder(),
-        )
-        .unwrap();
-        assert_ne!(authority_instance_id(&first), authority_instance_id(&second));
+        let first =
+            CausalAuthorityResponse::sign_for_request(&req, true, 10_000, "first", &responder())
+                .unwrap();
+        let second =
+            CausalAuthorityResponse::sign_for_request(&req, true, 10_001, "second", &responder())
+                .unwrap();
+        assert_ne!(
+            authority_instance_id(&first),
+            authority_instance_id(&second)
+        );
     }
 }

@@ -46,7 +46,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: causal-authority-${{ github.ref }}
+  group: causal-authority-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
@@ -54,56 +54,237 @@ env:
   RUST_BACKTRACE: 1
   RUSTFLAGS: -D warnings
   RUSTDOCFLAGS: -D warnings
+  QUALIFICATION_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
 jobs:
-  rust:
-    name: Rust causal-authority only
+  resolution:
+    name: Freeze dependency resolution
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.QUALIFICATION_SOURCE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@1.94
+
+      - name: Resolve one lock for this evidence lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$QUALIFICATION_SOURCE_SHA"
+          test -z "$(git status --porcelain)"
+          cargo generate-lockfile
+          git check-ignore -q Cargo.lock
+          OUT="$RUNNER_TEMP/causal-resolution"
+          mkdir -p "$OUT"
+          cp Cargo.lock "$OUT/Cargo.lock"
+          {
+            echo "profile=xenia-wire-causal-authority-resolution-v1"
+            echo "source_head=$(git rev-parse HEAD)"
+            echo "source_tree=$(git rev-parse HEAD^{tree})"
+            echo "cargo_toml_sha256=$(sha256sum Cargo.toml | awk '{print $1}')"
+            echo "resolved_lock_sha256=$(sha256sum Cargo.lock | awk '{print $1}')"
+            rustc -vV
+            cargo -Vv
+          } > "$OUT/resolution-provenance.txt"
+          cat "$OUT/resolution-provenance.txt"
+          test -z "$(git status --porcelain)"
+
+      - name: Retain exact resolved dependency set
+        uses: actions/upload-artifact@v4
+        with:
+          name: causal-authority-resolution-${{ env.QUALIFICATION_SOURCE_SHA }}
+          path: ${{ runner.temp }}/causal-resolution
+          if-no-files-found: error
+          retention-days: 90
+
+  rust:
+    name: Rust causal-authority only
+    needs: resolution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.QUALIFICATION_SOURCE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Restore frozen dependency resolution
+        uses: actions/download-artifact@v4
+        with:
+          name: causal-authority-resolution-${{ env.QUALIFICATION_SOURCE_SHA }}
+          path: ${{ runner.temp }}/causal-resolution
+
+      - name: Install retained lock and assert exact source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$QUALIFICATION_SOURCE_SHA"
+          test -z "$(git status --porcelain)"
+          cp "$RUNNER_TEMP/causal-resolution/Cargo.lock" Cargo.lock
+          git check-ignore -q Cargo.lock
+          test -z "$(git status --porcelain)"
+
       - uses: dtolnay/rust-toolchain@1.94
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
+
+      - name: Record qualification provenance outside worktree
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/causal-rust-provenance.txt"
+          {
+            echo "lane=rust-causal-authority-only"
+            echo "source_head=$(git rev-parse HEAD)"
+            echo "source_tree=$(git rev-parse HEAD^{tree})"
+            echo "cargo_toml_sha256=$(sha256sum Cargo.toml | awk '{print $1}')"
+            echo "resolved_lock_sha256=$(sha256sum Cargo.lock | awk '{print $1}')"
+            rustc -vV
+            cargo -Vv
+          } > "$OUT"
+          cat "$OUT"
+
       - name: Format
         run: cargo fmt --check
       - name: Check exact feature boundary
-        run: cargo check --no-default-features --features causal-authority --all-targets
+        run: cargo check --locked --no-default-features --features causal-authority --all-targets
       - name: Clippy exact feature boundary
-        run: cargo clippy --no-default-features --features causal-authority --all-targets -- -D warnings
+        run: cargo clippy --locked --no-default-features --features causal-authority --all-targets -- -D warnings
       - name: Test exact feature boundary
-        run: cargo test --no-default-features --features causal-authority
+        run: cargo test --locked --no-default-features --features causal-authority
       - name: Reproduce deterministic Rust vector
-        run: cargo test --no-default-features --features causal-authority --test causal_authority_vectors -- --nocapture
+        run: cargo test --locked --no-default-features --features causal-authority --test causal_authority_vectors -- --nocapture
+
+      - name: Assert source tree remained immutable
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$QUALIFICATION_SOURCE_SHA"
+          test -z "$(git status --porcelain)"
+          echo "final_source_tree=$(git rev-parse HEAD^{tree})" >> "$RUNNER_TEMP/causal-rust-provenance.txt"
+
+      - name: Retain Rust qualification capsule
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: causal-authority-rust-${{ env.QUALIFICATION_SOURCE_SHA }}
+          path: ${{ runner.temp }}/causal-rust-provenance.txt
+          if-no-files-found: error
+          retention-days: 90
 
   negotiation:
     name: Rust authority + handshake negotiation
+    needs: resolution
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.QUALIFICATION_SOURCE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Restore frozen dependency resolution
+        uses: actions/download-artifact@v4
+        with:
+          name: causal-authority-resolution-${{ env.QUALIFICATION_SOURCE_SHA }}
+          path: ${{ runner.temp }}/causal-resolution
+
+      - name: Install retained lock and assert exact source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$QUALIFICATION_SOURCE_SHA"
+          test -z "$(git status --porcelain)"
+          cp "$RUNNER_TEMP/causal-resolution/Cargo.lock" Cargo.lock
+          git check-ignore -q Cargo.lock
+          test -z "$(git status --porcelain)"
+
       - uses: dtolnay/rust-toolchain@1.94
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+
+      - name: Record qualification provenance outside worktree
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/causal-negotiation-provenance.txt"
+          {
+            echo "lane=rust-authority-handshake-negotiation"
+            echo "source_head=$(git rev-parse HEAD)"
+            echo "source_tree=$(git rev-parse HEAD^{tree})"
+            echo "cargo_toml_sha256=$(sha256sum Cargo.toml | awk '{print $1}')"
+            echo "resolved_lock_sha256=$(sha256sum Cargo.lock | awk '{print $1}')"
+            rustc -vV
+            cargo -Vv
+          } > "$OUT"
+          cat "$OUT"
+
       - name: Check strict negotiation feature boundary
-        run: cargo check --no-default-features --features causal-authority,handshake --all-targets
+        run: cargo check --locked --no-default-features --features causal-authority,handshake --all-targets
       - name: Clippy strict negotiation feature boundary
-        run: cargo clippy --no-default-features --features causal-authority,handshake --all-targets -- -D warnings
+        run: cargo clippy --locked --no-default-features --features causal-authority,handshake --all-targets -- -D warnings
       - name: Test negotiation, policy, hostile-byte codec, V2 contract, activation, lineage, transition evidence, profile binding, and authority profile
-        run: cargo test --no-default-features --features causal-authority,handshake --lib
+        run: cargo test --locked --no-default-features --features causal-authority,handshake --lib
       - name: Reproduce rekey profile binding Rust vectors
-        run: cargo test --no-default-features --features causal-authority,handshake --test authority_rekey_profile_binding_vectors
+        run: cargo test --locked --no-default-features --features causal-authority,handshake --test authority_rekey_profile_binding_vectors
       - name: Cross-check transition evidence against production operator-rekey hash
-        run: cargo test --no-default-features --features causal-authority,handshake,operator-rekey --test authority_rekey_transition_crosscheck
+        run: cargo test --locked --no-default-features --features causal-authority,handshake,operator-rekey --test authority_rekey_transition_crosscheck
+
+      - name: Assert source tree remained immutable
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$QUALIFICATION_SOURCE_SHA"
+          test -z "$(git status --porcelain)"
+          echo "final_source_tree=$(git rev-parse HEAD^{tree})" >> "$RUNNER_TEMP/causal-negotiation-provenance.txt"
+
+      - name: Retain negotiation qualification capsule
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: causal-authority-negotiation-${{ env.QUALIFICATION_SOURCE_SHA }}
+          path: ${{ runner.temp }}/causal-negotiation-provenance.txt
+          if-no-files-found: error
+          retention-days: 90
 
   node:
     name: Independent Node vector reproduction
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.QUALIFICATION_SOURCE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Assert exact source checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$QUALIFICATION_SOURCE_SHA"
+          test -z "$(git status --porcelain)"
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+
+      - name: Record qualification provenance outside worktree
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/causal-node-provenance.txt"
+          {
+            echo "lane=independent-node-vector-reproduction"
+            echo "source_head=$(git rev-parse HEAD)"
+            echo "source_tree=$(git rev-parse HEAD^{tree})"
+            echo "node=$(node --version)"
+            echo "vector_set_sha256=$(find test-vectors -type f \( -name '*.json' -o -name '*.mjs' \) -print0 | sort -z | xargs -0 sha256sum | sha256sum | awk '{print $1}')"
+          } > "$OUT"
+          cat "$OUT"
+
       - name: Reproduce canonical authority bytes, signatures, digests, and authority id
         run: node test-vectors/conformance/verify-causal-authority.mjs
       - name: Reproduce selected-context canonical bytes and SHA-256
@@ -118,3 +299,20 @@ jobs:
         run: node test-vectors/conformance/verify-authority-lineage-epoch.mjs
       - name: Reproduce rekey profile binding identities
         run: node test-vectors/conformance/verify-authority-rekey-profile-binding.mjs
+
+      - name: Assert source tree remained immutable
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$QUALIFICATION_SOURCE_SHA"
+          test -z "$(git status --porcelain)"
+          echo "final_source_tree=$(git rev-parse HEAD^{tree})" >> "$RUNNER_TEMP/causal-node-provenance.txt"
+
+      - name: Retain Node qualification capsule
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: causal-authority-node-${{ env.QUALIFICATION_SOURCE_SHA }}
+          path: ${{ runner.temp }}/causal-node-provenance.txt
+          if-no-files-found: error
+          retention-days: 90

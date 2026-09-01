@@ -114,9 +114,11 @@ impl NegotiationPolicyV1 {
     /// completed handshake. Consequential callers must only invoke this after
     /// the negotiation binding has been authenticated by the handshake transcript.
     pub fn evaluate(&self, selected: &NegotiatedContextV1) -> Result<(), NegotiationPolicyError> {
-        if self.required.iter().any(|required| {
-            !selected.contains(required.name(), required.version())
-        }) {
+        if self
+            .required
+            .iter()
+            .any(|required| !selected.contains(required.name(), required.version()))
+        {
             return Err(NegotiationPolicyError::RequiredCapabilityMissing);
         }
         if self.mode == PolicyModeV1::AllowList
@@ -234,17 +236,17 @@ mod tests {
 
     #[test]
     fn minimum_policy_rejects_downgrade_but_allows_authenticated_extras() {
-        let policy = NegotiationPolicyV1::minimum_required([cap(
-            b"xenia.causal-authority",
-            b"draft-04",
-        )])
-        .unwrap();
-        assert!(policy
-            .evaluate(&selected([
-                cap(b"xenia.causal-authority", b"draft-04"),
-                cap(b"xenia.operator-rekey", b"v1"),
-            ]))
-            .is_ok());
+        let policy =
+            NegotiationPolicyV1::minimum_required([cap(b"xenia.causal-authority", b"draft-04")])
+                .unwrap();
+        assert!(
+            policy
+                .evaluate(&selected([
+                    cap(b"xenia.causal-authority", b"draft-04"),
+                    cap(b"xenia.operator-rekey", b"v1"),
+                ]))
+                .is_ok()
+        );
         assert_eq!(
             policy
                 .evaluate(&selected([cap(b"xenia.causal-authority", b"draft-03")]))
@@ -262,7 +264,11 @@ mod tests {
             [authority.clone(), rekey.clone()],
         )
         .unwrap();
-        assert!(policy.evaluate(&selected([authority.clone(), rekey])).is_ok());
+        assert!(
+            policy
+                .evaluate(&selected([authority.clone(), rekey]))
+                .is_ok()
+        );
         assert_eq!(
             policy
                 .evaluate(&selected([
@@ -301,9 +307,9 @@ mod tests {
         assert_eq!(
             minimum.hash(),
             [
-                0x64, 0x56, 0xc4, 0x0a, 0xf9, 0xe1, 0x04, 0xb8, 0x2b, 0xe0, 0xb0, 0xfa, 0xf5,
-                0x01, 0xc4, 0x04, 0xc0, 0x57, 0xd7, 0xb5, 0x59, 0x28, 0xd3, 0x39, 0x72, 0x0a,
-                0x9c, 0x20, 0x8f, 0x6e, 0xef, 0x0f,
+                0x64, 0x56, 0xc4, 0x0a, 0xf9, 0xe1, 0x04, 0xb8, 0x2b, 0xe0, 0xb0, 0xfa, 0xf5, 0x01,
+                0xc4, 0x04, 0xc0, 0x57, 0xd7, 0xb5, 0x59, 0x28, 0xd3, 0x39, 0x72, 0x0a, 0x9c, 0x20,
+                0x8f, 0x6e, 0xef, 0x0f,
             ]
         );
         let allow_list = NegotiationPolicyV1::allow_list(
@@ -314,9 +320,9 @@ mod tests {
         assert_eq!(
             allow_list.hash(),
             [
-                0xed, 0x37, 0x98, 0x3b, 0x2b, 0x76, 0xcb, 0xc7, 0x68, 0x9d, 0x80, 0xef, 0x2f,
-                0x00, 0x8b, 0xda, 0xf4, 0x69, 0x48, 0x3b, 0xbc, 0x2a, 0xa1, 0xca, 0xae, 0xd2,
-                0x35, 0x29, 0x92, 0xb7, 0xfc, 0xa4,
+                0xed, 0x37, 0x98, 0x3b, 0x2b, 0x76, 0xcb, 0xc7, 0x68, 0x9d, 0x80, 0xef, 0x2f, 0x00,
+                0x8b, 0xda, 0xf4, 0x69, 0x48, 0x3b, 0xbc, 0x2a, 0xa1, 0xca, 0xae, 0xd2, 0x35, 0x29,
+                0x92, 0xb7, 0xfc, 0xa4,
             ]
         );
     }

@@ -19,8 +19,7 @@ use crate::authority_activation_evidence::AuthorityActivationReceiptV1;
 /// Schema version encoded into canonical epoch-evidence bytes.
 pub const AUTHORITY_LINEAGE_EPOCH_SCHEMA_VERSION: u8 = 1;
 /// Domain separator for canonical lineage-epoch evidence bytes.
-pub const AUTHORITY_LINEAGE_EPOCH_V1_DOMAIN: &[u8] =
-    b"xenia.authority-lineage-epoch-evidence.v1\0";
+pub const AUTHORITY_LINEAGE_EPOCH_V1_DOMAIN: &[u8] = b"xenia.authority-lineage-epoch-evidence.v1\0";
 
 /// Durable view of one point in an authority-capable Xenia rekey lineage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -99,7 +98,8 @@ impl AuthorityLineageEpochEvidenceV1 {
 
     /// Canonical fixed-width evidence bytes.
     pub fn canonical_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(AUTHORITY_LINEAGE_EPOCH_V1_DOMAIN.len() + 1 + 32 + 32 + 8 + 32 + 32);
+        let mut out =
+            Vec::with_capacity(AUTHORITY_LINEAGE_EPOCH_V1_DOMAIN.len() + 1 + 32 + 32 + 8 + 32 + 32);
         out.extend_from_slice(AUTHORITY_LINEAGE_EPOCH_V1_DOMAIN);
         out.push(self.schema_version);
         out.extend_from_slice(&self.lineage_id);
@@ -186,10 +186,7 @@ mod tests {
 
     fn activation_receipt() -> AuthorityActivationReceiptV1 {
         let host = CapabilityOfferV1::from_entries([
-            entry(
-                b"xenia.causal-authority",
-                &[b"draft-04", b"draft-03"],
-            ),
+            entry(b"xenia.causal-authority", &[b"draft-04", b"draft-03"]),
             entry(b"xenia.operator-rekey", &[b"v1"]),
         ])
         .unwrap();
@@ -198,10 +195,8 @@ mod tests {
             entry(b"xenia.operator-rekey", &[b"v1"]),
         ])
         .unwrap();
-        let policy = NegotiationPolicyV1::minimum_required([
-            causal_authority_draft04_capability(),
-        ])
-        .unwrap();
+        let policy =
+            NegotiationPolicyV1::minimum_required([causal_authority_draft04_capability()]).unwrap();
         derive_authority_activation_receipt(
             &host,
             &viewer,

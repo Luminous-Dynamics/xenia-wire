@@ -86,7 +86,9 @@ impl AuthorityRekeyProfileBindingV1 {
         if self.schema_version != AUTHORITY_REKEY_PROFILE_BINDING_SCHEMA_VERSION {
             return Err(AuthorityRekeyProfileBindingError::UnsupportedSchemaVersion);
         }
-        if self.lineage_id != activation.lineage_id || self.activation_id != activation.activation_id {
+        if self.lineage_id != activation.lineage_id
+            || self.activation_id != activation.activation_id
+        {
             return Err(AuthorityRekeyProfileBindingError::ActivationMismatch);
         }
         validate_selected_context(activation, selected_context, self.profile)?;
@@ -105,9 +107,8 @@ impl AuthorityRekeyProfileBindingV1 {
     /// lineage. The selected-context check is nevertheless repeated explicitly
     /// at construction/validation to prevent confused local profile selection.
     pub fn canonical_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(
-            AUTHORITY_REKEY_PROFILE_BINDING_V1_DOMAIN.len() + 1 + 32 + 32 + 1,
-        );
+        let mut out =
+            Vec::with_capacity(AUTHORITY_REKEY_PROFILE_BINDING_V1_DOMAIN.len() + 1 + 32 + 32 + 1);
         out.extend_from_slice(AUTHORITY_REKEY_PROFILE_BINDING_V1_DOMAIN);
         out.push(self.schema_version);
         out.extend_from_slice(&self.lineage_id);
@@ -232,16 +233,17 @@ mod tests {
     fn selected_with_operator() -> NegotiatedContextV1 {
         NegotiatedContextV1::from_capabilities([
             cap(b"xenia.causal-authority", b"draft-04"),
-            cap(OPERATOR_REKEY_CAPABILITY_NAME, OPERATOR_REKEY_CAPABILITY_VERSION),
+            cap(
+                OPERATOR_REKEY_CAPABILITY_NAME,
+                OPERATOR_REKEY_CAPABILITY_VERSION,
+            ),
         ])
         .unwrap()
     }
 
     fn selected_without_operator() -> NegotiatedContextV1 {
-        NegotiatedContextV1::from_capabilities([
-            cap(b"xenia.causal-authority", b"draft-04"),
-        ])
-        .unwrap()
+        NegotiatedContextV1::from_capabilities([cap(b"xenia.causal-authority", b"draft-04")])
+            .unwrap()
     }
 
     fn activation(selected_context: &NegotiatedContextV1) -> AuthorityActivationReceiptV1 {
@@ -264,10 +266,10 @@ mod tests {
     #[test]
     fn operator_profile_requires_exact_negotiated_operator_rekey_v1() {
         let no_operator = selected_without_operator();
-        let activation = activation(&no_operator);
+        let no_operator_activation = activation(&no_operator);
         assert!(matches!(
             AuthorityRekeyProfileBindingV1::new(
-                &activation,
+                &no_operator_activation,
                 &no_operator,
                 RekeyTransitionProfileV1::OperatorChannelV1,
             ),
@@ -279,10 +281,10 @@ mod tests {
             cap(OPERATOR_REKEY_CAPABILITY_NAME, b"v0"),
         ])
         .unwrap();
-        let activation = activation(&wrong_version);
+        let wrong_version_activation = activation(&wrong_version);
         assert!(matches!(
             AuthorityRekeyProfileBindingV1::new(
-                &activation,
+                &wrong_version_activation,
                 &wrong_version,
                 RekeyTransitionProfileV1::OperatorChannelV1,
             ),
