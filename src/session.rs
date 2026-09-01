@@ -115,7 +115,7 @@ pub struct Session {
     /// How long the previous key remains valid after rekey.
     rekey_grace: Duration,
     /// Epoch of the current session key (SPEC draft-02r1 §5.3).
-    /// Increments (wrapping) on each `install_key`. Purely internal;
+    /// Increments (wrapping) on each genuine key change. Purely internal;
     /// not transmitted on the wire. Used to key per-epoch replay-window
     /// state so a counter reset at rekey doesn't clash with lingering
     /// high-water marks from the previous key. `u32` rather than the
@@ -187,17 +187,29 @@ impl Session {
 
     /// Install a 32-byte session key.
     ///
-    /// First call installs the initial key. Subsequent calls perform a
-    /// rekey: the previous key is moved to `prev_session_key` with a
-    /// grace-period expiry of the configured `rekey_grace`; the new key becomes
-    /// current; the nonce counter resets to zero.
+    /// The first call installs the initial key. Reinstalling the byte-identical
+    /// current key is a true no-op: sender nonce state, replay-key epoch,
+    /// previous-key grace state, and establishment time remain unchanged.
+    /// This is required because resetting the sender sequence while retaining
+    /// the same AEAD key would reuse ChaCha20-Poly1305 nonces.
     ///
-    /// The replay window is NOT cleared on rekey, but it IS scoped by
-    /// key epoch (SPEC §5.3 / draft-02r1) — the incoming new-key
-    /// stream starts a fresh per-epoch window rather than fighting
-    /// the old key's high-water mark. When the previous key expires
-    /// in [`Self::tick`], its per-epoch replay state is dropped.
+    /// A subsequent call with a genuinely different key performs a rekey: the
+    /// previous key moves into the configured grace window, the internal replay
+    /// epoch advances, and the sender nonce counter resets to zero for the new
+    /// cryptographic key domain.
+    ///
+    /// The replay window is NOT cleared on genuine rekey, but it IS scoped by
+    /// key epoch (SPEC §5.3 / draft-02r1) — the incoming new-key stream starts
+    /// a fresh per-epoch window rather than fighting the old key's high-water
+    /// mark. When a previous key expires in [`Self::tick`], its per-epoch replay
+    /// state is dropped.
     pub fn install_key(&mut self, key: [u8; 32]) {
+        if let Some(current_key) = self.session_key.as_ref() {
+            if ct_eq_32(&**current_key, &key) {
+                return;
+            }
+        }
+
         if let Some(old_key) = self.session_key.take() {
             self.prev_keys.push(PrevKey {
                 key: old_key,
@@ -1047,10 +1059,9 @@ impl Session {
 
 /// Constant-time equality for two 32-byte arrays.
 ///
-/// Avoids a data-dependent early-return in the fingerprint compare path.
-/// Kept inline here rather than reaching for `subtle` — one byte of
-/// dependency surface for a loop we can read in three lines.
-#[cfg(feature = "consent")]
+/// Avoids data-dependent early return both for duplicate-key installation and
+/// for consent fingerprint comparison. Kept inline here rather than reaching
+/// for `subtle` — the operation is small and its dependency surface is zero.
 #[inline]
 fn ct_eq_32(a: &[u8; 32], b: &[u8; 32]) -> bool {
     let mut diff: u8 = 0;
@@ -1086,6 +1097,25 @@ mod tests {
         s.install_key([0x11; 32]);
         assert!(s.has_key());
         assert_eq!(s.nonce_counter(), 0);
+    }
+
+    #[test]
+    fn duplicate_key_install_is_a_true_nonce_state_noop() {
+        let mut s = Session::with_source_id([0xAB; 8], 0xCD);
+        let key = [0x11; 32];
+        s.install_key(key);
+        assert!(s.seal(b"first", 0x30).is_ok());
+        assert_eq!(s.nonce_counter(), 1);
+        let established_at = s.key_established_at;
+        let current_epoch = s.current_key_epoch;
+        let prev_len = s.prev_keys.len();
+
+        s.install_key(key);
+
+        assert_eq!(s.nonce_counter(), 1);
+        assert_eq!(s.key_established_at, established_at);
+        assert_eq!(s.current_key_epoch, current_epoch);
+        assert_eq!(s.prev_keys.len(), prev_len);
     }
 
     #[test]
@@ -1173,15 +1203,16 @@ mod tests {
 
     #[test]
     fn rekey_resets_sequence_after_exhaustion() {
-        // The caller's only escape from `SequenceExhausted` is to rekey.
-        // Verify that install_key resets the counter so seals resume.
+        // The caller's only escape from `SequenceExhausted` is to install a
+        // genuinely different key. A duplicate install cannot safely reset the
+        // sequence because that would reuse a nonce under the same AEAD key.
         let mut s = Session::with_source_id([0; 8], 0);
         s.install_key([0x77; 32]);
         s.nonce_counter = 1u64 << 32;
         assert!(s.seal(b"blocked", 0x10).is_err());
-        // Rekey.
+        // Genuine rekey.
         s.install_key([0x88; 32]);
-        // Counter reset to 0, sealing works again.
+        // Counter reset to 0 in a new key domain, sealing works again.
         assert!(s.seal(b"unblocked", 0x10).is_ok());
     }
 
