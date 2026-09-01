@@ -1,7 +1,7 @@
 {
   "schema": "xenia.authority-rekey-receiver-successor.v1",
   "scope": "successor contract for authority operator-rekey receive after PR #41",
-  "claim_boundary": "This file freezes required successor semantics and executable model evidence. It does not claim that the blocked Session/#40 integration is implemented on this branch.",
+  "claim_boundary": "This file freezes required successor semantics and executable model evidence. It does not claim that the blocked Session/#40/transport-owner integration is implemented on this branch.",
   "parent": {
     "pull_request": 41,
     "frozen_parent_head": "de149ce32e883a08c3269f957a2528ae604dd9d1"
@@ -56,13 +56,13 @@
     },
     {
       "id": "ARR-006",
-      "property": "Ack encoding/preseal is the final fallible stage; any preseal failure preserves key, lineage, and outbound nonce state.",
+      "property": "Ack encoding/preseal is the final fallible stage inside the Wire receiver transaction; any preseal failure preserves key, lineage, and outbound nonce state.",
       "status": "implemented_in_parent",
       "evidence": ["model:ARR-MODEL-001", "parent:#41-adversarial-matrix"]
     },
     {
       "id": "ARR-007",
-      "property": "After all fallible checks succeed, one commit advances active key and authority lineage together, reserves Ack as new-key sequence zero, and leaves live outbound sequence at one.",
+      "property": "After all fallible Wire checks succeed, one commit advances active key and authority lineage together, reserves Ack as new-key sequence zero, and leaves live outbound sequence at one.",
       "status": "implemented_in_parent",
       "evidence": ["model:ARR-MODEL-001", "parent:#41-sequence-regression"]
     },
@@ -83,6 +83,12 @@
       "property": "Final production interoperability is exercised against xenia-peer #188 with exact host Proposal and console Ack domains on the final qualified Wire lineage.",
       "status": "blocked_on_final_cross_repo_lineage",
       "evidence": ["future:xenia-peer-188-wire-successor-interoperability"]
+    },
+    {
+      "id": "ARR-011",
+      "property": "After Wire commits and returns the exact presealed Ack, the transport owner sends that Ack exactly once while application authority remains suspended; reported send failure before or after possible byte escape is session-fatal, never rolls key/lineage back, and never application-level reseals or retries the Ack on the same connection.",
+      "status": "blocked_on_transport_owner_integration",
+      "evidence": ["model:ARR-MODEL-001", "future:receiver-ack-transport-transaction"]
     }
   ],
   "promotion_order": [
@@ -92,7 +98,9 @@
     "implement #38 current-key-only live receive without duplicate active-key ownership",
     "rebase/reconstruct #41 semantics on final nonce-safe lineage",
     "bind immutable expected peer Proposal NonceDomain at activation",
+    "bind returned Ack to one transport-owned send attempt with authority suspended until the send outcome is known",
     "run single-live-open authority regressions",
+    "run receiver Ack send-before-write and send-after-write ambiguity regressions",
     "run exact xenia-peer #188 cross-repository interoperability",
     "retain exact-head evidence before promotion"
   ]
