@@ -1,0 +1,160 @@
+name: Authority Rekey Receiver Successor Contract
+
+on:
+  pull_request:
+    paths:
+      - "docs/security/AUTHORITY_REKEY_RECEIVER_SUCCESSOR_V1.json"
+      - "scripts/check_authority_rekey_receiver_model.py"
+      - ".github/workflows/authority-rekey-receiver-successor.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: authority-rekey-receiver-successor-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CONTRACT_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  contract-model:
+    name: Receiver successor contract model only
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ env.CONTRACT_SOURCE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Assert exact source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$CONTRACT_SOURCE_SHA"
+          test -z "$(git status --porcelain)"
+
+      - name: Validate successor registry
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+
+          path = Path("docs/security/AUTHORITY_REKEY_RECEIVER_SUCCESSOR_V1.json")
+          data = json.loads(path.read_text())
+          assert data["schema"] == "xenia.authority-rekey-receiver-successor.v1"
+          assert data["parent"]["pull_request"] == 41
+          assert data["parent"]["frozen_parent_head"] == "de149ce32e883a08c3269f957a2528ae604dd9d1"
+          assert Path(data["model"]["source"]).exists()
+          assert data["model"]["id"] == "ARR-MODEL-001"
+          assert data["model"]["report_schema"] == "xenia.authority-rekey-receiver-model-report.v1"
+
+          invariants = data["invariants"]
+          ids = [entry["id"] for entry in invariants]
+          assert ids == [f"ARR-{index:03d}" for index in range(1, len(ids) + 1)]
+          assert len(ids) == len(set(ids))
+
+          allowed = {
+              "modelled_successor_requirement",
+              "blocked_on_pr40_composition",
+              "blocked_on_session_current_key_api",
+              "implemented_in_parent_except_single_open_ownership",
+              "implemented_in_parent",
+              "blocked_on_final_cross_repo_lineage",
+              "blocked_on_transport_owner_integration",
+          }
+          for entry in invariants:
+              assert entry["property"].strip()
+              assert entry["status"] in allowed
+              assert entry["evidence"]
+              for evidence in entry["evidence"]:
+                  if evidence.startswith("model:"):
+                      assert evidence == "model:ARR-MODEL-001"
+                  elif evidence.startswith("future:"):
+                      assert entry["status"].startswith("blocked_")
+                  elif evidence.startswith("parent:"):
+                      assert "implemented_in_parent" in entry["status"]
+                  else:
+                      raise AssertionError(f"unsupported evidence selector: {evidence}")
+
+          # Promotion-critical non-claims must remain explicit until source
+          # implementation replaces them with qualified evidence.
+          by_id = {entry["id"]: entry for entry in invariants}
+          assert by_id["ARR-008"]["status"] == "blocked_on_session_current_key_api"
+          assert by_id["ARR-010"]["status"] == "blocked_on_final_cross_repo_lineage"
+          assert by_id["ARR-011"]["status"] == "blocked_on_transport_owner_integration"
+          assert "send failure" in by_id["ARR-011"]["property"]
+          print(f"validated {len(invariants)} receiver successor invariants")
+
+      - name: Run bounded receiver transaction model
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/receiver-contract"
+          python3 scripts/check_authority_rekey_receiver_model.py \
+            --max-depth 6 \
+            --json-out "$RUNNER_TEMP/receiver-contract/AUTHORITY_REKEY_RECEIVER_MODEL.json"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          report = json.loads(
+              (Path(os.environ["RUNNER_TEMP"]) / "receiver-contract" / "AUTHORITY_REKEY_RECEIVER_MODEL.json").read_text()
+          )
+          assert report["schema"] == "xenia.authority-rekey-receiver-model-report.v1"
+          assert report["max_depth"] == 6
+          assert report["checked_trace_prefixes"] > report["reachable_state_count"]
+          assert len(report["state_graph_sha256"]) == 64
+          properties = "\n".join(report["properties_checked"])
+          assert "Ack send failure before or after possible byte escape" in properties
+          assert "authority remains suspended" in properties
+          PY
+
+      - name: Retain contract provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp docs/security/AUTHORITY_REKEY_RECEIVER_SUCCESSOR_V1.json "$RUNNER_TEMP/receiver-contract/"
+          cp scripts/check_authority_rekey_receiver_model.py "$RUNNER_TEMP/receiver-contract/"
+          cp .github/workflows/authority-rekey-receiver-successor.yml "$RUNNER_TEMP/receiver-contract/"
+          model_report="$RUNNER_TEMP/receiver-contract/AUTHORITY_REKEY_RECEIVER_MODEL.json"
+          model_report_sha256="$(sha256sum "$model_report" | awk '{print $1}')"
+          test -n "$model_report_sha256"
+          {
+            echo "profile=xenia-authority-rekey-receiver-successor-contract-v1"
+            echo "claim_boundary=contract-and-bounded-model-only-not-rust-implementation-qualification"
+            echo "source_head=$(git rev-parse HEAD)"
+            echo "source_tree=$(git rev-parse HEAD^{tree})"
+            echo "runner_label=ubuntu-24.04"
+            echo "runner_os=${RUNNER_OS:-unknown}"
+            echo "runner_arch=${RUNNER_ARCH:-unknown}"
+            echo "image_os=${ImageOS:-unknown}"
+            echo "image_version=${ImageVersion:-unknown}"
+            echo "kernel=$(uname -srmo)"
+            echo "registry_sha256=$(sha256sum docs/security/AUTHORITY_REKEY_RECEIVER_SUCCESSOR_V1.json | awk '{print $1}')"
+            echo "model_source_sha256=$(sha256sum scripts/check_authority_rekey_receiver_model.py | awk '{print $1}')"
+            echo "model_report_sha256=$model_report_sha256"
+            echo "workflow_sha256=$(sha256sum .github/workflows/authority-rekey-receiver-successor.yml | awk '{print $1}')"
+            echo "actions_checkout_commit=11d5960a326750d5838078e36cf38b85af677262"
+            echo "upload_artifact_action_commit=ea165f8d65b6e75b540449e92b4886f43607fa02"
+          } > "$RUNNER_TEMP/receiver-contract/PROVENANCE.txt"
+          grep -Eq '^model_report_sha256=[0-9a-f]{64}$' "$RUNNER_TEMP/receiver-contract/PROVENANCE.txt"
+          cat "$RUNNER_TEMP/receiver-contract/PROVENANCE.txt"
+
+      - name: Assert source remained immutable
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$CONTRACT_SOURCE_SHA"
+          test -z "$(git status --porcelain)"
+
+      - name: Retain receiver contract capsule
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: authority-rekey-receiver-contract-${{ env.CONTRACT_SOURCE_SHA }}
+          path: ${{ runner.temp }}/receiver-contract
+          if-no-files-found: error
+          retention-days: 90
