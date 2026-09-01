@@ -328,10 +328,12 @@ pub struct NegotiatedAuthoritySession {
     selected_context: NegotiatedContextV1,
     profile_binding: AuthorityRekeyProfileBindingV1,
     lineage: AuthorityLineageEpochEvidenceV1,
+    #[cfg_attr(not(feature = "operator-rekey"), allow(dead_code))]
     session_rekey_root: Zeroizing<[u8; 32]>,
     // Exact current AEAD key retained solely for the current-key-only authority
     // rekey precheck. This intentionally duplicates the live Session's key in a
     // second Zeroizing owner; issue #38 tracks reducing raw key-copy exposure.
+    #[cfg_attr(not(feature = "operator-rekey"), allow(dead_code))]
     current_session_aead_key: Zeroizing<[u8; 32]>,
 }
 
@@ -402,9 +404,12 @@ impl NegotiatedAuthoritySession {
     ///
     /// After every fallible step succeeds, the live key is replaced, sequence
     /// zero is reserved for the already-presealed Ack, and the precomputed
-    /// lineage is assigned using only infallible state updates. Authenticated
-    /// envelopes that later fail semantic checks intentionally remain consumed
-    /// by the replay window; authority/key/lineage state does not advance.
+    /// lineage is assigned using only infallible state updates. This is
+    /// recoverable-error atomicity under the current [`Session`] contract; it is
+    /// not a claim of process-crash, panic, or allocator-failure atomicity.
+    /// Authenticated envelopes that later fail semantic checks intentionally
+    /// remain consumed by the replay window; authority/key/lineage state does not
+    /// advance.
     ///
     /// The initiator side is deliberately not represented by this method. Wire
     /// does not own transport delivery, so proposal-send/commit/Ack lifecycle
@@ -423,8 +428,9 @@ impl NegotiatedAuthoritySession {
         // is correct for in-flight application data but too permissive for a new
         // authority transition. This temporary session has no previous keys and
         // never affects live replay state.
-        let mut current_only = Session::with_source_id(*self.session.source_id(), self.session.epoch())
-            .with_rekey_grace(Duration::ZERO);
+        let mut current_only =
+            Session::with_source_id(*self.session.source_id(), self.session.epoch())
+                .with_rekey_grace(Duration::ZERO);
         current_only.install_key(*self.current_session_aead_key);
         current_only
             .open(sealed_proposal)
@@ -492,10 +498,10 @@ impl NegotiatedAuthoritySession {
         )?;
 
         let new_key = Zeroizing::new(derive_operator_rekey_key(
-            &self.session_rekey_root,
+            &*self.session_rekey_root,
             &verified_epoch_hash,
         ));
-        if ct_eq_32(&new_key, &self.current_session_aead_key) {
+        if ct_eq_32(&*new_key, &*self.current_session_aead_key) {
             return Err(AuthorityOperatorRekeyError::DerivedKeyDidNotChange);
         }
 
@@ -516,9 +522,10 @@ impl NegotiatedAuthoritySession {
         debug_assert_eq!(prepared_sender.nonce_counter(), 1);
 
         // Commit boundary: all remaining operations are infallible under the
-        // current Session contract. install_key() creates the new key epoch,
-        // next_nonce() reserves sequence zero for the already-presealed Ack, and
-        // lineage/key-copy assignment cannot return an error.
+        // current Session API's Result surface. install_key() creates the new key
+        // epoch, next_nonce() reserves sequence zero for the already-presealed
+        // Ack, and lineage/key-copy assignment cannot return an error. This does
+        // not claim crash/OOM/panic atomicity.
         self.session.install_key(*new_key);
         let reserved = self.session.next_nonce();
         debug_assert_eq!(reserved, 0);
@@ -617,6 +624,32 @@ mod tests {
             .unwrap()
     }
 
+    #[cfg(feature = "operator-rekey")]
+    fn authority_snapshot(
+        authority: &NegotiatedAuthoritySession,
+        request_id: u64,
+    ) -> (AuthorityLineageEpochEvidenceV1, [u8; 32], u64) {
+        (
+            *authority.lineage(),
+            authority.session().session_fingerprint(request_id).unwrap(),
+            authority.session().nonce_counter(),
+        )
+    }
+
+    #[cfg(feature = "operator-rekey")]
+    fn assert_authority_snapshot(
+        authority: &NegotiatedAuthoritySession,
+        request_id: u64,
+        expected: (AuthorityLineageEpochEvidenceV1, [u8; 32], u64),
+    ) {
+        assert_eq!(*authority.lineage(), expected.0);
+        assert_eq!(
+            authority.session().session_fingerprint(request_id).unwrap(),
+            expected.1
+        );
+        assert_eq!(authority.session().nonce_counter(), expected.2);
+    }
+
     #[test]
     fn authenticated_proof_refuses_prekeyed_session() {
         let mut raw = Session::new();
@@ -697,10 +730,12 @@ mod tests {
         assert_eq!(before_lineage.key_epoch, 0);
         assert_eq!(accepted.transition().key_epoch, 1);
         assert_eq!(accepted.lineage().key_epoch, 1);
+        assert_eq!(accepted.lineage().lineage_id, before_lineage.lineage_id);
+        assert_eq!(accepted.lineage().activation_id, before_lineage.activation_id);
         assert_eq!(authority.lineage(), accepted.lineage());
         assert_eq!(authority.session().nonce_counter(), 1);
 
-        let new_key = derive_operator_rekey_key(REKEY_ROOT.as_ref(), &accepted.transition().epoch_hash);
+        let new_key = derive_operator_rekey_key(&REKEY_ROOT, &accepted.transition().epoch_hash);
         let mut ack_receiver = Session::with_source_id(SOURCE_ID, SESSION_EPOCH);
         ack_receiver.install_key(new_key);
         let ack_plaintext = ack_receiver.open(accepted.sealed_ack()).unwrap();
@@ -712,6 +747,10 @@ mod tests {
             }
         );
 
+        let mut old_key_receiver = Session::with_source_id(SOURCE_ID, SESSION_EPOCH);
+        old_key_receiver.install_key(AEAD);
+        assert!(old_key_receiver.open(accepted.sealed_ack()).is_err());
+
         let after_fp = authority.session().session_fingerprint(7).unwrap();
         assert_ne!(before_fp, after_fp);
         let mut expected = Session::with_source_id(SOURCE_ID, SESSION_EPOCH);
@@ -719,7 +758,9 @@ mod tests {
         assert_eq!(after_fp, expected.session_fingerprint(7).unwrap());
 
         let mut raw = authority.into_raw_session();
-        let next = raw.seal(b"next operator control", PAYLOAD_TYPE_OPERATOR_REKEY).unwrap();
+        let next = raw
+            .seal(b"next operator control", PAYLOAD_TYPE_OPERATOR_REKEY)
+            .unwrap();
         assert_eq!(&next[8..12], &[1, 0, 0, 0]);
     }
 
@@ -727,8 +768,7 @@ mod tests {
     #[test]
     fn authenticated_semantic_rejection_consumes_replay_but_not_authority_state() {
         let mut authority = authority();
-        let before_lineage = *authority.lineage();
-        let before_fp = authority.session().session_fingerprint(9).unwrap();
+        let before = authority_snapshot(&authority, 9);
         let ack = OperatorRekeyMessage::Ack {
             key_epoch: 1,
             epoch_hash: [0x77; 32],
@@ -739,8 +779,7 @@ mod tests {
             authority.accept_operator_rekey_proposal(&sealed),
             Err(AuthorityOperatorRekeyError::UnexpectedAck)
         ));
-        assert_eq!(*authority.lineage(), before_lineage);
-        assert_eq!(authority.session().session_fingerprint(9).unwrap(), before_fp);
+        assert_authority_snapshot(&authority, 9, before);
         assert!(matches!(
             authority.accept_operator_rekey_proposal(&sealed),
             Err(AuthorityOperatorRekeyError::Wire(WireError::OpenFailed))
@@ -749,9 +788,102 @@ mod tests {
 
     #[cfg(feature = "operator-rekey")]
     #[test]
+    fn semantic_rejection_matrix_preserves_key_lineage_and_outbound_nonce_state() {
+        let cases = [
+            (
+                crate::operator_rekey::propose(
+                    2,
+                    [0x11; 32],
+                    [0x11; 32],
+                    OperatorRekeyReason::Manual,
+                )
+                .unwrap(),
+                0u8,
+            ),
+            (
+                crate::operator_rekey::propose(
+                    1,
+                    [0x99; 32],
+                    [0x11; 32],
+                    OperatorRekeyReason::Manual,
+                )
+                .unwrap(),
+                1u8,
+            ),
+            (
+                crate::operator_rekey::propose(
+                    1,
+                    [0x11; 32],
+                    [0x99; 32],
+                    OperatorRekeyReason::Manual,
+                )
+                .unwrap(),
+                2u8,
+            ),
+        ];
+
+        for (message, expected_error) in cases {
+            let mut authority = authority();
+            let before = authority_snapshot(&authority, 13);
+            let sealed = seal_operator_message(AEAD, &message);
+            let result = authority.accept_operator_rekey_proposal(&sealed);
+            match expected_error {
+                0 => assert!(matches!(
+                    result,
+                    Err(AuthorityOperatorRekeyError::NonContiguousEpoch)
+                )),
+                1 => assert!(matches!(
+                    result,
+                    Err(AuthorityOperatorRekeyError::BaseTranscriptMismatch)
+                )),
+                2 => assert!(matches!(
+                    result,
+                    Err(AuthorityOperatorRekeyError::PreviousEpochHashMismatch)
+                )),
+                _ => unreachable!(),
+            }
+            assert_authority_snapshot(&authority, 13, before);
+        }
+
+        let mut authority = authority();
+        let before = authority_snapshot(&authority, 14);
+        let valid = crate::operator_rekey::propose(
+            1,
+            [0x11; 32],
+            [0x11; 32],
+            OperatorRekeyReason::Manual,
+        )
+        .unwrap();
+        let OperatorRekeyMessage::Proposal {
+            key_epoch,
+            base_transcript_hash,
+            previous_epoch_hash,
+            reason,
+            ..
+        } = valid
+        else {
+            unreachable!()
+        };
+        let tampered_hash = OperatorRekeyMessage::Proposal {
+            key_epoch,
+            base_transcript_hash,
+            previous_epoch_hash,
+            reason,
+            epoch_hash: [0xff; 32],
+        };
+        let sealed = seal_operator_message(AEAD, &tampered_hash);
+        assert!(matches!(
+            authority.accept_operator_rekey_proposal(&sealed),
+            Err(AuthorityOperatorRekeyError::Wire(_))
+        ));
+        assert_authority_snapshot(&authority, 14, before);
+    }
+
+    #[cfg(feature = "operator-rekey")]
+    #[test]
     fn wrong_route_fails_before_live_replay_or_authority_mutation() {
         let mut authority = authority();
-        let before = *authority.lineage();
+        let before = authority_snapshot(&authority, 15);
         let proposal = crate::operator_rekey::propose(
             1,
             [0x11; 32],
@@ -772,7 +904,7 @@ mod tests {
             authority.accept_operator_rekey_proposal(&sealed),
             Err(AuthorityOperatorRekeyError::WrongPayloadType)
         ));
-        assert_eq!(*authority.lineage(), before);
+        assert_authority_snapshot(&authority, 15, before);
     }
 
     #[cfg(feature = "operator-rekey")]
@@ -791,7 +923,7 @@ mod tests {
             .accept_operator_rekey_proposal(&first_sealed)
             .unwrap();
         let epoch1_hash = first_accepted.transition().epoch_hash;
-        let epoch1_key = derive_operator_rekey_key(REKEY_ROOT.as_ref(), &epoch1_hash);
+        let epoch1_key = derive_operator_rekey_key(&REKEY_ROOT, &epoch1_hash);
 
         let second = crate::operator_rekey::propose(
             2,
@@ -801,12 +933,12 @@ mod tests {
         )
         .unwrap();
         let sealed_under_previous = seal_operator_message(AEAD, &second);
-        let before_lineage = *authority.lineage();
+        let before = authority_snapshot(&authority, 16);
         assert!(matches!(
             authority.accept_operator_rekey_proposal(&sealed_under_previous),
             Err(AuthorityOperatorRekeyError::CurrentKeyAuthenticationFailed)
         ));
-        assert_eq!(*authority.lineage(), before_lineage);
+        assert_authority_snapshot(&authority, 16, before);
 
         // The failed current-key-only precheck must happen before the live replay
         // window. Once authority is explicitly torn down, the same old-key
@@ -815,8 +947,8 @@ mod tests {
         let opened = raw.open(&sealed_under_previous).unwrap();
         assert_eq!(OperatorRekeyMessage::decode(&opened).unwrap(), second);
 
-        // Sanity: the same proposal under the exact current epoch-1 key is valid
-        // cryptographically. A separate authority instance covers semantic commit.
+        // The same proposal under the exact current epoch-1 key is valid and can
+        // advance a separately reconstructed authority instance to epoch 2.
         let mut authority = authority();
         let first_sealed = seal_operator_message(AEAD, &first);
         authority
