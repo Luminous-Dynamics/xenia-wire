@@ -1,0 +1,99 @@
+{
+  "schema": "xenia.authority-rekey-receiver-successor.v1",
+  "scope": "successor contract for authority operator-rekey receive after PR #41",
+  "claim_boundary": "This file freezes required successor semantics and executable model evidence. It does not claim that the blocked Session/#40 integration is implemented on this branch.",
+  "parent": {
+    "pull_request": 41,
+    "frozen_parent_head": "de149ce32e883a08c3269f957a2528ae604dd9d1"
+  },
+  "required_lineage": {
+    "same_key_install_fix": 37,
+    "directional_nonce_contract": 34,
+    "strict_expected_nonce_domain_receive": 40,
+    "current_key_only_session_receive_issue": 38
+  },
+  "initiator_counterpart": {
+    "repository": "Luminous-Dynamics/xenia-peer",
+    "pull_request": 188,
+    "role": "transport-aware daemon/host rekey initiator"
+  },
+  "model": {
+    "id": "ARR-MODEL-001",
+    "source": "scripts/check_authority_rekey_receiver_model.py",
+    "report_schema": "xenia.authority-rekey-receiver-model-report.v1",
+    "bounded_max_depth": 6
+  },
+  "invariants": [
+    {
+      "id": "ARR-001",
+      "property": "Expected peer Proposal nonce domain is bound immutably at authority activation and cannot be supplied or substituted per rekey call.",
+      "status": "modelled_successor_requirement",
+      "evidence": ["model:ARR-MODEL-001"]
+    },
+    {
+      "id": "ARR-002",
+      "property": "Wrong sender/source/payload/epoch domain is rejected before current-key decrypt and before live replay mutation.",
+      "status": "blocked_on_pr40_composition",
+      "evidence": ["model:ARR-MODEL-001", "future:strict-domain-authority-regression"]
+    },
+    {
+      "id": "ARR-003",
+      "property": "An envelope authenticating only under a previous/grace key is rejected before live replay mutation.",
+      "status": "blocked_on_session_current_key_api",
+      "evidence": ["model:ARR-MODEL-001", "future:session-current-key-only-regression"]
+    },
+    {
+      "id": "ARR-004",
+      "property": "Exact-current-key authentication uses the live Session replay window exactly once; authenticated semantic rejection remains replay-consumed.",
+      "status": "blocked_on_session_current_key_api",
+      "evidence": ["model:ARR-MODEL-001", "future:single-live-open-regression"]
+    },
+    {
+      "id": "ARR-005",
+      "property": "Semantic-invalid current-key Proposal preserves active key, authority lineage, and outbound nonce state while retaining replay consumption.",
+      "status": "implemented_in_parent_except_single_open_ownership",
+      "evidence": ["model:ARR-MODEL-001", "parent:#41-adversarial-matrix"]
+    },
+    {
+      "id": "ARR-006",
+      "property": "Ack encoding/preseal is the final fallible stage; any preseal failure preserves key, lineage, and outbound nonce state.",
+      "status": "implemented_in_parent",
+      "evidence": ["model:ARR-MODEL-001", "parent:#41-adversarial-matrix"]
+    },
+    {
+      "id": "ARR-007",
+      "property": "After all fallible checks succeed, one commit advances active key and authority lineage together, reserves Ack as new-key sequence zero, and leaves live outbound sequence at one.",
+      "status": "implemented_in_parent",
+      "evidence": ["model:ARR-MODEL-001", "parent:#41-sequence-regression"]
+    },
+    {
+      "id": "ARR-008",
+      "property": "The live Session is the sole long-lived owner of the active AEAD key; no duplicate current-key verifier copy or temporary decrypt Session is retained.",
+      "status": "blocked_on_session_current_key_api",
+      "evidence": ["future:remove-current-session-aead-key-copy", "future:one-live-decrypt"]
+    },
+    {
+      "id": "ARR-009",
+      "property": "Local sender nonce domain used to seal Ack remains distinct from the immutable expected peer Proposal nonce domain.",
+      "status": "blocked_on_pr40_composition",
+      "evidence": ["model:ARR-MODEL-001", "future:directional-authority-domain-regression"]
+    },
+    {
+      "id": "ARR-010",
+      "property": "Final production interoperability is exercised against xenia-peer #188 with exact host Proposal and console Ack domains on the final qualified Wire lineage.",
+      "status": "blocked_on_final_cross_repo_lineage",
+      "evidence": ["future:xenia-peer-188-wire-successor-interoperability"]
+    }
+  ],
+  "promotion_order": [
+    "qualify/promote #37",
+    "qualify/promote #34",
+    "qualify/promote #40",
+    "implement #38 current-key-only live receive without duplicate active-key ownership",
+    "rebase/reconstruct #41 semantics on final nonce-safe lineage",
+    "bind immutable expected peer Proposal NonceDomain at activation",
+    "run single-live-open authority regressions",
+    "run exact xenia-peer #188 cross-repository interoperability",
+    "retain exact-head evidence before promotion"
+  ]
+}
