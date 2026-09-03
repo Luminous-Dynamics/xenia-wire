@@ -1,0 +1,86 @@
+name: Apply causal authority clippy repair
+
+on:
+  push:
+    branches:
+      - causal-authority-ci-repair-v1
+
+permissions:
+  contents: write
+
+concurrency:
+  group: xenia-wire-causal-authority-clippy-repair
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: causal-authority-ci-repair-v1
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: dtolnay/rust-toolchain@1.94
+        with:
+          components: clippy, rustfmt
+
+      - name: Assert exact repair lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent=2dc39ad7c2ec00755212cac616cdab5e6835a525
+          git merge-base --is-ancestor "$parent" HEAD
+          test -z "$(git status --porcelain)"
+
+      - name: Apply bounded source transformation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/patches/repair_causal_authority_clippy_v1.py
+          rustfmt --edition 2024 src/authority.rs
+          git diff --check
+
+      - name: Verify exact source diff and replacements
+        shell: bash
+        run: |
+          set -euo pipefail
+          paths="$(git diff --name-only)"
+          test "$paths" = "src/authority.rs" || { echo "unexpected changed paths:"; printf '%s\n' "$paths"; exit 1; }
+          grep -q 'reason.len() > MAX_AUTHORITY_RESPONSE_REASON_BYTES' src/authority.rs
+          grep -q 'self.core.reason.len() > MAX_AUTHORITY_RESPONSE_REASON_BYTES' src/authority.rs
+          grep -q 'request.core.reason.len() > MAX_AUTHORITY_REQUEST_REASON_BYTES' src/authority.rs
+          ! grep -q 'reason.as_bytes().len() > MAX_AUTHORITY_RESPONSE_REASON_BYTES' src/authority.rs
+          ! grep -q 'self.core.reason.as_bytes().len() > MAX_AUTHORITY_RESPONSE_REASON_BYTES' src/authority.rs
+          ! grep -q 'request.core.reason.as_bytes().len() > MAX_AUTHORITY_REQUEST_REASON_BYTES' src/authority.rs
+          cargo fmt --check
+
+      - name: Clippy causal-authority boundary
+        run: cargo clippy --no-default-features --features causal-authority --all-targets -- -D warnings
+
+      - name: Clippy authority handshake boundary
+        run: cargo clippy --no-default-features --features causal-authority,handshake --all-targets -- -D warnings
+
+      - name: Clippy all-features integration surface
+        run: cargo clippy --all-features --all-targets -- -D warnings
+
+      - name: Focused causal-authority vector regression
+        run: cargo test --no-default-features --features causal-authority --test causal_authority_vectors
+
+      - name: Focused authority handshake library regressions
+        run: cargo test --no-default-features --features causal-authority,handshake --lib
+
+      - name: Commit repaired source only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add src/authority.rs
+          git diff --cached --check
+          paths="$(git diff --cached --name-only)"
+          test "$paths" = "src/authority.rs" || { echo "unexpected staged paths:"; printf '%s\n' "$paths"; exit 1; }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'style(authority): satisfy strict clippy gates'
+          git push origin HEAD:causal-authority-ci-repair-v1
