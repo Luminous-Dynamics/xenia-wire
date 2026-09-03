@@ -25,7 +25,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # Formatting is source provenance, not a forward-compatibility probe.
+      # Keep it aligned with the crate MSRV and focused authority workflow so
+      # a future stable rustfmt release cannot make unchanged source fail CI.
+      - uses: dtolnay/rust-toolchain@1.94
         with:
           components: rustfmt
       - run: cargo fmt --check

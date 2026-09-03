@@ -2,9 +2,9 @@
 
 use ed25519_dalek::SigningKey;
 use xenia_wire::authority::{
-    CausalAuthorityResponse, EXTERNAL_ACTION_AUTHORITY_PROFILE, ExternalActionAuthorityV1,
-    ExternalAuthorityError, MAX_AUTHORITY_IDENTIFIER_BYTES, MAX_CAUSAL_AUTHORITY_OPAQUE_BYTES,
-    AuthorityUsePolicy, verify_approved_external_action_authority,
+    AuthorityUsePolicy, CausalAuthorityResponse, EXTERNAL_ACTION_AUTHORITY_PROFILE,
+    ExternalActionAuthorityV1, ExternalAuthorityError, MAX_AUTHORITY_IDENTIFIER_BYTES,
+    MAX_CAUSAL_AUTHORITY_OPAQUE_BYTES, verify_approved_external_action_authority,
 };
 use xenia_wire::consent::{CausalPredicate, ConsentRequest, ConsentRequestCore, ConsentScope};
 
@@ -56,14 +56,8 @@ fn request() -> ConsentRequest {
 }
 
 fn response(request: &ConsentRequest) -> CausalAuthorityResponse {
-    CausalAuthorityResponse::sign_for_request(
-        request,
-        true,
-        10_000,
-        "approved",
-        &responder(),
-    )
-    .unwrap()
+    CausalAuthorityResponse::sign_for_request(request, true, 10_000, "approved", &responder())
+        .unwrap()
 }
 
 fn verify(
@@ -179,7 +173,10 @@ fn exact_identifier_boundary_is_accepted() {
         &responder().verifying_key().to_bytes(),
     )
     .unwrap();
-    assert_eq!(verified.authority.target.len(), MAX_AUTHORITY_IDENTIFIER_BYTES);
+    assert_eq!(
+        verified.authority.target.len(),
+        MAX_AUTHORITY_IDENTIFIER_BYTES
+    );
 }
 
 #[test]

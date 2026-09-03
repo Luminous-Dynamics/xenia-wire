@@ -15,6 +15,7 @@
 //!    its private authenticated schedule itself before local authority policy may
 //!    narrow the session into [`NegotiatedAuthoritySession`].
 
+#[allow(dead_code)] // byte-preserved staging implementation hidden by the public facade
 #[path = "authority_session_impl.rs"]
 mod private_impl;
 
@@ -26,8 +27,6 @@ pub use private_impl::{
 #[cfg(feature = "handshake")]
 pub use private_impl::NegotiatedAuthoritySessionError;
 
-#[cfg(feature = "handshake")]
-use zeroize::Zeroizing;
 #[cfg(feature = "handshake")]
 use crate::Session;
 #[cfg(feature = "handshake")]
@@ -48,6 +47,8 @@ use crate::handshake::SessionKeySchedule;
 use crate::negotiated_context::{CapabilityOfferV1, NegotiatedContextV1};
 #[cfg(feature = "handshake")]
 use crate::negotiation_policy::NegotiationPolicyV1;
+#[cfg(feature = "handshake")]
+use zeroize::Zeroizing;
 
 /// Failure while moving authenticated negotiation through the public session
 /// installation/type-state boundary.
@@ -82,6 +83,7 @@ pub struct AuthenticatedNegotiatedHandshake {
 impl AuthenticatedNegotiatedHandshake {
     /// Construct the public type-state proof from facts already authenticated by
     /// the real V2 cryptographic state machine.
+    #[allow(dead_code)] // integration point for the future live V2 state machine
     pub(crate) fn from_verified_v2_parts(
         host_offer: CapabilityOfferV1,
         viewer_offer: CapabilityOfferV1,
@@ -261,6 +263,7 @@ impl NegotiatedAuthoritySession {
 
     /// Crate-internal staging hook for the future integrated operator-rekey
     /// verifier. External code cannot package an arbitrary key/evidence pair.
+    #[allow(dead_code)] // replaced by an integrated operator-rekey operation in the next tranche
     pub(crate) fn apply_verified_rekey(
         &mut self,
         verified: private_impl::VerifiedAuthorityRekey,
@@ -279,9 +282,7 @@ mod tests {
     use super::*;
     use crate::authority_negotiation::causal_authority_draft04_capability;
     use crate::handshake_v2_contract::compose_v5_context;
-    use crate::negotiated_context::{
-        CapabilityOfferEntryV1, negotiate_capabilities,
-    };
+    use crate::negotiated_context::{CapabilityOfferEntryV1, negotiate_capabilities};
 
     const AEAD: [u8; 32] = [0x55; 32];
 
@@ -338,10 +339,8 @@ mod tests {
     fn schedule_is_installed_before_local_authority_narrowing() {
         let installed = proof().install_into(Session::new()).unwrap();
         assert!(installed.session.has_key());
-        let policy = NegotiationPolicyV1::minimum_required([
-            causal_authority_draft04_capability(),
-        ])
-        .unwrap();
+        let policy =
+            NegotiationPolicyV1::minimum_required([causal_authority_draft04_capability()]).unwrap();
         let authority = installed.narrow_to_causal_authority(&policy).unwrap();
         assert_eq!(
             authority.rekey_profile_binding().profile,

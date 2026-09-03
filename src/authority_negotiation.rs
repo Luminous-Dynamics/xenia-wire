@@ -337,10 +337,11 @@ mod tests {
 
     #[test]
     fn exact_draft04_capability_is_required() {
-        let context = NegotiatedContextV1::from_capabilities([
-            NegotiatedCapabilityV1::new(b"xenia.causal-authority".to_vec(), b"draft-03".to_vec())
-                .unwrap(),
-        ])
+        let context = NegotiatedContextV1::from_capabilities([NegotiatedCapabilityV1::new(
+            b"xenia.causal-authority".to_vec(),
+            b"draft-03".to_vec(),
+        )
+        .unwrap()])
         .unwrap();
 
         assert_eq!(
@@ -356,8 +357,8 @@ mod tests {
             &[b"draft-04", b"draft-03"],
         )])
         .unwrap();
-        let viewer = CapabilityOfferV1::from_entries([causal_authority_draft04_offer_entry()])
-            .unwrap();
+        let viewer =
+            CapabilityOfferV1::from_entries([causal_authority_draft04_offer_entry()]).unwrap();
         let evidence = negotiate_capabilities(&host, &viewer).unwrap();
         assert!(require_causal_authority_draft04_evidence(&evidence).is_ok());
 
@@ -379,8 +380,7 @@ mod tests {
             causal_authority_context([causal_authority_draft04_capability()]).unwrap();
         let authority_plus_rekey = causal_authority_context([
             causal_authority_draft04_capability(),
-            NegotiatedCapabilityV1::new(b"xenia.operator-rekey".to_vec(), b"v1".to_vec())
-                .unwrap(),
+            NegotiatedCapabilityV1::new(b"xenia.operator-rekey".to_vec(), b"v1".to_vec()).unwrap(),
         ])
         .unwrap();
 

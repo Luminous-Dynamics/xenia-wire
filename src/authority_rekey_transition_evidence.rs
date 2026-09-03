@@ -397,10 +397,8 @@ mod tests {
             entry(b"xenia.operator-rekey", &[b"v1"]),
         ])
         .unwrap();
-        let policy = NegotiationPolicyV1::minimum_required([
-            causal_authority_draft04_capability(),
-        ])
-        .unwrap();
+        let policy =
+            NegotiationPolicyV1::minimum_required([causal_authority_draft04_capability()]).unwrap();
         derive_authority_activation_receipt(
             &host,
             &viewer,
@@ -444,8 +442,8 @@ mod tests {
             RekeyTransitionReasonV1::OperatorInterval,
         )
         .unwrap();
-        let next = advance_lineage_after_verified_transition(&initial, &activation, &transition)
-            .unwrap();
+        let next =
+            advance_lineage_after_verified_transition(&initial, &activation, &transition).unwrap();
         assert_eq!(next.key_epoch, 1);
         assert_eq!(next.current_epoch_hash, transition.epoch_hash);
         assert_eq!(next.lineage_id, initial.lineage_id);

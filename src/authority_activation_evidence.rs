@@ -69,7 +69,8 @@ pub struct AuthorityActivationReceiptV1 {
 impl AuthorityActivationReceiptV1 {
     /// Canonical fixed-width receipt bytes for hashing/export.
     pub fn canonical_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(AUTHORITY_ACTIVATION_RECEIPT_V1_DOMAIN.len() + 1 + 32 * 11);
+        let mut out =
+            Vec::with_capacity(AUTHORITY_ACTIVATION_RECEIPT_V1_DOMAIN.len() + 1 + 32 * 11);
         out.extend_from_slice(AUTHORITY_ACTIVATION_RECEIPT_V1_DOMAIN);
         out.push(self.schema_version);
         out.extend_from_slice(&self.handshake_transcript_hash);
@@ -247,10 +248,7 @@ mod tests {
 
     fn representative_offers() -> (CapabilityOfferV1, CapabilityOfferV1) {
         let host = CapabilityOfferV1::from_entries([
-            entry(
-                b"xenia.causal-authority",
-                &[b"draft-04", b"draft-03"],
-            ),
+            entry(b"xenia.causal-authority", &[b"draft-04", b"draft-03"]),
             entry(b"xenia.operator-rekey", &[b"v1"]),
         ])
         .unwrap();
@@ -265,10 +263,8 @@ mod tests {
     #[test]
     fn freezes_policy_bound_activation_receipt_vector() {
         let (host, viewer) = representative_offers();
-        let policy = NegotiationPolicyV1::minimum_required([
-            causal_authority_draft04_capability(),
-        ])
-        .unwrap();
+        let policy =
+            NegotiationPolicyV1::minimum_required([causal_authority_draft04_capability()]).unwrap();
         let receipt = derive_authority_activation_receipt(
             &host,
             &viewer,
@@ -310,31 +306,18 @@ mod tests {
             [authority.clone()],
             [
                 authority,
-                NegotiatedCapabilityV1::new(
-                    b"xenia.operator-rekey".to_vec(),
-                    b"v1".to_vec(),
-                )
-                .unwrap(),
+                NegotiatedCapabilityV1::new(b"xenia.operator-rekey".to_vec(), b"v1".to_vec())
+                    .unwrap(),
             ],
         )
         .unwrap();
 
         let a = derive_authority_activation_receipt(
-            &host,
-            &viewer,
-            [0x33; 32],
-            [0x44; 32],
-            [0x55; 32],
-            &minimum,
+            &host, &viewer, [0x33; 32], [0x44; 32], [0x55; 32], &minimum,
         )
         .unwrap();
         let b = derive_authority_activation_receipt(
-            &host,
-            &viewer,
-            [0x33; 32],
-            [0x44; 32],
-            [0x55; 32],
-            &strict,
+            &host, &viewer, [0x33; 32], [0x44; 32], [0x55; 32], &strict,
         )
         .unwrap();
 
@@ -351,32 +334,26 @@ mod tests {
             &[b"draft-04", b"draft-03"],
         )])
         .unwrap();
-        let downgraded_viewer = CapabilityOfferV1::from_entries([entry(
-            b"xenia.causal-authority",
-            &[b"draft-03"],
-        )])
-        .unwrap();
-        let policy = NegotiationPolicyV1::minimum_required([
-            causal_authority_draft04_capability(),
-        ])
-        .unwrap();
-        assert!(derive_authority_activation_receipt(
-            &host,
-            &downgraded_viewer,
-            [1; 32],
-            [2; 32],
-            [3; 32],
-            &policy,
-        )
-        .is_err());
+        let downgraded_viewer =
+            CapabilityOfferV1::from_entries([entry(b"xenia.causal-authority", &[b"draft-03"])])
+                .unwrap();
+        let policy =
+            NegotiationPolicyV1::minimum_required([causal_authority_draft04_capability()]).unwrap();
+        assert!(
+            derive_authority_activation_receipt(
+                &host,
+                &downgraded_viewer,
+                [1; 32],
+                [2; 32],
+                [3; 32],
+                &policy,
+            )
+            .is_err()
+        );
 
         let (host, viewer) = representative_offers();
         let authority = causal_authority_draft04_capability();
-        let strict = NegotiationPolicyV1::allow_list(
-            [authority.clone()],
-            [authority],
-        )
-        .unwrap();
+        let strict = NegotiationPolicyV1::allow_list([authority.clone()], [authority]).unwrap();
         assert!(derive_authority_activation_receipt(
             &host,
             &viewer,
@@ -391,19 +368,11 @@ mod tests {
     #[test]
     fn exported_receipt_mutation_is_detected() {
         let (host, viewer) = representative_offers();
-        let policy = NegotiationPolicyV1::minimum_required([
-            causal_authority_draft04_capability(),
-        ])
-        .unwrap();
-        let mut receipt = derive_authority_activation_receipt(
-            &host,
-            &viewer,
-            [1; 32],
-            [2; 32],
-            [3; 32],
-            &policy,
-        )
-        .unwrap();
+        let policy =
+            NegotiationPolicyV1::minimum_required([causal_authority_draft04_capability()]).unwrap();
+        let mut receipt =
+            derive_authority_activation_receipt(&host, &viewer, [1; 32], [2; 32], [3; 32], &policy)
+                .unwrap();
         receipt.activation_id[0] ^= 0x80;
         assert!(matches!(
             receipt.verify_internal_consistency(&host, &viewer, &policy),

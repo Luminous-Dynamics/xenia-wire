@@ -228,9 +228,7 @@ pub fn decode_viewer_response_v2(bytes: &[u8]) -> Result<ViewerResponseV2Contrac
 }
 
 /// Encode a canonical HostFinalizeV2 probe using frozen discriminant 5.
-pub fn encode_host_finalize_v2(
-    message: &HostFinalizeV2Contract,
-) -> Result<Vec<u8>, V2WireError> {
+pub fn encode_host_finalize_v2(message: &HostFinalizeV2Contract) -> Result<Vec<u8>, V2WireError> {
     validate_hash(&message.final_v5_context_hash)?;
     let bytes = bincode::serialize(&V2WireProbe::HostFinalizeV2 {
         final_v5_context_hash: message.final_v5_context_hash,
@@ -400,10 +398,7 @@ mod tests {
     #[test]
     fn independently_reproduces_native_and_node_v2_vectors() {
         let host_offer_semantic = CapabilityOfferV1::from_entries([
-            entry(
-                b"xenia.causal-authority",
-                &[b"draft-04", b"draft-03"],
-            ),
+            entry(b"xenia.causal-authority", &[b"draft-04", b"draft-03"]),
             entry(b"xenia.operator-rekey", &[b"v1"]),
         ])
         .unwrap();
@@ -493,11 +488,9 @@ mod tests {
 
     #[test]
     fn malformed_or_wrong_phase_bytes_fail_closed() {
-        let offer = CapabilityOfferV1::from_entries([entry(
-            b"xenia.causal-authority",
-            &[b"draft-04"],
-        )])
-        .unwrap();
+        let offer =
+            CapabilityOfferV1::from_entries([entry(b"xenia.causal-authority", &[b"draft-04"])])
+                .unwrap();
         let mut hello = HostHelloV2Contract {
             ed25519_pk: [1; 32],
             ml_dsa_pk: [2; ML_DSA_65_PK_LEN],

@@ -4,8 +4,8 @@ use ed25519_dalek::SigningKey;
 use serde_json::Value;
 use xenia_wire::Sealable;
 use xenia_wire::authority::{
-    AuthorityUsePolicy, CausalAuthorityResponse, ExternalActionAuthorityV1,
-    authority_instance_id, authority_request_digest, verify_approved_external_action_authority,
+    AuthorityUsePolicy, CausalAuthorityResponse, ExternalActionAuthorityV1, authority_instance_id,
+    authority_request_digest, verify_approved_external_action_authority,
 };
 use xenia_wire::consent::{ConsentRequest, ConsentRequestCore, ConsentScope};
 

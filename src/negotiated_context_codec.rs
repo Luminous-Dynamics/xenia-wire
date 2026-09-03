@@ -11,10 +11,10 @@
 #![cfg(feature = "handshake")]
 
 use crate::negotiated_context::{
-    CAPABILITY_OFFER_V1_DOMAIN, MAX_CAPABILITY_NAME_BYTES, MAX_CAPABILITY_VERSION_BYTES,
-    MAX_CAPABILITY_VERSIONS_PER_NAME, MAX_NEGOTIATED_CAPABILITIES, NEGOTIATED_CONTEXT_V1_DOMAIN,
-    CapabilityOfferEntryV1, CapabilityOfferV1, NegotiatedCapabilityV1, NegotiatedContextError,
-    NegotiatedContextV1,
+    CAPABILITY_OFFER_V1_DOMAIN, CapabilityOfferEntryV1, CapabilityOfferV1,
+    MAX_CAPABILITY_NAME_BYTES, MAX_CAPABILITY_VERSION_BYTES, MAX_CAPABILITY_VERSIONS_PER_NAME,
+    MAX_NEGOTIATED_CAPABILITIES, NEGOTIATED_CONTEXT_V1_DOMAIN, NegotiatedCapabilityV1,
+    NegotiatedContextError, NegotiatedContextV1,
 };
 
 /// Failure while decoding or validating canonical negotiation bytes.
@@ -288,7 +288,10 @@ mod tests {
         ])
         .unwrap();
         let selected_bytes = encode_negotiated_context(&selected);
-        assert_eq!(decode_negotiated_context(&selected_bytes).unwrap(), selected);
+        assert_eq!(
+            decode_negotiated_context(&selected_bytes).unwrap(),
+            selected
+        );
     }
 
     #[test]
@@ -325,10 +328,8 @@ mod tests {
             ))
         ));
 
-        let duplicate_version = raw_offer(&[(
-            b"xenia.causal-authority",
-            &[b"draft-04", b"draft-04"],
-        )]);
+        let duplicate_version =
+            raw_offer(&[(b"xenia.causal-authority", &[b"draft-04", b"draft-04"])]);
         assert!(matches!(
             decode_capability_offer(&duplicate_version),
             Err(NegotiationCodecError::Semantic(
@@ -381,9 +382,8 @@ mod tests {
         let mut too_many_versions = CAPABILITY_OFFER_V1_DOMAIN.to_vec();
         too_many_versions.extend_from_slice(&1u32.to_be_bytes());
         push_len_prefixed(&mut too_many_versions, b"xenia.test");
-        too_many_versions.extend_from_slice(
-            &((MAX_CAPABILITY_VERSIONS_PER_NAME as u16) + 1).to_be_bytes(),
-        );
+        too_many_versions
+            .extend_from_slice(&((MAX_CAPABILITY_VERSIONS_PER_NAME as u16) + 1).to_be_bytes());
         assert!(matches!(
             decode_capability_offer(&too_many_versions),
             Err(NegotiationCodecError::Semantic(
