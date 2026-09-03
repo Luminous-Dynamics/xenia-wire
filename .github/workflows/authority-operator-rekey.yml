@@ -5,6 +5,7 @@ on:
     paths:
       - "Cargo.toml"
       - "src/authority_session.rs"
+      - "src/authority_rekey_pending.rs"
       - "src/authority_session_impl.rs"
       - "src/authority_activation_evidence.rs"
       - "src/authority_lineage_epoch_evidence.rs"
@@ -85,6 +86,9 @@ jobs:
 
       - name: Test receiver transaction and authority stack
         run: cargo test --locked --no-default-features --features causal-authority,handshake,operator-rekey --lib
+
+      - name: Test compiler-enforced authority typestate docs
+        run: cargo test --locked --no-default-features --features causal-authority,handshake,operator-rekey --doc
 
       - name: Cross-check operator transition evidence
         run: cargo test --locked --no-default-features --features causal-authority,handshake,operator-rekey --test authority_rekey_transition_crosscheck
