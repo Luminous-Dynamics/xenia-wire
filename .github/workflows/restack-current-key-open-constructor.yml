@@ -1,0 +1,270 @@
+name: Restack Current-Key Receive Constructor
+
+on:
+  push:
+    branches:
+      - session-current-key-restack-constructor-v1
+
+permissions: {}
+
+concurrency:
+  group: restack-current-key-open-constructor-v2
+  cancel-in-progress: true
+
+env:
+  CONSTRUCTOR_SOURCE_SHA: ${{ github.sha }}
+  TARGET_PARENT_SHA: ad47509f265cbf1ff2dca677de52b39db6e67a49
+  HISTORICAL_HEAD_SHA: d13f203caeb46497490527c39bfec567f7902e60
+  HISTORICAL_PARENT_SHA: 0ad16f308638a378b851ffc461219af62e1135f0
+  CANDIDATE_BRANCH: session-current-key-open-v1-restacked-candidate
+
+jobs:
+  construct:
+    name: Read-only construct and qualify exact #44 delta
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CONSTRUCTOR_SOURCE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@1.94
+        with:
+          components: clippy, rustfmt
+
+      - name: Construct and qualify candidate without write credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test "$(git rev-parse HEAD)" = "$CONSTRUCTOR_SOURCE_SHA"
+          test -z "$(git status --porcelain)"
+
+          OUT="$RUNNER_TEMP/restack-current-key-open-evidence"
+          WORK="$RUNNER_TEMP/restack-current-key-open"
+          rm -rf "$WORK" "$OUT"
+          mkdir -p "$OUT"
+
+          CONSTRUCTOR_TREE="$(git rev-parse HEAD^{tree})"
+          CONSTRUCTOR_WORKFLOW_SHA256="$({ git show "$CONSTRUCTOR_SOURCE_SHA:.github/workflows/restack-current-key-open-constructor.yml"; } | sha256sum | awk '{print $1}')"
+
+          git fetch --no-tags origin "$TARGET_PARENT_SHA" "$HISTORICAL_HEAD_SHA"
+          test "$(git rev-parse "$HISTORICAL_HEAD_SHA^")" = "$HISTORICAL_PARENT_SHA"
+
+          git worktree add --detach "$WORK" "$TARGET_PARENT_SHA"
+          cd "$WORK"
+
+          git config user.name "xenia-security-constructor"
+          git config user.email "noreply@luminousdynamics.org"
+
+          test "$(git rev-parse HEAD)" = "$TARGET_PARENT_SHA"
+          test -z "$(git status --porcelain)"
+
+          # Apply only the historical #44 commit delta. If Git cannot perform
+          # the three-way application cleanly, set -e stops here: this workflow
+          # never invents or auto-resolves a security conflict.
+          git cherry-pick --no-commit "$HISTORICAL_HEAD_SHA"
+          test -z "$(git diff --name-only --diff-filter=U)"
+
+          mapfile -t ACTUAL_FILES < <(git diff --cached --name-only | LC_ALL=C sort)
+          EXPECTED_FILES=(
+            ".github/workflows/nonce-safety.yml"
+            "src/lib.rs"
+            "src/session.rs"
+            "src/strict_receive.rs"
+            "tests/current_key_open.rs"
+          )
+          mapfile -t EXPECTED_FILES < <(printf '%s\n' "${EXPECTED_FILES[@]}" | LC_ALL=C sort)
+          diff -u \
+            <(printf '%s\n' "${EXPECTED_FILES[@]}") \
+            <(printf '%s\n' "${ACTUAL_FILES[@]}")
+
+          # Preserve the final #37 hosted repair. A whole-blob transplant from
+          # the historical #44 head would regress this guard to the superseded
+          # nested form; a true cherry-pick must retain the clean let-chain.
+          grep -Fq 'if let Some(current_key) = self.session_key.as_ref()' src/session.rs
+          grep -Fq '&& ct_eq_32(current_key, &key)' src/session.rs
+          if grep -Fq 'ct_eq_32(&**current_key, &key)' src/session.rs; then
+            echo 'ERROR: superseded duplicate-key guard reintroduced' >&2
+            exit 1
+          fi
+
+          grep -Fq 'pub(crate) fn open_current_key' src/session.rs
+          grep -Fq 'open_current_key_from_nonce_domain' src/strict_receive.rs
+          grep -Fq 'tests/current_key_open.rs' .github/workflows/nonce-safety.yml
+
+          # Freeze one dependency resolution and retain its exact bytes, not
+          # merely a digest, so this construction evidence is independently
+          # replayable later.
+          cargo generate-lockfile
+          git check-ignore -q Cargo.lock
+          cp Cargo.lock "$OUT/Cargo.lock"
+
+          cargo fmt --check
+          cargo clippy --locked --no-default-features --all-targets -- -D warnings
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --no-default-features --test strict_nonce_domain --test current_key_open
+          cargo test --locked --test strict_nonce_domain --test current_key_open
+          cargo test --locked --all-features --test current_key_open
+          git diff --check --cached
+          git diff --exit-code
+
+          # Tests/tooling may create only ignored outputs. The staged security
+          # delta must remain exactly the reviewed five files.
+          mapfile -t FINAL_FILES < <(git diff --cached --name-only | LC_ALL=C sort)
+          diff -u \
+            <(printf '%s\n' "${EXPECTED_FILES[@]}") \
+            <(printf '%s\n' "${FINAL_FILES[@]}")
+
+          # Reuse historical authorship/message and fixed timestamps with a
+          # stable constructor committer identity. Given the same parent/tree,
+          # repeated successful construction yields the same candidate SHA.
+          HISTORICAL_AUTHOR_DATE="$(git show -s --format=%aI "$HISTORICAL_HEAD_SHA")"
+          HISTORICAL_COMMITTER_DATE="$(git show -s --format=%cI "$HISTORICAL_HEAD_SHA")"
+          GIT_AUTHOR_DATE="$HISTORICAL_AUTHOR_DATE" \
+          GIT_COMMITTER_DATE="$HISTORICAL_COMMITTER_DATE" \
+            git commit -C "$HISTORICAL_HEAD_SHA"
+
+          CANDIDATE_SHA="$(git rev-parse HEAD)"
+          CANDIDATE_TREE="$(git rev-parse HEAD^{tree})"
+
+          test "$(git rev-parse HEAD^)" = "$TARGET_PARENT_SHA"
+          test "$(git rev-list --count "$TARGET_PARENT_SHA..$CANDIDATE_SHA")" = 1
+          mapfile -t COMMITTED_FILES < <(git diff --name-only "$TARGET_PARENT_SHA..$CANDIDATE_SHA" | LC_ALL=C sort)
+          diff -u \
+            <(printf '%s\n' "${EXPECTED_FILES[@]}") \
+            <(printf '%s\n' "${COMMITTED_FILES[@]}")
+          test -z "$(git status --porcelain)"
+
+          git update-ref refs/heads/restacked-candidate "$CANDIDATE_SHA"
+          git bundle create "$OUT/candidate.bundle" \
+            refs/heads/restacked-candidate "^$TARGET_PARENT_SHA"
+          git bundle verify "$OUT/candidate.bundle"
+
+          {
+            echo 'profile=xenia-wire-current-key-restack-constructor-v2'
+            echo "constructor_source=$CONSTRUCTOR_SOURCE_SHA"
+            echo "constructor_tree=$CONSTRUCTOR_TREE"
+            echo "constructor_workflow_sha256=$CONSTRUCTOR_WORKFLOW_SHA256"
+            echo "target_parent=$TARGET_PARENT_SHA"
+            echo "target_parent_tree=$(git rev-parse "$TARGET_PARENT_SHA^{tree}")"
+            echo "historical_head=$HISTORICAL_HEAD_SHA"
+            echo "historical_parent=$HISTORICAL_PARENT_SHA"
+            echo "historical_tree=$(git rev-parse "$HISTORICAL_HEAD_SHA^{tree}")"
+            echo "candidate_head=$CANDIDATE_SHA"
+            echo "candidate_tree=$CANDIDATE_TREE"
+            echo "cargo_toml_sha256=$(sha256sum Cargo.toml | awk '{print $1}')"
+            echo "resolved_lock_sha256=$(sha256sum Cargo.lock | awk '{print $1}')"
+            echo 'changed_files:'
+            printf '  %s\n' "${COMMITTED_FILES[@]}"
+            rustc -vV
+            cargo -Vv
+          } > "$OUT/provenance.txt"
+          cat "$OUT/provenance.txt"
+
+      - name: Retain exact construction capsule
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: restack-current-key-open-${{ env.CONSTRUCTOR_SOURCE_SHA }}
+          path: ${{ runner.temp }}/restack-current-key-open-evidence
+          if-no-files-found: error
+          retention-days: 90
+
+  publish:
+    name: Publish already-qualified candidate only
+    needs: construct
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CONSTRUCTOR_SOURCE_SHA }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Restore qualified construction capsule
+        uses: actions/download-artifact@v4
+        with:
+          name: restack-current-key-open-${{ env.CONSTRUCTOR_SOURCE_SHA }}
+          path: ${{ runner.temp }}/restack-current-key-open-evidence
+
+      - name: Verify capsule and publish idempotently
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test "$(git rev-parse HEAD)" = "$CONSTRUCTOR_SOURCE_SHA"
+          test -z "$(git status --porcelain)"
+
+          OUT="$RUNNER_TEMP/restack-current-key-open-evidence"
+          test -s "$OUT/Cargo.lock"
+          test -s "$OUT/candidate.bundle"
+          test -s "$OUT/provenance.txt"
+
+          test "$(sed -n 's/^constructor_source=//p' "$OUT/provenance.txt")" = "$CONSTRUCTOR_SOURCE_SHA"
+          test "$(sed -n 's/^target_parent=//p' "$OUT/provenance.txt")" = "$TARGET_PARENT_SHA"
+          test "$(sed -n 's/^historical_head=//p' "$OUT/provenance.txt")" = "$HISTORICAL_HEAD_SHA"
+          test "$(sed -n 's/^historical_parent=//p' "$OUT/provenance.txt")" = "$HISTORICAL_PARENT_SHA"
+          test "$(sha256sum "$OUT/Cargo.lock" | awk '{print $1}')" = \
+            "$(sed -n 's/^resolved_lock_sha256=//p' "$OUT/provenance.txt")"
+
+          git bundle verify "$OUT/candidate.bundle"
+          git fetch "$OUT/candidate.bundle" \
+            refs/heads/restacked-candidate:refs/remotes/bundle/restacked-candidate
+
+          CANDIDATE_SHA="$(git rev-parse refs/remotes/bundle/restacked-candidate)"
+          CANDIDATE_TREE="$(git rev-parse "$CANDIDATE_SHA^{tree}")"
+          test "$CANDIDATE_SHA" = "$(sed -n 's/^candidate_head=//p' "$OUT/provenance.txt")"
+          test "$CANDIDATE_TREE" = "$(sed -n 's/^candidate_tree=//p' "$OUT/provenance.txt")"
+          test "$(git rev-parse "$CANDIDATE_SHA^")" = "$TARGET_PARENT_SHA"
+          test "$(git rev-list --count "$TARGET_PARENT_SHA..$CANDIDATE_SHA")" = 1
+
+          EXPECTED_FILES=(
+            ".github/workflows/nonce-safety.yml"
+            "src/lib.rs"
+            "src/session.rs"
+            "src/strict_receive.rs"
+            "tests/current_key_open.rs"
+          )
+          mapfile -t EXPECTED_FILES < <(printf '%s\n' "${EXPECTED_FILES[@]}" | LC_ALL=C sort)
+          mapfile -t ACTUAL_FILES < <(git diff --name-only "$TARGET_PARENT_SHA..$CANDIDATE_SHA" | LC_ALL=C sort)
+          diff -u \
+            <(printf '%s\n' "${EXPECTED_FILES[@]}") \
+            <(printf '%s\n' "${ACTUAL_FILES[@]}")
+
+          REMOTE_SHA="$(git ls-remote origin "refs/heads/$CANDIDATE_BRANCH" | awk '{print $1}')"
+          if [[ -n "$REMOTE_SHA" && "$REMOTE_SHA" != "$CANDIDATE_SHA" ]]; then
+            echo "ERROR: candidate ref already exists at different SHA: $REMOTE_SHA" >&2
+            exit 1
+          fi
+          if [[ -z "$REMOTE_SHA" ]]; then
+            git push origin "$CANDIDATE_SHA:refs/heads/$CANDIDATE_BRANCH"
+          fi
+
+          PUBLISHED_SHA="$(git ls-remote origin "refs/heads/$CANDIDATE_BRANCH" | awk '{print $1}')"
+          test "$PUBLISHED_SHA" = "$CANDIDATE_SHA"
+          test -z "$(git status --porcelain)"
+
+          {
+            echo 'profile=xenia-wire-current-key-restack-publish-v2'
+            echo "constructor_source=$CONSTRUCTOR_SOURCE_SHA"
+            echo "candidate_branch=$CANDIDATE_BRANCH"
+            echo "candidate_head=$CANDIDATE_SHA"
+            echo "candidate_tree=$CANDIDATE_TREE"
+            echo "published_head=$PUBLISHED_SHA"
+          } > "$RUNNER_TEMP/restack-current-key-open-publish-receipt.txt"
+          cat "$RUNNER_TEMP/restack-current-key-open-publish-receipt.txt"
+
+      - name: Retain publication receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: restack-current-key-open-publish-${{ env.CONSTRUCTOR_SOURCE_SHA }}
+          path: ${{ runner.temp }}/restack-current-key-open-publish-receipt.txt
+          if-no-files-found: error
+          retention-days: 90
