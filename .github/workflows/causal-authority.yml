@@ -9,6 +9,7 @@ on:
       - "src/authority_lineage_epoch_evidence.rs"
       - "src/authority_rekey_transition_evidence.rs"
       - "src/authority_rekey_profile_binding.rs"
+      - "src/authority_rekey_pending.rs"
       - "src/authority_negotiation.rs"
       - "src/authority_session.rs"
       - "src/consent.rs"
