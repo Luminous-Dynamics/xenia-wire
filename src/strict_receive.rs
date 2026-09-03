@@ -110,3 +110,22 @@ pub fn open_from_nonce_domain<T: Sealable>(
     let plaintext = session.open(bytes)?;
     T::from_bin(&plaintext)
 }
+
+/// Open and deserialize only if the envelope belongs to `expected`
+/// and authenticates under the exact current session key.
+///
+/// This is the authority-bearing counterpart to [`open_from_nonce_domain`].
+/// The cleartext domain mismatch check runs before any replay mutation, then
+/// [`Session::open_current_key`] performs one live current-key-only AEAD/replay
+/// operation. Previous grace keys are never eligible on this path.
+pub fn open_current_key_from_nonce_domain<T: Sealable>(
+    bytes: &[u8],
+    session: &mut Session,
+    expected: NonceDomain,
+) -> Result<T, WireError> {
+    if envelope_nonce_domain(bytes) != Some(expected) {
+        return Err(WireError::OpenFailed);
+    }
+    let plaintext = session.open_current_key(bytes)?;
+    T::from_bin(&plaintext)
+}
