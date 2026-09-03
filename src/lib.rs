@@ -124,7 +124,8 @@ pub use replay_window::{DEFAULT_WINDOW_BITS, MAX_WINDOW_BITS, ReplayWindow, WIND
 pub use session::ct_eq_32_for_bench;
 pub use session::{DEFAULT_REKEY_GRACE, Session, SessionBuilder};
 pub use strict_receive::{
-    NONCE_SOURCE_PREFIX_LEN, NonceDomain, envelope_nonce_domain, open_from_nonce_domain,
+    NONCE_SOURCE_PREFIX_LEN, NonceDomain, envelope_nonce_domain,
+    open_current_key_from_nonce_domain, open_from_nonce_domain,
 };
 
 pub use frame::Sealable;

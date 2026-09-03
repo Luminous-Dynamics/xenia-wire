@@ -818,73 +818,96 @@ impl Session {
     ///    (there can be more than one under rapid rekeying) within its
     ///    own grace period.
     /// 3. **Replay window**: the sequence embedded in nonce bytes 8..12
-    ///    (little-endian u32) must be either strictly higher than any
-    ///    previously accepted sequence for the same `(source_id,
-    ///    payload_type)` stream, OR within the 64-message sliding window
-    ///    AND not previously seen.
+    ///    must be fresh for the exact key epoch that authenticated it.
     ///
-    /// Returns [`WireError::OpenFailed`] on any failure. Mutates `self`
-    /// to advance the replay window on success.
-    ///
-    /// The payload type embedded in the nonce is used for replay-window
-    /// keying only — the caller is responsible for dispatching the returned
-    /// plaintext to the correct deserializer.
+    /// Returns [`WireError::OpenFailed`] on any cryptographic or replay
+    /// failure. Mutates `self` to advance the replay window on success.
     pub fn open(&mut self, envelope: &[u8]) -> Result<Vec<u8>, WireError> {
         use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce, aead::Aead};
 
-        if envelope.len() < 12 + 16 {
-            return Err(WireError::OpenFailed);
-        }
-        let (nonce_bytes, ciphertext) = envelope.split_at(12);
+        let (nonce_bytes, ciphertext) = Self::split_envelope(envelope)?;
         let nonce = Nonce::from_slice(nonce_bytes);
 
-        // AEAD verify: current key, then every still-pending previous
-        // key (most recently superseded first — the likeliest match for
-        // a genuinely in-flight envelope). Track which key verified so
-        // the replay-window check below can use the correct key_epoch
-        // (SPEC §5.3 / draft-02r1).
         if self.session_key.is_none() && self.prev_keys.is_empty() {
             return Err(WireError::NoSessionKey);
         }
+
         let mut plaintext_and_epoch = None;
         if let Some(key) = self.session_key.as_ref() {
             let key_bytes: [u8; 32] = **key;
             let cipher = ChaCha20Poly1305::new((&key_bytes).into());
-            if let Ok(pt) = cipher.decrypt(nonce, ciphertext) {
-                plaintext_and_epoch = Some((pt, self.current_key_epoch));
+            if let Ok(plaintext) = cipher.decrypt(nonce, ciphertext) {
+                plaintext_and_epoch = Some((plaintext, self.current_key_epoch));
             }
         }
+
         if plaintext_and_epoch.is_none() {
-            for pk in self.prev_keys.iter().rev() {
-                let key_bytes: [u8; 32] = *pk.key;
+            for previous in self.prev_keys.iter().rev() {
+                let key_bytes: [u8; 32] = *previous.key;
                 let cipher = ChaCha20Poly1305::new((&key_bytes).into());
-                if let Ok(pt) = cipher.decrypt(nonce, ciphertext) {
-                    plaintext_and_epoch = Some((pt, pk.epoch));
+                if let Ok(plaintext) = cipher.decrypt(nonce, ciphertext) {
+                    plaintext_and_epoch = Some((plaintext, previous.epoch));
                     break;
                 }
             }
         }
-        let (plaintext, verified_epoch) = match plaintext_and_epoch {
-            Some((pt, epoch)) => (Some(pt), Some(epoch)),
-            None => (None, None),
-        };
 
-        let plaintext = plaintext.ok_or(WireError::OpenFailed)?;
-        // If AEAD succeeded we MUST have an epoch; debug-assert to catch
-        // any refactor that breaks the invariant.
-        let verified_epoch =
-            verified_epoch.expect("AEAD succeeded so a key verified; epoch must be set");
+        let (plaintext, verified_epoch) = plaintext_and_epoch.ok_or(WireError::OpenFailed)?;
+        self.finish_open(nonce_bytes, plaintext, verified_epoch)
+    }
 
-        // Replay window check — scoped to the epoch of the key that
-        // verified (NOT the current epoch; an old envelope that
-        // verified under prev_key is checked against the prev-epoch
-        // window, not the current-epoch window).
+    /// Open an envelope only if it authenticates under the exact current
+    /// session key, then consume the same live replay window and consent
+    /// gate used by [`Self::open`].
+    ///
+    /// Previous/grace keys are deliberately never probed. An envelope
+    /// valid only under a superseded key therefore fails before replay
+    /// state is mutated. Once current-key authentication succeeds, replay
+    /// acceptance happens exactly once; a higher layer that later rejects
+    /// the plaintext semantically must not attempt to roll that slot back.
+    ///
+    /// This primitive narrows key-epoch eligibility only. It does not bind
+    /// sender role or nonce domain; compose it with
+    /// [`crate::open_current_key_from_nonce_domain`] when the expected
+    /// sender/stream/epoch is known by policy.
+    pub(crate) fn open_current_key(&mut self, envelope: &[u8]) -> Result<Vec<u8>, WireError> {
+        use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce, aead::Aead};
+
+        let (nonce_bytes, ciphertext) = Self::split_envelope(envelope)?;
+        let nonce = Nonce::from_slice(nonce_bytes);
+        let key = self.session_key.as_ref().ok_or(WireError::NoSessionKey)?;
+        let key_bytes: [u8; 32] = **key;
+        let cipher = ChaCha20Poly1305::new((&key_bytes).into());
+        let plaintext = cipher
+            .decrypt(nonce, ciphertext)
+            .map_err(|_| WireError::OpenFailed)?;
+
+        let verified_epoch = self.current_key_epoch;
+        self.finish_open(nonce_bytes, plaintext, verified_epoch)
+    }
+
+    #[inline]
+    fn split_envelope(envelope: &[u8]) -> Result<(&[u8], &[u8]), WireError> {
+        if envelope.len() < 12 + 16 {
+            return Err(WireError::OpenFailed);
+        }
+        Ok(envelope.split_at(12))
+    }
+
+    fn finish_open(
+        &mut self,
+        nonce_bytes: &[u8],
+        plaintext: Vec<u8>,
+        verified_epoch: u32,
+    ) -> Result<Vec<u8>, WireError> {
+        debug_assert!(nonce_bytes.len() == 12);
+
         let mut source_id_u64 = 0u64;
-        for (i, b) in nonce_bytes[..6].iter().enumerate() {
-            source_id_u64 |= (*b as u64) << (i * 8);
+        for (index, byte) in nonce_bytes[..6].iter().enumerate() {
+            source_id_u64 |= (*byte as u64) << (index * 8);
         }
         let payload_type = nonce_bytes[6];
-        let seq = u32::from_le_bytes([
+        let sequence = u32::from_le_bytes([
             nonce_bytes[8],
             nonce_bytes[9],
             nonce_bytes[10],
@@ -893,15 +916,11 @@ impl Session {
 
         if !self
             .replay_window
-            .accept(source_id_u64, payload_type, verified_epoch, seq)
+            .accept(source_id_u64, payload_type, verified_epoch, sequence)
         {
             return Err(WireError::OpenFailed);
         }
 
-        // Consent gate on the open path — symmetric with seal. Only
-        // application-reference payload types are gated. The caller may
-        // still drive state transitions via `observe_consent` after
-        // opening consent-ceremony envelopes (0x20..=0x22).
         #[cfg(feature = "consent")]
         if matches!(
             payload_type,

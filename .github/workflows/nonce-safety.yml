@@ -13,6 +13,7 @@ on:
       - "tests/install_key_nonce_characterization.rs"
       - "tests/directional_nonce_contract.rs"
       - "tests/strict_nonce_domain.rs"
+      - "tests/current_key_open.rs"
       - ".github/workflows/nonce-safety.yml"
   workflow_dispatch:
 
