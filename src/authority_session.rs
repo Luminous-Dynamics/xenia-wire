@@ -230,24 +230,59 @@ impl InstalledNegotiatedSession {
     }
 }
 
+/// Opaque sequence-zero Ack whose only valid continuation is transport delivery.
+///
+/// This token is intentionally **not** `Clone`. The receiver has already committed
+/// the new key and authority lineage when this value exists, so it represents a
+/// pending delivery obligation rather than ordinary replayable application data.
+/// Wire has no transport and therefore cannot prevent a malicious caller from
+/// copying the bytes returned by [`Self::as_bytes`]; the type-level goal is to make
+/// the safe integration path single-owner and consumption-oriented.
+#[cfg(all(feature = "handshake", feature = "operator-rekey"))]
+#[derive(Debug, PartialEq, Eq)]
+#[must_use = "the committed receiver rekey Ack must be delivered once or the connection generation torn down"]
+pub struct PendingAuthorityOperatorRekeyAck {
+    sealed: Vec<u8>,
+}
+
+#[cfg(all(feature = "handshake", feature = "operator-rekey"))]
+impl PendingAuthorityOperatorRekeyAck {
+    /// Exact presealed Ack envelope. Transport code should borrow these bytes only
+    /// for the single send attempt associated with this token.
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.sealed
+    }
+
+    /// Consume the pending-delivery token into its exact presealed bytes.
+    ///
+    /// This is an escape hatch for transports that require owned buffers. Once
+    /// converted to a plain `Vec<u8>`, Rust can no longer express single-owner
+    /// delivery semantics; higher layers must retain the ARR-011 one-attempt rule.
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.sealed
+    }
+}
+
 /// Result of one accepted receiver-side authority-preserving operator rekey.
 ///
-/// The replacement key is deliberately absent. The caller receives only the
-/// sealed Ack that must be sent to the initiator and durable public evidence for
-/// the transition/advanced authority lineage.
+/// The replacement key is deliberately absent. The caller receives one
+/// single-owner pending Ack-delivery token plus durable public evidence for the
+/// transition/advanced authority lineage. Durable evidence remains inspectable;
+/// the Ack token itself is intentionally not cloneable.
 #[cfg(all(feature = "handshake", feature = "operator-rekey"))]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
+#[must_use = "accepted authority rekey contains a pending Ack delivery obligation"]
 pub struct AuthorityOperatorRekeyAcceptance {
-    sealed_ack: Vec<u8>,
+    pending_ack: PendingAuthorityOperatorRekeyAck,
     transition: AuthorityRekeyTransitionEvidenceV1,
     lineage: AuthorityLineageEpochEvidenceV1,
 }
 
 #[cfg(all(feature = "handshake", feature = "operator-rekey"))]
 impl AuthorityOperatorRekeyAcceptance {
-    /// Ack envelope sealed as sequence zero under the accepted new epoch key.
-    pub fn sealed_ack(&self) -> &[u8] {
-        &self.sealed_ack
+    /// Borrow the single-owner Ack delivery token without consuming evidence.
+    pub fn pending_ack(&self) -> &PendingAuthorityOperatorRekeyAck {
+        &self.pending_ack
     }
 
     /// Durable public evidence for the accepted operator-channel transition.
@@ -260,15 +295,15 @@ impl AuthorityOperatorRekeyAcceptance {
         &self.lineage
     }
 
-    /// Consume the result into transport bytes plus durable evidence.
+    /// Consume the result into the pending Ack token plus durable evidence.
     pub fn into_parts(
         self,
     ) -> (
-        Vec<u8>,
+        PendingAuthorityOperatorRekeyAck,
         AuthorityRekeyTransitionEvidenceV1,
         AuthorityLineageEpochEvidenceV1,
     ) {
-        (self.sealed_ack, self.transition, self.lineage)
+        (self.pending_ack, self.transition, self.lineage)
     }
 }
 
@@ -533,7 +568,7 @@ impl NegotiatedAuthoritySession {
         self.current_session_aead_key = new_key;
 
         Ok(AuthorityOperatorRekeyAcceptance {
-            sealed_ack,
+            pending_ack: PendingAuthorityOperatorRekeyAck { sealed: sealed_ack },
             transition,
             lineage: next_lineage,
         })
@@ -738,7 +773,7 @@ mod tests {
         let new_key = derive_operator_rekey_key(&REKEY_ROOT, &accepted.transition().epoch_hash);
         let mut ack_receiver = Session::with_source_id(SOURCE_ID, SESSION_EPOCH);
         ack_receiver.install_key(new_key);
-        let ack_plaintext = ack_receiver.open(accepted.sealed_ack()).unwrap();
+        let ack_plaintext = ack_receiver.open(accepted.pending_ack().as_bytes()).unwrap();
         assert_eq!(
             OperatorRekeyMessage::decode(&ack_plaintext).unwrap(),
             OperatorRekeyMessage::Ack {
@@ -749,7 +784,9 @@ mod tests {
 
         let mut old_key_receiver = Session::with_source_id(SOURCE_ID, SESSION_EPOCH);
         old_key_receiver.install_key(AEAD);
-        assert!(old_key_receiver.open(accepted.sealed_ack()).is_err());
+        assert!(old_key_receiver
+            .open(accepted.pending_ack().as_bytes())
+            .is_err());
 
         let after_fp = authority.session().session_fingerprint(7).unwrap();
         assert_ne!(before_fp, after_fp);
@@ -762,6 +799,28 @@ mod tests {
             .seal(b"next operator control", PAYLOAD_TYPE_OPERATOR_REKEY)
             .unwrap();
         assert_eq!(&next[8..12], &[1, 0, 0, 0]);
+    }
+
+    #[cfg(feature = "operator-rekey")]
+    #[test]
+    fn pending_ack_can_be_consumed_separately_from_durable_evidence() {
+        let mut authority = authority();
+        let proposal = crate::operator_rekey::propose(
+            1,
+            [0x11; 32],
+            [0x11; 32],
+            OperatorRekeyReason::Manual,
+        )
+        .unwrap();
+        let sealed = seal_operator_message(AEAD, &proposal);
+        let accepted = authority.accept_operator_rekey_proposal(&sealed).unwrap();
+        let (pending_ack, transition, lineage) = accepted.into_parts();
+
+        assert_eq!(transition.key_epoch, 1);
+        assert_eq!(lineage.key_epoch, 1);
+        let bytes = pending_ack.into_bytes();
+        assert!(!bytes.is_empty());
+        assert_eq!(&bytes[8..12], &[0, 0, 0, 0]);
     }
 
     #[cfg(feature = "operator-rekey")]
