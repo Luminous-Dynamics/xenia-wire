@@ -32,6 +32,8 @@
 //!   binding. The owned authority session hides unrestricted key replacement.
 //! - **[`authority_live_use`]** — session-borrowed online verification so a
 //!   verified action cannot silently outlive a rekey or authority teardown.
+//! - **[`authority_rekey_pending`]** — post-commit receiver-rekey typestate that
+//!   withholds the active authority session while exact Ack delivery is unresolved.
 //! - **[`negotiated_context`]** — canonical capability offers, deterministic
 //!   selected contexts, and negotiation binding primitives.
 //! - **[`negotiated_context_codec`]** — bounded canonical decoding for untrusted
@@ -137,6 +139,13 @@ pub mod authority_session;
 
 #[cfg(all(feature = "causal-authority", feature = "handshake"))]
 pub mod authority_live_use;
+
+#[cfg(all(
+    feature = "causal-authority",
+    feature = "handshake",
+    feature = "operator-rekey"
+))]
+pub mod authority_rekey_pending;
 
 #[cfg(feature = "handshake")]
 pub mod handshake;
