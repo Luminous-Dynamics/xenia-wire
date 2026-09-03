@@ -34,6 +34,9 @@
 //!   verified action cannot silently outlive a rekey or authority teardown.
 //! - **[`authority_rekey_pending`]** — post-commit receiver-rekey typestate that
 //!   withholds the active authority session while exact Ack delivery is unresolved.
+//! - **[`authority_rekey_reserved`]** — pre-commit transport-reservation ownership
+//!   that carries an already-acquired ordered-writer reservation through the
+//!   receiver commit and exact Ack-delivery typestate.
 //! - **[`negotiated_context`]** — canonical capability offers, deterministic
 //!   selected contexts, and negotiation binding primitives.
 //! - **[`negotiated_context_codec`]** — bounded canonical decoding for untrusted
@@ -146,6 +149,13 @@ pub mod authority_live_use;
     feature = "operator-rekey"
 ))]
 pub mod authority_rekey_pending;
+
+#[cfg(all(
+    feature = "causal-authority",
+    feature = "handshake",
+    feature = "operator-rekey"
+))]
+pub mod authority_rekey_reserved;
 
 #[cfg(feature = "handshake")]
 pub mod handshake;

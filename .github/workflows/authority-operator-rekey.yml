@@ -6,6 +6,7 @@ on:
       - "Cargo.toml"
       - "src/authority_session.rs"
       - "src/authority_rekey_pending.rs"
+      - "src/authority_rekey_reserved.rs"
       - "src/authority_session_impl.rs"
       - "src/authority_activation_evidence.rs"
       - "src/authority_lineage_epoch_evidence.rs"
