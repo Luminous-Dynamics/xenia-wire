@@ -1,0 +1,110 @@
+name: Authority Operator Rekey Conformance
+
+on:
+  pull_request:
+    paths:
+      - "Cargo.toml"
+      - "src/authority_session.rs"
+      - "src/authority_session_impl.rs"
+      - "src/authority_activation_evidence.rs"
+      - "src/authority_lineage_epoch_evidence.rs"
+      - "src/authority_rekey_profile_binding.rs"
+      - "src/authority_rekey_transition_evidence.rs"
+      - "src/operator_rekey.rs"
+      - "src/session.rs"
+      - ".github/workflows/authority-operator-rekey.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: authority-operator-rekey-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  RUSTFLAGS: -D warnings
+  RUSTDOCFLAGS: -D warnings
+  QUALIFICATION_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  receiver-transaction:
+    name: Exact source-head receiver transaction
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.QUALIFICATION_SOURCE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Assert exact immutable source checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$QUALIFICATION_SOURCE_SHA"
+          test -z "$(git status --porcelain)"
+          echo "SOURCE_HEAD=$(git rev-parse HEAD)"
+          echo "SOURCE_TREE=$(git rev-parse HEAD^{tree})"
+
+      - uses: dtolnay/rust-toolchain@1.94
+        with:
+          components: clippy, rustfmt
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Freeze one dependency resolution
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo generate-lockfile
+          mkdir -p "$RUNNER_TEMP/qualification"
+          cp Cargo.lock "$RUNNER_TEMP/qualification/Cargo.lock"
+          {
+            echo "profile=xenia-authority-operator-rekey-v1"
+            echo "source_head=$(git rev-parse HEAD)"
+            echo "source_tree=$(git rev-parse HEAD^{tree})"
+            echo "cargo_toml_sha256=$(sha256sum Cargo.toml | awk '{print $1}')"
+            echo "resolved_lock_sha256=$(sha256sum Cargo.lock | awk '{print $1}')"
+            rustc -vV
+            cargo -Vv
+          } > "$RUNNER_TEMP/qualification/PROVENANCE.txt"
+          cat "$RUNNER_TEMP/qualification/PROVENANCE.txt"
+
+      - name: Format
+        run: cargo fmt --check
+
+      - name: Check exact feature boundary
+        run: cargo check --locked --no-default-features --features causal-authority,handshake,operator-rekey --all-targets
+
+      - name: Clippy exact feature boundary
+        run: cargo clippy --locked --no-default-features --features causal-authority,handshake,operator-rekey --all-targets -- -D warnings
+
+      - name: Test receiver transaction and authority stack
+        run: cargo test --locked --no-default-features --features causal-authority,handshake,operator-rekey --lib
+
+      - name: Cross-check operator transition evidence
+        run: cargo test --locked --no-default-features --features causal-authority,handshake,operator-rekey --test authority_rekey_transition_crosscheck
+
+      - name: Build exact feature boundary for wasm
+        run: cargo build --locked --target wasm32-unknown-unknown --no-default-features --features causal-authority,handshake,operator-rekey
+
+      - name: Assert source tree remained immutable
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$QUALIFICATION_SOURCE_SHA"
+          test -z "$(git status --porcelain)"
+          echo "final_source_tree=$(git rev-parse HEAD^{tree})" >> "$RUNNER_TEMP/qualification/PROVENANCE.txt"
+
+      - name: Retain qualification capsule
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: authority-operator-rekey-${{ env.QUALIFICATION_SOURCE_SHA }}
+          path: ${{ runner.temp }}/qualification
+          if-no-files-found: error
+          retention-days: 90
