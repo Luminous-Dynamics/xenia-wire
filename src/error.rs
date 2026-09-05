@@ -30,7 +30,9 @@ pub enum WireError {
     #[error("xenia wire: AEAD seal failed")]
     SealFailed,
 
-    /// AEAD open failed. Either:
+    /// Receive/open failed. This deliberately coalesces several cases:
+    /// - a strict receive helper rejected an unexpected or incomplete nonce
+    ///   domain before AEAD open,
     /// - the envelope is under the minimum length (12 nonce + 16 tag),
     /// - the ciphertext fails Poly1305 verification (wrong key, corruption,
     ///   or tampering), or
