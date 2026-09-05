@@ -4,8 +4,8 @@
 #![cfg(feature = "reference-frame")]
 
 use xenia_wire::{
-    Frame, NonceDomain, PAYLOAD_TYPE_FRAME, Session, WireError, envelope_nonce_domain,
-    open_frame, open_from_nonce_domain, seal_frame,
+    Frame, NonceDomain, PAYLOAD_TYPE_FRAME, Session, WireError, envelope_nonce_domain, open_frame,
+    open_from_nonce_domain, seal_frame,
 };
 
 const KEY: [u8; 32] = [0xA9; 32];
@@ -35,8 +35,7 @@ fn exact_expected_nonce_domain_opens_normally() {
     let sealed = seal_frame(&frame(), &mut sender).unwrap();
     assert_eq!(envelope_nonce_domain(&sealed), Some(expected_domain()));
 
-    let opened: Frame =
-        open_from_nonce_domain(&sealed, &mut receiver, expected_domain()).unwrap();
+    let opened: Frame = open_from_nonce_domain(&sealed, &mut receiver, expected_domain()).unwrap();
     assert_eq!(opened, frame());
 }
 
@@ -98,16 +97,8 @@ fn partial_or_short_nonce_has_no_domain_and_fails_closed() {
 
 #[test]
 fn source_id_constructor_uses_only_authenticated_prefix() {
-    let a = NonceDomain::from_source_id(
-        [1, 2, 3, 4, 5, 6, 7, 8],
-        PAYLOAD_TYPE_FRAME,
-        EPOCH,
-    );
-    let b = NonceDomain::from_source_id(
-        [1, 2, 3, 4, 5, 6, 0xAA, 0xBB],
-        PAYLOAD_TYPE_FRAME,
-        EPOCH,
-    );
+    let a = NonceDomain::from_source_id([1, 2, 3, 4, 5, 6, 7, 8], PAYLOAD_TYPE_FRAME, EPOCH);
+    let b = NonceDomain::from_source_id([1, 2, 3, 4, 5, 6, 0xAA, 0xBB], PAYLOAD_TYPE_FRAME, EPOCH);
 
     assert_eq!(a, b);
     assert_eq!(a.source_prefix, [1, 2, 3, 4, 5, 6]);
