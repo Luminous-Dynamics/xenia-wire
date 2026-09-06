@@ -6,6 +6,8 @@
 [![License: Apache-2.0 OR MIT](https://img.shields.io/badge/license-Apache--2.0_OR_MIT-blue.svg)](#license)
 [![MSRV: 1.94](https://img.shields.io/badge/MSRV-1.94-blue.svg)](Cargo.toml)
 
+[**Current Status**](STATUS.md) | [**Registered Claims**](docs/CLAIMS.md)
+
 AEAD-sealed binary wire protocol for remote-control streams, designed for ML-KEM-capable session keys supplied by a higher handshake layer.
 
 ```text
@@ -19,10 +21,10 @@ AEAD-sealed binary wire protocol for remote-control streams, designed for ML-KEM
   ║  product layers such as `xenia-handshake` -- pick one, not ║
   ║  both, per identity you're establishing.                   ║
   ║                                                           ║
-  ║  This crate is an early research artifact. It will be     ║
-  ║  ready for production use only after the specification is   ║
-  ║  independently reviewed and the test-vector suite is       ║
-  ║  cross-validated against another implementation.           ║
+  ║  This crate is an early research artifact. Production use  ║
+  ║  requires substantially more than a green local suite:     ║
+  ║  independent review, broader interoperability evidence,    ║
+  ║  and product-layer qualification remain outstanding.       ║
   ╚═══════════════════════════════════════════════════════════╝
 ```
 
@@ -37,9 +39,11 @@ hospitality; the protocol codifies the terms cryptographically.
 `xenia-wire` is the *byte-level* layer of the Xenia protocol: take a
 sequence of application payloads, seal each one into a bounded envelope,
 protect against replay and tampering, rotate keys without dropping
-in-flight messages. It has no opinion about transport (TCP, WebSocket,
-QUIC, UDP all fit), no opinion about framing policy (that's the
-caller's), and no opinion about handshake. Those live at higher layers.
+in-flight messages. The core sealing layer has no opinion about transport
+(TCP, WebSocket, QUIC, UDP all fit), no opinion about framing policy (that's
+the caller's), and can accept session keys established by any compatible
+outer layer. Optional protocol modules add consent, handshake, and rekey
+surfaces without turning the crate into a complete remote-control product.
 
 ### What you get
 
@@ -78,11 +82,11 @@ can ignore all of this and just use the sealing layer with `default-features
 ## Install
 
 Because it's a pre-release, add it with the `@` form — `cargo add
---version ...` rejects pre-release specifiers. Use the latest `0.2.0-alpha.N`
-on [crates.io](https://crates.io/crates/xenia-wire) (currently `alpha.8`):
+--version ...` rejects pre-release specifiers. The package version in this
+repository is currently `0.2.0-alpha.9`:
 
 ```console
-$ cargo add 'xenia-wire@0.2.0-alpha.8'
+$ cargo add 'xenia-wire@0.2.0-alpha.9'
 ```
 
 Once a stable `0.2.0` ships, `cargo add xenia-wire` will just work.
@@ -136,8 +140,10 @@ $ cargo run --example hello_xenia
 |------------------|---------|-------------------------------------------------------|
 | `reference-frame`| yes     | Ships `Frame` + `Input` reference types implementing `Sealable`. Drop it if you're only using custom payload types. |
 | `lz4`            | no      | Adds `seal_frame_lz4` / `open_frame_lz4` for LZ4-before-AEAD compression. Measured 2.12× on live Pixel 8 Pro captures. |
-| `handshake`      | no      | ML-KEM-768 + Ed25519 + ML-DSA-65 handshake (`handshake` module, viewer role) and the self-contained ML-KEM-1024 + Ed25519 + ML-DSA-87 high-security suite (`handshake_highsec`, both roles). Each handshake generates a fresh KEM keypair per session (forward-secret against later long-term-key compromise) and derives a [`handshake::SessionKeySchedule`] ready to `install_key` into a `Session`. |
-| `operator-rekey` | no      | Forward-secrecy rekey control messages (`operator_rekey` module) for a single-key application channel — periodic in-place key rotation on an already-established session. Independent of `handshake`: only needs `blake3`+`bincode`+`serde`. |
+| `consent`        | no      | Adds signed consent request/response/revocation payloads, session binding, and consent-state enforcement. |
+| `handshake`      | no      | ML-KEM-768 + Ed25519 + ML-DSA-65 handshake (`handshake` module, viewer role) and the self-contained ML-KEM-1024 + Ed25519 + ML-DSA-87 high-security suite (`handshake_highsec`, both roles). Each handshake generates a fresh KEM keypair per session and derives a [`handshake::SessionKeySchedule`] ready to `install_key` into a `Session`. |
+| `operator-rekey` | no      | Rekey control messages (`operator_rekey` module) for a single-key application channel. Independent of `handshake` unless the caller also needs the shared derivation helper. |
+| `bench-internals`| no      | Re-exposes normally private constant-time helpers for statistical benchmark tooling only; not an application feature. |
 
 ## Custom payloads
 
@@ -242,6 +248,5 @@ or conditions.
 
 - [Luminous Dynamics](https://luminousdynamics.io) — the research
   organization publishing this crate.
-- [Holon-Soma roadmap](https://github.com/Luminous-Dynamics/symthaea)
-  (private) — the upstream research roadmap from which this crate
-  extracts the wire format.
+- [Holon-Soma roadmap](https://github.com/Luminous-Dynamics/symthaea) — the
+  upstream research roadmap from which this crate extracts the wire format.

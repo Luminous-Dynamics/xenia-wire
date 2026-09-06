@@ -1,0 +1,59 @@
+schema_version = 1
+coverage = "partial"
+generated_document = "docs/CLAIMS.md"
+
+[[claim]]
+id = "XW-STATUS-001"
+scope = "repository"
+kind = "maturity"
+status = "declared_boundary"
+statement = "xenia-wire 0.2.0-alpha.x is pre-alpha, is not production-ready, and has not undergone independent cryptographic review."
+evidence = ["SECURITY.md", "Cargo.toml"]
+limitations = [
+  "This is a repository maturity and review boundary, not a proof that the implementation is secure or insecure.",
+  "Passing evidence for a subcomponent does not promote the whole repository to production readiness."
+]
+
+[[claim]]
+id = "XW-SPEC-001"
+scope = "wire-specification"
+kind = "protocol"
+status = "current"
+statement = "SPEC.md draft-03 declares itself the normative reference for the Xenia wire protocol rather than the Rust source."
+evidence = ["SPEC.md"]
+limitations = [
+  "draft-03 is pre-alpha and explicitly subject to future breaking changes.",
+  "This claim is about the wire-protocol specification boundary; it does not qualify the optional handshake modules bundled by the crate.",
+  "Normative status does not prove the specification is correct or secure."
+]
+
+[[claim]]
+id = "XW-VECTORS-001"
+scope = "draft-03-test-vector-set"
+kind = "conformance"
+status = "published_fixture"
+statement = "The repository publishes 12 deterministic draft-03 test vectors: envelope or signed-consent fixtures 01 through 09 and consent event-sequence fixtures 10 through 12."
+evidence = ["test-vectors/README.md"]
+limitations = [
+  "The fixtures cover only the scenarios documented by the vector set and are not a complete protocol proof.",
+  "The vector set is version-stamped to xenia-wire 0.2.0-alpha.1 while the package may advance through later alpha releases.",
+  "Published fixtures are not an external security audit or independent external replication."
+]
+
+[[claim]]
+id = "XW-NODE-CONFORMANCE-001"
+scope = "internal-cross-implementation-conformance"
+kind = "conformance"
+status = "implemented_internal"
+statement = "The repository contains non-Rust Node conformance checkers that independently implement envelope open/seal checks and the consent transition logic exercised by vectors 10 through 12, and CI contains a job configured to execute both checkers."
+evidence = [
+  "test-vectors/conformance/verify.mjs",
+  "test-vectors/conformance/verify-consent.mjs",
+  ".github/workflows/ci.yml"
+]
+limitations = [
+  "The checker is maintained in the same repository and organization; this is implementation diversity, not external replication or external review.",
+  "The envelope checker delegates ChaCha20-Poly1305 to Node's built-in crypto provider.",
+  "This claim does not establish independent LZ4 interoperability, handshake interoperability, full consent-state coverage, or product qualification.",
+  "The presence of a configured CI job does not by itself claim that any particular future head has passed it."
+]
