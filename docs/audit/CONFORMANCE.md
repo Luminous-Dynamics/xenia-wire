@@ -1,7 +1,12 @@
 # Independent Wire Conformance
 
-This directory is the first implementation-independent conformance lane for
-`xenia-wire` draft-03.
+`xenia-wire` already has one implementation-independent conformance path under
+`test-vectors/conformance/`: Node.js checkers independently open/seal envelope
+vectors 01-09 and replay consent vectors 10-12, and ordinary repository CI runs
+them.
+
+This directory adds a **second independently constructed oracle** for draft-03.
+The goal is triangulation, not replacement.
 
 ## Trust boundary
 
@@ -13,28 +18,34 @@ only the Python standard library. A published RFC known-answer test anchors the
 crypto implementation independently of Xenia before it is allowed to check any
 Xenia fixture.
 
-The Xenia inputs are the normative specification and frozen data under
-`test-vectors/`.
+That differs materially from the existing Node checker, which delegates the
+AEAD primitive to Node's built-in crypto implementation. Both approaches are
+valid; agreement between them reduces one class of common-mode implementation
+risk.
+
+The evidence shape is:
 
 ```text
-                   SPEC.md
-                      |
-         +------------+------------+
-         |                         |
-         v                         v
-   Rust implementation       Python reference
-         |                         |
-         +----------+--------------+
-                    |
-             frozen vectors
+                         SPEC.md
+                            |
+             +--------------+--------------+
+             |              |              |
+             v              v              v
+        Rust crate      Node checker   Python oracle
+                           |              |
+                    built-in crypto   RFC 8439 code
+             |              |              |
+             +--------------+--------------+
+                            |
+                      frozen vectors
 ```
 
-Agreement is useful evidence of interoperability. It is not evidence that both
-implementations are free of a shared specification defect.
+Agreement is useful interoperability evidence. It is not evidence that all
+implementations are free of a shared specification or fixture defect.
 
 ## v0.1 coverage
 
-The independent runner checks:
+The Python oracle checks:
 
 - every `*.envelope.hex` fixture that has a frozen plaintext input;
 - exact ChaCha20-Poly1305 authentication and decryption;
@@ -49,10 +60,21 @@ is the frozen `.lz4_compressed.hex` fixture. v0.1 does not independently
 reimplement LZ4.
 
 The consent reference is intentionally limited to the transition rows exercised
-by the frozen 10-12 fixtures. Passing those fixtures must not be described as
+by frozen vectors 10-12. Passing those fixtures must not be described as
 qualification of every consent state transition.
 
-## Run
+## Existing Node conformance
+
+The existing authority remains visible and should not be duplicated or hidden:
+
+```console
+node test-vectors/conformance/verify.mjs
+node test-vectors/conformance/verify-consent.mjs
+```
+
+Those commands are already part of ordinary `CI`.
+
+## Python oracle
 
 From the repository root:
 
@@ -67,11 +89,16 @@ exact SHA-256 of `SPEC.md` plus a deterministic digest over the vector directory
 
 ## Claim boundary
 
-A PASS means:
+A Python PASS means:
 
-> an implementation written independently in Python reproduces the frozen
-> draft-03 AEAD envelope fixtures, nonce-sequence fixture, and consent
-> violation fixtures covered by this lane.
+> a second implementation, written independently in Python and anchored to an
+> RFC 8439 known-answer vector, reproduces the frozen draft-03 AEAD envelope
+> fixtures, nonce-sequence fixture, and consent violation fixtures covered by
+> this lane.
+
+Together with the existing Node lane, this can support a **three-path agreement**
+claim (Rust + Node + Python) only after the exact Python candidate is hosted and
+green. It is not an external audit.
 
 A PASS does **not** mean:
 
@@ -85,6 +112,8 @@ A PASS does **not** mean:
 
 ## Next
 
-The next audit-readiness increments should add language-neutral transcript
-fixtures for replay-window/key-lifecycle behavior and then extend independent
-coverage to the handshake surfaces without sharing implementation code.
+The next audit-readiness increment should add language-neutral transcript
+fixtures for replay-window/key-lifecycle behavior and require both non-Rust
+implementations to consume them independently. Handshake surfaces should follow
+only after their protocol-visible state/serialization contracts have equivalent
+frozen fixtures.
