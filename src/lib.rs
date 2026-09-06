@@ -6,7 +6,7 @@
 //! AEAD-sealed binary wire protocol for remote-control streams.
 //!
 //! **Pre-alpha.** The wire format is not yet frozen and breaking changes
-//! will land between `0.1.x` releases. Do not deploy in production.
+//! may land between `0.2.0-alpha.x` releases. Do not deploy in production.
 //!
 //! ## What this crate provides
 //!
@@ -24,16 +24,25 @@
 //!   Available under the default `reference-frame` feature.
 //! - **[`seal_frame_lz4`] / [`open_frame_lz4`]** — LZ4-before-AEAD
 //!   compression variants. Available under the `lz4` feature.
+//! - **Optional consent protocol** — signed request/response/revocation
+//!   payloads plus a consent-state machine under the `consent` feature.
+//! - **Optional handshake protocols** — `handshake` (viewer-side standard
+//!   suite) and `handshake_highsec` (self-contained high-security suite)
+//!   under the `handshake` feature.
+//! - **Optional operator rekey protocol** — application-channel rekey
+//!   messages under the `operator-rekey` feature.
 //!
 //! ## What this crate deliberately does NOT do
 //!
 //! - **No transport.** Sealed bytes are returned to the caller; the
 //!   caller ships them over TCP / WebSocket / QUIC / whatever.
-//! - **No handshake.** Session keys arrive from somewhere else
-//!   (ML-KEM-768 in real deployments). Call [`Session::install_key`]
-//!   directly in tests or early prototypes.
-//! - **No state machine.** `Session` has no lifecycle — no connecting,
-//!   authenticating, closing. Those are application concerns.
+//! - **No mandatory handshake in the core sealing API.** [`Session`] still
+//!   accepts externally established keys directly. The optional `handshake`
+//!   feature adds handshake modules for callers that need them; those modules
+//!   do not turn this crate into a complete remote-control product.
+//! - **No product lifecycle state machine.** [`Session`] itself has no
+//!   connecting/authenticating/closing lifecycle. The optional `consent`
+//!   feature does include the narrower consent ceremony/state machine.
 //! - **No domain semantics.** The reference [`Frame`] / [`Input`] types
 //!   carry opaque byte payloads. Implement [`Sealable`] on your own
 //!   types for anything real.
@@ -76,10 +85,14 @@
 //!
 //! ## Feature flags
 //!
-//! | Feature           | Default | Description                                          |
-//! |-------------------|---------|------------------------------------------------------|
-//! | `reference-frame` | yes     | Ships [`Frame`] + [`Input`] reference types.         |
-//! | `lz4`             | no      | Adds LZ4-before-AEAD variants for frame sealing.     |
+//! | Feature           | Default | Description |
+//! |-------------------|---------|-------------|
+//! | `reference-frame` | yes     | Ships [`Frame`] + [`Input`] reference types. |
+//! | `lz4`             | no      | Adds LZ4-before-AEAD variants for frame sealing. |
+//! | `consent`         | no      | Adds signed consent payloads and consent-state enforcement. |
+//! | `handshake`       | no      | Adds the standard viewer-side and high-security handshake modules. |
+//! | `operator-rekey`  | no      | Adds application-channel rekey control messages. |
+//! | `bench-internals` | no      | Exposes normally private helpers for statistical benchmark tooling only. |
 //!
 //! ## License
 //!
