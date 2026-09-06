@@ -1,0 +1,64 @@
+name: Independent Wire Conformance
+
+on:
+  pull_request:
+    paths:
+      - "SPEC.md"
+      - "Cargo.toml"
+      - "src/**"
+      - "test-vectors/**"
+      - "conformance/**"
+      - ".github/workflows/independent-conformance.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "SPEC.md"
+      - "Cargo.toml"
+      - "src/**"
+      - "test-vectors/**"
+      - "conformance/**"
+      - ".github/workflows/independent-conformance.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: independent-conformance-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-reference:
+    name: Python stdlib / draft-03 vectors
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Record environment
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          python3 --version
+
+      - name: Run independent known-answer and repository tests
+        run: |
+          set -euo pipefail
+          python3 conformance/python/test_conformance.py
+
+      - name: Require deterministic conformance report
+        run: |
+          set -euo pipefail
+          python3 conformance/python/xenia_wire_ref.py --json > /tmp/xenia-conformance-1.json
+          python3 conformance/python/xenia_wire_ref.py --json > /tmp/xenia-conformance-2.json
+          cmp /tmp/xenia-conformance-1.json /tmp/xenia-conformance-2.json
+          cat /tmp/xenia-conformance-1.json
+
+      - name: Prove observational checkout
+        run: |
+          set -euo pipefail
+          git diff --exit-code
+          test -z "$(git status --porcelain)"
