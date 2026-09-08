@@ -1,0 +1,44 @@
+{
+  "artifact": "AUTH-001 public results summary v22",
+  "adaptive_redteam": {
+    "legacy_B_bug_seeds": 20,
+    "legacy_C_bug_seeds": 20,
+    "corrected_B_bug_seeds": 0,
+    "corrected_C_bug_seeds": 0,
+    "seeds": 20,
+    "interpretation": "NULL at this toy level after matched repair; no capability-specific advantage demonstrated."
+  },
+  "control_fairness": {
+    "cases": 10000,
+    "agreements": 10000,
+    "disagreements": 0
+  },
+  "bounded_exhaustive_equivalence": {
+    "direct_cases": 138240,
+    "delegated_cases": 419040,
+    "total_cases": 557280,
+    "admission_disagreements": 0,
+    "seeded_ancestor_revocation_defect_detected": true,
+    "boundary": "No overlapping independently revocable same-key grant instances."
+  },
+  "overlapping_grant_provenance": {
+    "cases": 11664,
+    "C_vs_flat_key_B_admission_disagreements": 662,
+    "C_vs_provenance_aware_Bplus_admission_disagreements": 0,
+    "interpretation": "Flat request-key policy loses grant-instance identity/selective-revocation semantics; a conventional per-grant provenance-aware monitor restores the matched admission semantics in this generated corpus."
+  },
+  "factorial_design_v22": {
+    "backend_levels": ["provenance_reference_monitor_Bplus", "explicit_authority_C"],
+    "representation_levels": ["flat_lifecycle_records", "delegation_graph"],
+    "paired_exogenous_randomness": true,
+    "flat_graph_information_equivalence_steps": 8,
+    "flat_graph_information_equivalence_failures": 0
+  },
+  "metamorphic": {
+    "random_cases": 5000,
+    "random_seeds": 50,
+    "status": "PASS",
+    "total_property_failures": 0
+  },
+  "claim_boundary": "Instrument and bounded semantic evidence only. No C>B, alignment, general-equivalence, production-security, or real-model result is claimed. The evidence shifts the candidate primitive from backend identity toward preservation/presentation of grant identity and lifecycle provenance."
+}
