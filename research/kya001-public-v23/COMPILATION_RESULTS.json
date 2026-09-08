@@ -1,0 +1,30 @@
+{
+  "artifact": "KYA-001 compilation bridge public summary v23",
+  "canonical_fixture": {
+    "cases": 15,
+    "lossless_admission_disagreements": 0,
+    "lossless_reason_disagreements": 0
+  },
+  "generated_corpus": {
+    "states": 174,
+    "cases": 11130,
+    "corpus_sha256": "fb1b2e9cc1e1f85fcec611d50dcafa58fff15835b5234f3cf77d1c21bffc8365"
+  },
+  "lossless_python_B_plus": {
+    "admission_disagreements": 0,
+    "reason_disagreements": 0
+  },
+  "lossless_node_B_plus": {
+    "admission_disagreements": 0,
+    "reason_disagreements": 0
+  },
+  "lossy_admission_disagreements": {
+    "drop_parent_provenance": 95,
+    "drop_session_context": 853,
+    "drop_validity_interval": 416,
+    "drop_revocation_state": 323,
+    "drop_signature_integrity": 13,
+    "flat_grant_identity_collapse": 461
+  },
+  "claim_boundary": "Finite local synthetic/test-HMAC evidence; not formal proof, production security, standards interoperability, external audit, or third-party reproduction."
+}
