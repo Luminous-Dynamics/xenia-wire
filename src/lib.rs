@@ -19,6 +19,8 @@
 //! - **[`Sealable`]** — generic bincode-based serialization contract.
 //!   Bring your own payload type.
 //! - **[`seal`] / [`open`]** — generic functions for any `Sealable` payload.
+//! - **[`open_from_nonce_domain`]** — additive strict receive helper that
+//!   rejects an unexpected sender/stream/epoch before replay state is touched.
 //! - **[`seal_frame`] / [`open_frame`] / [`seal_input`] / [`open_input`]** —
 //!   convenience wrappers for the reference [`Frame`] + [`Input`] types.
 //!   Available under the default `reference-frame` feature.
@@ -94,6 +96,7 @@ mod error;
 pub mod payload_types;
 mod replay_window;
 mod session;
+mod strict_receive;
 mod wire;
 
 mod frame;
@@ -120,6 +123,9 @@ pub use replay_window::{DEFAULT_WINDOW_BITS, MAX_WINDOW_BITS, ReplayWindow, WIND
 #[cfg(all(feature = "consent", feature = "bench-internals"))]
 pub use session::ct_eq_32_for_bench;
 pub use session::{DEFAULT_REKEY_GRACE, Session, SessionBuilder};
+pub use strict_receive::{
+    NONCE_SOURCE_PREFIX_LEN, NonceDomain, envelope_nonce_domain, open_from_nonce_domain,
+};
 
 pub use frame::Sealable;
 pub use wire::{envelope_payload_type, open, seal};
