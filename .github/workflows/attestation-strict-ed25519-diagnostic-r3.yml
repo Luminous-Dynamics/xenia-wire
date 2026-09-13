@@ -1,0 +1,118 @@
+name: Attestation Strict Ed25519 Diagnostic R3
+
+on:
+  push:
+    branches: [ "ci/attestation-strict-ed25519-v0.1" ]
+
+permissions:
+  contents: read
+
+env:
+  PRODUCT_BRANCH: feat/generic-evidence-attestation-v0.1
+  PARENT_HEAD: 5c15bde918f2dbf6ca6eb7ebc0af0c7448fc2ead
+  PARENT_TREE: 50abbd924ba7ec518d1583cefd067f68f0762241
+  TRANSFORM_BLOB: 93a4c9d6d0a8f8e7dde0d4e69d56503a4807acda
+  CARGO_TARGET_DIR: /tmp/xenia-attestation-strict-r3-target
+
+jobs:
+  strict-verifier:
+    name: Reprove strict Ed25519 attestation verifier
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact product subject
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ env.PRODUCT_BRANCH }}
+          path: product
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check out exact transform subject
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          path: runner-tools
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind exact current attestation head and transform
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C product rev-parse HEAD)" = "$PARENT_HEAD"
+          test "$(git -C product rev-parse HEAD^{tree})" = "$PARENT_TREE"
+          test "$(git -C runner-tools hash-object .github/repair/strict_attestation_ed25519.py)" = "$TRANSFORM_BLOB"
+          test -z "$(git -C product status --porcelain=v1 --untracked-files=all)"
+          test ! -e product/Cargo.lock
+
+      - name: Set up pinned Rust 1.94 MSRV
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: 1.94.0
+          components: clippy, rustfmt
+
+      - name: Freeze tracked product authority surfaces
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd product
+          cp Cargo.toml /tmp/xenia-cargo.before
+          cp test-vectors/conformance/verify-attestation.mjs /tmp/xenia-node.before
+
+      - name: Apply exact strict-verifier transform
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd product
+          python3 ../runner-tools/.github/repair/strict_attestation_ed25519.py
+          cargo fmt -- src/attestation.rs
+          cmp Cargo.toml /tmp/xenia-cargo.before
+          cmp test-vectors/conformance/verify-attestation.mjs /tmp/xenia-node.before
+          test "$(git status --porcelain=v1 --untracked-files=all)" = " M src/attestation.rs"
+          git diff --check -- src/attestation.rs
+          grep -q 'verify_strict(&self.core.canonical_preimage()?, &signature)' src/attestation.rs
+          ! grep -q '\.verify(&self.core.canonical_preimage()?, &signature)' src/attestation.rs
+
+      - name: Check attestation-only feature at MSRV
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd product
+          cargo fmt -- --check
+          cargo check --no-default-features --features attestation --all-targets
+          cargo test --no-default-features --features attestation --lib
+          cargo clippy --no-default-features --features attestation --all-targets -- -D warnings
+
+      - name: Check all-feature integration and doctests at MSRV
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd product
+          cargo check --all-features --all-targets
+          cargo test --all-features
+          cargo clippy --all-features --all-targets -- -D warnings
+          test -f Cargo.lock
+          printf 'generated_lock_sha256=' && sha256sum Cargo.lock | cut -d' ' -f1
+
+      - name: Set up pinned Node 22.17.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "22.17.1"
+          package-manager-cache: false
+
+      - name: Reprove independent Node vectors unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd product
+          node test-vectors/conformance/verify-attestation.mjs
+
+      - name: Refuse collateral tracked mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd product
+          cmp Cargo.toml /tmp/xenia-cargo.before
+          cmp test-vectors/conformance/verify-attestation.mjs /tmp/xenia-node.before
+          rm -f Cargo.lock
+          test "$(git status --porcelain=v1 --untracked-files=all)" = " M src/attestation.rs"
