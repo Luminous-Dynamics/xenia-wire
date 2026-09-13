@@ -1,0 +1,49 @@
+name: Attestation Conformance
+
+on:
+  pull_request:
+    paths:
+      - "src/attestation.rs"
+      - "test-vectors/conformance/verify-attestation.mjs"
+      - ".github/workflows/attestation-conformance.yml"
+  push:
+    branches: [main]
+    paths:
+      - "src/attestation.rs"
+      - "test-vectors/conformance/verify-attestation.mjs"
+      - ".github/workflows/attestation-conformance.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  independent-node:
+    name: Independent Node attestation verifier
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact subject
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Set up pinned Node 22.17.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "22.17.1"
+          package-manager-cache: false
+
+      - name: Emit verifier environment identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'node=%s\n' "$(node --version)"
+          printf 'node_openssl=%s\n' "$(node -p 'process.versions.openssl')"
+          printf 'runner_os=%s\n' "${ImageOS:-unknown}"
+          printf 'runner_version=%s\n' "${ImageVersion:-unknown}"
+          uname -a
+
+      - name: Reconstruct and verify canonical attestation vectors
+        shell: bash
+        run: |
+          set -euo pipefail
+          node test-vectors/conformance/verify-attestation.mjs
