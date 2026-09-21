@@ -35,8 +35,11 @@ done
 if (( failures > 0 )); then
   cat >&2 <<'MSG'
 
-Strong PQC wording found in xenia-wire. This crate is AEAD/replay/consent wire
-format only; PQ key establishment and PQ authentication live above it.
+Strong PQC wording found in xenia-wire. The core/default wire surface remains
+AEAD/replay/consent oriented, while optional pre-alpha handshake modules provide
+specific ML-KEM/ML-DSA protocol compositions. Neither fact establishes that the
+crate or any Xenia product is a complete, independently audited quantum-safe
+system. Keep product-level PQ claims tied to separate evidence.
 MSG
   exit 1
 fi
