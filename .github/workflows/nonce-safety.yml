@@ -1,0 +1,217 @@
+name: Nonce Safety Conformance
+
+on:
+  pull_request:
+    paths:
+      - "Cargo.toml"
+      - "src/session.rs"
+      - "src/strict_receive.rs"
+      - "src/lib.rs"
+      - "src/error.rs"
+      - "SPEC.md"
+      - "SPEC_DRAFT03_ERRATA.md"
+      - "tests/install_key_nonce_characterization.rs"
+      - "tests/directional_nonce_contract.rs"
+      - "tests/strict_nonce_domain.rs"
+      - ".github/workflows/nonce-safety.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nonce-safety-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  RUSTFLAGS: -D warnings
+  RUSTDOCFLAGS: -D warnings
+  QUALIFICATION_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  resolution:
+    name: Freeze dependency resolution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.QUALIFICATION_SOURCE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@1.94
+
+      - name: Resolve one lock for this evidence lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$QUALIFICATION_SOURCE_SHA"
+          test -z "$(git status --porcelain)"
+          cargo generate-lockfile
+          git check-ignore -q Cargo.lock
+          OUT="$RUNNER_TEMP/nonce-resolution"
+          mkdir -p "$OUT"
+          cp Cargo.lock "$OUT/Cargo.lock"
+          {
+            echo "profile=xenia-wire-nonce-safety-resolution-v1"
+            echo "source_head=$(git rev-parse HEAD)"
+            echo "source_tree=$(git rev-parse HEAD^{tree})"
+            echo "cargo_toml_sha256=$(sha256sum Cargo.toml | awk '{print $1}')"
+            echo "resolved_lock_sha256=$(sha256sum Cargo.lock | awk '{print $1}')"
+            rustc -vV
+            cargo -Vv
+          } > "$OUT/resolution-provenance.txt"
+          cat "$OUT/resolution-provenance.txt"
+          test -z "$(git status --porcelain)"
+
+      - name: Retain exact resolved dependency set
+        uses: actions/upload-artifact@v4
+        with:
+          name: nonce-safety-resolution-${{ env.QUALIFICATION_SOURCE_SHA }}
+          path: ${{ runner.temp }}/nonce-resolution
+          if-no-files-found: error
+          retention-days: 90
+
+  source-head:
+    name: Exact source-head nonce invariants
+    needs: resolution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.QUALIFICATION_SOURCE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Restore frozen dependency resolution
+        uses: actions/download-artifact@v4
+        with:
+          name: nonce-safety-resolution-${{ env.QUALIFICATION_SOURCE_SHA }}
+          path: ${{ runner.temp }}/nonce-resolution
+
+      - name: Install retained lock and assert exact immutable source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$QUALIFICATION_SOURCE_SHA"
+          test -z "$(git status --porcelain)"
+          cp "$RUNNER_TEMP/nonce-resolution/Cargo.lock" Cargo.lock
+          git check-ignore -q Cargo.lock
+          test -z "$(git status --porcelain)"
+          echo "SOURCE_HEAD=$(git rev-parse HEAD)"
+          echo "SOURCE_TREE=$(git rev-parse HEAD^{tree})"
+          echo "RESOLVED_LOCK_SHA256=$(sha256sum Cargo.lock | awk '{print $1}')"
+
+      - uses: dtolnay/rust-toolchain@1.94
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Record source/toolchain provenance outside worktree
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROVENANCE="$RUNNER_TEMP/nonce-safety-provenance.txt"
+          {
+            echo "profile=xenia-wire-nonce-safety-v1"
+            echo "source_head=$(git rev-parse HEAD)"
+            echo "source_tree=$(git rev-parse HEAD^{tree})"
+            echo "cargo_toml_sha256=$(sha256sum Cargo.toml | awk '{print $1}')"
+            echo "resolved_lock_sha256=$(sha256sum Cargo.lock | awk '{print $1}')"
+            rustc -vV
+            cargo -Vv
+          } > "$PROVENANCE"
+          cat "$PROVENANCE"
+
+      - name: Format
+        run: cargo fmt --check
+
+      - name: Check no-default feature boundary
+        run: cargo check --locked --no-default-features --all-targets
+
+      - name: Clippy no-default feature boundary
+        run: cargo clippy --locked --no-default-features --all-targets -- -D warnings
+
+      - name: Test no-default feature boundary
+        run: cargo test --locked --no-default-features --tests
+
+      - name: Check default feature boundary
+        run: cargo check --locked --all-targets
+
+      - name: Clippy default feature boundary
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Test default feature boundary
+        run: cargo test --locked --tests
+
+      - name: Assert source tree remained immutable
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$QUALIFICATION_SOURCE_SHA"
+          test -z "$(git status --porcelain)"
+          echo "final_source_tree=$(git rev-parse HEAD^{tree})" >> "$RUNNER_TEMP/nonce-safety-provenance.txt"
+
+      - name: Retain qualification capsule
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nonce-safety-${{ env.QUALIFICATION_SOURCE_SHA }}
+          path: ${{ runner.temp }}/nonce-safety-provenance.txt
+          if-no-files-found: error
+          retention-days: 90
+
+  wasm-msrv:
+    name: MSRV + wasm nonce surface
+    needs: resolution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.QUALIFICATION_SOURCE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Restore frozen dependency resolution
+        uses: actions/download-artifact@v4
+        with:
+          name: nonce-safety-resolution-${{ env.QUALIFICATION_SOURCE_SHA }}
+          path: ${{ runner.temp }}/nonce-resolution
+
+      - name: Install retained lock and assert exact source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$QUALIFICATION_SOURCE_SHA"
+          test -z "$(git status --porcelain)"
+          cp "$RUNNER_TEMP/nonce-resolution/Cargo.lock" Cargo.lock
+          git check-ignore -q Cargo.lock
+          test -z "$(git status --porcelain)"
+
+      - uses: dtolnay/rust-toolchain@1.94
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: MSRV no-default build
+        run: cargo build --locked --no-default-features --all-targets
+
+      - name: MSRV default build
+        run: cargo build --locked --all-targets
+
+      - name: wasm no-default build
+        run: cargo build --locked --target wasm32-unknown-unknown --no-default-features
+
+      - name: wasm default build
+        run: cargo build --locked --target wasm32-unknown-unknown
+
+      - name: Assert source tree remained immutable
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$QUALIFICATION_SOURCE_SHA"
+          test -z "$(git status --porcelain)"
