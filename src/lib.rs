@@ -76,10 +76,11 @@
 //!
 //! ## Feature flags
 //!
-//! | Feature           | Default | Description                                          |
-//! |-------------------|---------|------------------------------------------------------|
-//! | `reference-frame` | yes     | Ships [`Frame`] + [`Input`] reference types.         |
-//! | `lz4`             | no      | Adds LZ4-before-AEAD variants for frame sealing.     |
+//! | Feature              | Default | Description                                      |
+//! |----------------------|---------|--------------------------------------------------|
+//! | `reference-frame`    | yes     | Ships [`Frame`] + [`Input`] reference types.     |
+//! | `lz4`                | no      | Adds LZ4-before-AEAD frame compression.          |
+//! | `detached-signature` | no      | Ed25519 / ML-DSA-87 / strict hybrid verification.|
 //!
 //! ## License
 //!
@@ -100,6 +101,9 @@ mod frame;
 
 #[cfg(feature = "consent")]
 pub mod consent;
+
+#[cfg(feature = "detached-signature")]
+pub mod detached_signature;
 
 #[cfg(feature = "handshake")]
 pub mod handshake;
