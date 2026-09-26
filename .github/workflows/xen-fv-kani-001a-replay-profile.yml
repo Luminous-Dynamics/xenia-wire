@@ -1,0 +1,113 @@
+name: XEN-FV-KANI-001A Replay Profile
+
+on:
+  pull_request:
+    paths:
+      - "formal/kani/replay_window_profile_v1.json"
+      - "formal/kani/REPLAY_WINDOW_KANI_PROFILE_V1.md"
+      - "scripts/validate_kani_replay_profile_v1.py"
+      - ".github/workflows/xen-fv-kani-001a-replay-profile.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: xen-fv-kani-001a-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  profile-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      EXACT_PARENT: 057dd03043b8863d8f8280abf333331cc9ddf317
+      EXACT_SOURCE_BLOB: 9e55ddf7bfd7d7851cc3968d3407bd2c78ba9908
+      REQUESTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact subject
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify exact lineage, production source, and four-file scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$REQUESTED_HEAD"
+          test "$(git merge-base "$EXACT_PARENT" HEAD)" = "$EXACT_PARENT"
+          test "$(git rev-parse HEAD:src/replay_window.rs)" = "$EXACT_SOURCE_BLOB"
+
+          mapfile -t changed < <(git diff --name-only "$EXACT_PARENT"...HEAD | sort)
+          expected=(
+            ".github/workflows/xen-fv-kani-001a-replay-profile.yml"
+            "formal/kani/REPLAY_WINDOW_KANI_PROFILE_V1.md"
+            "formal/kani/replay_window_profile_v1.json"
+            "scripts/validate_kani_replay_profile_v1.py"
+          )
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
+          diff -u <(printf '%s\n' "${expected_sorted[@]}") <(printf '%s\n' "${changed[@]}")
+
+      - name: Validate profile and hostile controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/validate_kani_replay_profile_v1.py
+          python3 scripts/validate_kani_replay_profile_v1.py > /tmp/xen-fv-kani-001a-validator.txt
+          cat /tmp/xen-fv-kani-001a-validator.txt
+          grep -qx 'xen_fv_kani_replay_profile_v1=PASS' /tmp/xen-fv-kani-001a-validator.txt
+          grep -qx 'profile_status=CandidateProfileNeedsQualification' /tmp/xen-fv-kani-001a-validator.txt
+
+      - name: Postflight and profile receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, subprocess
+
+          def git(*args):
+              return subprocess.check_output(["git", *args], text=True).strip()
+          def sha256(path):
+              return hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
+
+          receipt = {
+              "schema": "xenia.formal.kani.replay-window-profile-qualification.v1",
+              "tracking_issue": 70,
+              "authority": "EvidenceOnly",
+              "result": "Pass",
+              "qualification_kind": "KaniReplayProfileContractQualified",
+              "head": git("rev-parse", "HEAD"),
+              "tree": git("rev-parse", "HEAD^{tree}"),
+              "parent": os.environ["EXACT_PARENT"],
+              "production_source_blob": git("rev-parse", "HEAD:src/replay_window.rs"),
+              "kani_execution_performed": False,
+              "artifacts": {
+                  "profile_sha256": sha256("formal/kani/replay_window_profile_v1.json"),
+                  "validator_sha256": sha256("scripts/validate_kani_replay_profile_v1.py"),
+                  "boundary_doc_sha256": sha256("formal/kani/REPLAY_WINDOW_KANI_PROFILE_V1.md"),
+              },
+              "nonclaims": [
+                  "not-kani-harness-execution",
+                  "not-bounded-model-safety-pass",
+                  "not-unbounded-replay-proof",
+                  "not-runtime-authority",
+              ],
+          }
+          out = pathlib.Path("/tmp/xen-fv-kani-001a-profile-receipt.json")
+          out.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
+          print(out.read_text())
+          PY
+
+      - name: Retain profile evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: xen-fv-kani-001a-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            /tmp/xen-fv-kani-001a-validator.txt
+            /tmp/xen-fv-kani-001a-profile-receipt.json
+          if-no-files-found: error
+          retention-days: 30
