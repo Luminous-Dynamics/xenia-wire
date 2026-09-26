@@ -205,29 +205,42 @@ jobs:
           mutant_status = read_int("/tmp/kani-mutant.exit")
           clean_log = read("/tmp/kani-clean.log")
           mutant_log = read("/tmp/kani-mutant.log")
+          clean_lower = clean_log.lower()
+          mutant_lower = mutant_log.lower()
+
+          def unwind_exhausted(log_lower):
+              return "unwinding assertion" in log_lower or (
+                  "unwind" in log_lower and "assertion" in log_lower
+              )
 
           if install_status != 0 or setup_status != 0 or version_status != 0:
               result = "EnvironmentFailure"
               detail = "KaniEnvironmentUnavailable"
           elif clean_status != 0:
-              if "VERIFICATION:- FAILED" in clean_log:
+              if unwind_exhausted(clean_lower):
+                  result = "Blocked"
+                  detail = "CleanUnwindBoundInsufficient"
+              elif "verification:- failed" in clean_lower:
                   result = "Fail"
                   detail = "CleanHarnessCounterexample"
               else:
                   result = "Blocked"
                   detail = "CleanHarnessDidNotComplete"
-          elif "VERIFICATION:- SUCCESSFUL" not in clean_log:
+          elif "verification:- successful" not in clean_lower:
               result = "Blocked"
               detail = "CleanSuccessMarkerMissing"
           elif mutant_status == 0:
               result = "Fail"
               detail = "HostileMutantUnexpectedPass"
-          elif "VERIFICATION:- FAILED" not in mutant_log:
+          elif unwind_exhausted(mutant_lower):
               result = "Blocked"
-              detail = "HostileMutantNoCounterexampleEvidence"
+              detail = "HostileMutantUnwindBoundInsufficient"
+          elif "verification:- failed" not in mutant_lower or "assertion failed" not in mutant_lower:
+              result = "Blocked"
+              detail = "HostileMutantNoAssertionCounterexample"
           else:
               result = "Pass"
-              detail = "CleanPassAndHostileMutantRejected"
+              detail = "CleanPassAndHostileMutantAssertionRejected"
 
           receipt = {
               "schema": "xenia.formal.kani-replay-window.qualification.v1",
