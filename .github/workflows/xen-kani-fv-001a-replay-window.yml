@@ -1,0 +1,305 @@
+name: XEN-KANI-FV-001A Replay Window
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "tests/kani_replay_window.rs"
+      - "docs/formal/xen-kani-fv-001a-v1.json"
+      - ".github/workflows/xen-kani-fv-001a-replay-window.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: xen-kani-fv-001a-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  replay-window-kani:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      EXACT_PARENT: 057dd03043b8863d8f8280abf333331cc9ddf317
+      EXPECTED_SOURCE_BLOB: 9e55ddf7bfd7d7851cc3968d3407bd2c78ba9908
+      EXPECTED_FUZZ_BLOB: a27128c0c503780ad9e12fda23ee907c8cd6aa1e
+      KANI_VERSION: 0.68.0
+      REQUESTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact subject
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify exact lineage, source identity, and three-file scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$REQUESTED_HEAD"
+          test "$(git merge-base "$EXACT_PARENT" HEAD)" = "$EXACT_PARENT"
+          test "$(git rev-parse HEAD:src/replay_window.rs)" = "$EXPECTED_SOURCE_BLOB"
+          test "$(git rev-parse HEAD:fuzz/fuzz_targets/fuzz_replay_window.rs)" = "$EXPECTED_FUZZ_BLOB"
+
+          mapfile -t changed < <(git diff --name-only "$EXACT_PARENT"...HEAD | sort)
+          expected=(
+            ".github/workflows/xen-kani-fv-001a-replay-window.yml"
+            "docs/formal/xen-kani-fv-001a-v1.json"
+            "tests/kani_replay_window.rs"
+          )
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
+          diff -u <(printf '%s\n' "${expected_sorted[@]}") <(printf '%s\n' "${changed[@]}")
+
+      - name: Validate evidence contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          c = json.loads(Path("docs/formal/xen-kani-fv-001a-v1.json").read_text())
+          assert c["schema"] == "xenia.formal.kani-replay-window.v1"
+          assert c["tracking_issue"] == 73
+          assert c["authority"] == "EvidenceOnly"
+          assert c["evidence_class"] == "BoundedModelSafety"
+          assert c["parent"]["commit"] == "057dd03043b8863d8f8280abf333331cc9ddf317"
+          assert c["production_subject"]["blob"] == "9e55ddf7bfd7d7851cc3968d3407bd2c78ba9908"
+          assert c["existing_fuzz_subject"]["blob"] == "a27128c0c503780ad9e12fda23ee907c8cd6aa1e"
+          assert c["kani"]["version"] == "0.68.0"
+          assert c["qualification_result_vocabulary"] == ["Pass", "Fail", "Blocked", "EnvironmentFailure"]
+          assert "UnboundedReplaySecurityTheorem" in c["nonclaims"]
+          assert "CrossRepositorySubjectClosure" in c["nonclaims"]
+          assert len(c["harnesses"]) == 8
+          PY
+
+      - name: Ordinary Rust build remains unaffected
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --locked
+
+      - name: Install pinned Kani environment
+        id: kani_setup
+        shell: bash
+        run: |
+          set +e
+          cargo install --locked kani-verifier --version "$KANI_VERSION" > /tmp/kani-install.log 2>&1
+          install_status=$?
+          if [ "$install_status" -eq 0 ]; then
+            cargo kani setup > /tmp/kani-setup.log 2>&1
+            setup_status=$?
+          else
+            setup_status=125
+            printf 'setup skipped because cargo install failed\n' > /tmp/kani-setup.log
+          fi
+          if [ "$install_status" -eq 0 ] && [ "$setup_status" -eq 0 ]; then
+            cargo kani --version > /tmp/kani-version.txt 2>&1
+            version_status=$?
+          else
+            version_status=125
+            printf 'version unavailable\n' > /tmp/kani-version.txt
+          fi
+          set -e
+
+          cat /tmp/kani-install.log
+          cat /tmp/kani-setup.log
+          cat /tmp/kani-version.txt
+          printf '%s\n' "$install_status" > /tmp/kani-install.exit
+          printf '%s\n' "$setup_status" > /tmp/kani-setup.exit
+          printf '%s\n' "$version_status" > /tmp/kani-version.exit
+          if [ "$install_status" -eq 0 ] && [ "$setup_status" -eq 0 ] && [ "$version_status" -eq 0 ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run clean bounded proof suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.kani_setup.outputs.ready }}" != "true" ]; then
+            printf 'Kani environment unavailable; clean proof not executed\n' > /tmp/kani-clean.log
+            printf '125\n' > /tmp/kani-clean.exit
+            exit 0
+          fi
+
+          set +e
+          cargo kani --tests --default-unwind 20 > /tmp/kani-clean.log 2>&1
+          status=$?
+          set -e
+          printf '%s\n' "$status" > /tmp/kani-clean.exit
+          cat /tmp/kani-clean.log
+
+      - name: Hostile stale-boundary mutant must be rejected
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.kani_setup.outputs.ready }}" != "true" ] || [ "$(cat /tmp/kani-clean.exit)" -ne 0 ]; then
+            printf 'Mutant not run because clean qualification did not PASS execution\n' > /tmp/kani-mutant.log
+            printf '125\n' > /tmp/kani-mutant.exit
+            exit 0
+          fi
+
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("src/replay_window.rs")
+          s = p.read_text()
+          old = "if offset >= window_bits_u64 {"
+          new = "if offset > window_bits_u64 {"
+          if s.count(old) != 1:
+              raise SystemExit(f"expected exactly one stale-boundary predicate, found {s.count(old)}")
+          p.write_text(s.replace(old, new, 1))
+          PY
+
+          set +e
+          cargo kani --tests --default-unwind 20 --harness sequence_at_window_width_is_stale > /tmp/kani-mutant.log 2>&1
+          status=$?
+          set -e
+          printf '%s\n' "$status" > /tmp/kani-mutant.exit
+          cat /tmp/kani-mutant.log
+
+          git restore --source=HEAD -- src/replay_window.rs
+          test "$(git rev-parse HEAD:src/replay_window.rs)" = "$EXPECTED_SOURCE_BLOB"
+          git diff --exit-code -- src/replay_window.rs
+
+      - name: Build exact-head evidence receipt
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+
+          def read_int(path, default=125):
+              p = Path(path)
+              if not p.exists():
+                  return default
+              try:
+                  return int(p.read_text().strip())
+              except Exception:
+                  return default
+
+          def read(path):
+              p = Path(path)
+              return p.read_text(errors="replace") if p.exists() else ""
+
+          def sha256(path):
+              p = Path(path)
+              return hashlib.sha256(p.read_bytes()).hexdigest() if p.exists() else None
+
+          def git(*args):
+              return subprocess.check_output(["git", *args], text=True).strip()
+
+          install_status = read_int("/tmp/kani-install.exit")
+          setup_status = read_int("/tmp/kani-setup.exit")
+          version_status = read_int("/tmp/kani-version.exit")
+          clean_status = read_int("/tmp/kani-clean.exit")
+          mutant_status = read_int("/tmp/kani-mutant.exit")
+          clean_log = read("/tmp/kani-clean.log")
+          mutant_log = read("/tmp/kani-mutant.log")
+
+          if install_status != 0 or setup_status != 0 or version_status != 0:
+              result = "EnvironmentFailure"
+              detail = "KaniEnvironmentUnavailable"
+          elif clean_status != 0:
+              if "VERIFICATION:- FAILED" in clean_log:
+                  result = "Fail"
+                  detail = "CleanHarnessCounterexample"
+              else:
+                  result = "Blocked"
+                  detail = "CleanHarnessDidNotComplete"
+          elif "VERIFICATION:- SUCCESSFUL" not in clean_log:
+              result = "Blocked"
+              detail = "CleanSuccessMarkerMissing"
+          elif mutant_status == 0:
+              result = "Fail"
+              detail = "HostileMutantUnexpectedPass"
+          elif "VERIFICATION:- FAILED" not in mutant_log:
+              result = "Blocked"
+              detail = "HostileMutantNoCounterexampleEvidence"
+          else:
+              result = "Pass"
+              detail = "CleanPassAndHostileMutantRejected"
+
+          receipt = {
+              "schema": "xenia.formal.kani-replay-window.qualification.v1",
+              "tracking_issue": 73,
+              "authority": "EvidenceOnly",
+              "evidence_class": "BoundedModelSafety",
+              "result": result,
+              "model_checker_outcome": detail,
+              "head": git("rev-parse", "HEAD"),
+              "tree": git("rev-parse", "HEAD^{tree}"),
+              "parent": os.environ["EXACT_PARENT"],
+              "parent_is_ancestor": git("merge-base", os.environ["EXACT_PARENT"], "HEAD") == os.environ["EXACT_PARENT"],
+              "production_source_blob": git("rev-parse", "HEAD:src/replay_window.rs"),
+              "fuzz_subject_blob": git("rev-parse", "HEAD:fuzz/fuzz_targets/fuzz_replay_window.rs"),
+              "kani_version_requested": os.environ["KANI_VERSION"],
+              "kani_version_observed": read("/tmp/kani-version.txt").strip(),
+              "default_unwind": 20,
+              "test_mode": True,
+              "hostile_control": "stale-boundary-off-by-one",
+              "logs": {
+                  "clean_sha256": sha256("/tmp/kani-clean.log"),
+                  "mutant_sha256": sha256("/tmp/kani-mutant.log"),
+              },
+              "artifacts": {
+                  "harness_sha256": sha256("tests/kani_replay_window.rs"),
+                  "contract_sha256": sha256("docs/formal/xen-kani-fv-001a-v1.json"),
+              },
+              "nonclaims": [
+                  "not-unbounded-replay-security-theorem",
+                  "not-aead-cryptographic-security-proof",
+                  "not-session-key-management-correctness",
+                  "not-compiler-correctness",
+                  "not-native-binary-verification",
+                  "not-runtime-authorization",
+                  "not-cross-repository-subject-closure"
+              ]
+          }
+          Path("/tmp/xen-kani-fv-001a-receipt.json").write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
+          print(Path("/tmp/xen-kani-fv-001a-receipt.json").read_text())
+          PY
+
+          git diff --exit-code
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Retain bounded-model evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: xen-kani-fv-001a-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            /tmp/xen-kani-fv-001a-receipt.json
+            /tmp/kani-install.log
+            /tmp/kani-setup.log
+            /tmp/kani-version.txt
+            /tmp/kani-clean.log
+            /tmp/kani-mutant.log
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Admit only canonical PASS
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("/tmp/xen-kani-fv-001a-receipt.json")
+          if not p.exists():
+              raise SystemExit("qualification receipt missing")
+          result = json.loads(p.read_text())["result"]
+          if result != "Pass":
+              raise SystemExit(f"XEN-KANI-FV-001A not admitted: result={result}")
+          print("XEN-KANI-FV-001A admission: PASS")
+          PY
