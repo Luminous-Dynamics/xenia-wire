@@ -1,0 +1,56 @@
+{
+  "schema": "xenia.formal.kani-replay-window.v1",
+  "tracking_issue": 73,
+  "authority": "EvidenceOnly",
+  "evidence_class": "BoundedModelSafety",
+  "parent": {
+    "commit": "057dd03043b8863d8f8280abf333331cc9ddf317"
+  },
+  "production_subject": {
+    "path": "src/replay_window.rs",
+    "blob": "9e55ddf7bfd7d7851cc3968d3407bd2c78ba9908"
+  },
+  "existing_fuzz_subject": {
+    "path": "fuzz/fuzz_targets/fuzz_replay_window.rs",
+    "blob": "a27128c0c503780ad9e12fda23ee907c8cd6aa1e"
+  },
+  "kani": {
+    "version": "0.68.0",
+    "default_unwind": 20,
+    "test_mode": true
+  },
+  "harnesses": [
+    "immediate_duplicate_is_rejected",
+    "unseen_out_of_order_sequence_is_accepted_once",
+    "sequence_at_window_width_is_stale",
+    "higher_sequence_advances_without_reviving_duplicates",
+    "stream_key_dimensions_are_isolated",
+    "drop_epoch_is_narrow",
+    "cross_word_shift_preserves_seen_bit",
+    "admitted_window_widths_do_not_panic_on_transitions"
+  ],
+  "hostile_control": {
+    "name": "stale-boundary-off-by-one",
+    "production_mutation": "if offset >= window_bits_u64 -> if offset > window_bits_u64",
+    "required_harness": "sequence_at_window_width_is_stale",
+    "required_outcome": "Counterexample"
+  },
+  "qualification_result_vocabulary": [
+    "Pass",
+    "Fail",
+    "Blocked",
+    "EnvironmentFailure"
+  ],
+  "claim_ceiling": [
+    "ReplayWindowBoundedModelSafetyWithinRecordedHarnessDomain"
+  ],
+  "nonclaims": [
+    "UnboundedReplaySecurityTheorem",
+    "AeadCryptographicSecurityProof",
+    "SessionKeyManagementCorrectness",
+    "CompilerCorrectness",
+    "NativeBinaryVerification",
+    "RuntimeAuthorization",
+    "CrossRepositorySubjectClosure"
+  ]
+}
