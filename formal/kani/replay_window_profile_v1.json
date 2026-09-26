@@ -1,0 +1,90 @@
+{
+  "schema": "xenia.formal.kani.replay-window-profile.v1",
+  "tracking_issue": 70,
+  "authority": "EvidenceOnly",
+  "status": "CandidateProfileNeedsQualification",
+  "evidence_class": "BoundedModelSafety",
+  "subject": {
+    "repository": "Luminous-Dynamics/xenia-wire",
+    "commit": "057dd03043b8863d8f8280abf333331cc9ddf317",
+    "path": "src/replay_window.rs",
+    "blob": "9e55ddf7bfd7d7851cc3968d3407bd2c78ba9908"
+  },
+  "tool": {
+    "name": "Kani",
+    "version": "0.67.0",
+    "upstream_repository": "model-checking/kani",
+    "upstream_commit": "4feaaad1d6a2378a6ff6caa3b4fc5d6999c7bb5d",
+    "installation_rule": "pin exact version; no latest or moving refs in evidence workflow"
+  },
+  "bounds": {
+    "window_width_bits": [64, 128],
+    "max_trace_steps": 4,
+    "max_distinct_stream_keys": 2,
+    "sequence_values": "symbolic u64 per step",
+    "stream_key_profile": "two explicit source/payload/epoch identities for isolation harnesses",
+    "unwind_policy": "every harness declares/reports an explicit unwind bound when loops require it; any failed unwinding assertion blocks PASS"
+  },
+  "implementation_strategy": {
+    "first": "DirectProductionPath",
+    "fallback": "ProductionPureTransitionKernelSeam",
+    "fallback_rule": "only if direct ReplayWindow HashMap/Vec verification is unsupported or intractable; seam must be production-used, not a verification-only copy"
+  },
+  "obligations": [
+    "AdmittedWidthGeometrySafe",
+    "FirstSequenceInitializesSafely",
+    "ImmediateDuplicateRejected",
+    "InWindowDuplicateRejected",
+    "TooOldRejected",
+    "UnseenInWindowAcceptedOnce",
+    "ForwardHighestMonotonicWithinStream",
+    "BitmapIndexInBounds",
+    "UnsignedSubtractionBranchSafe",
+    "ShiftWidthSafe",
+    "LargeJumpClearsAndSeeds",
+    "StreamKeyIsolation",
+    "DropEpochIsolation",
+    "ShiftBitmapReferenceEquivalenceBounded"
+  ],
+  "constructor_boundary": {
+    "admitted_width_precondition": "64 <= bits <= 1024 && bits % 64 == 0",
+    "invalid_width_panic_is_expected": true,
+    "universal_panic_freedom_claim_forbidden": true
+  },
+  "canonical_result_mapping": {
+    "all_selected_harnesses_verified_with_sufficient_bounds": "Pass",
+    "property_counterexample_or_reachable_safety_failure": "Fail",
+    "insufficient_unwind_or_unsupported_required_semantics": "Blocked",
+    "tool_setup_or_executor_failure": "EnvironmentFailure"
+  },
+  "required_receipt_fields": [
+    "source_commit",
+    "source_tree",
+    "source_blob",
+    "harness_blob",
+    "kani_version",
+    "kani_upstream_commit",
+    "exact_bounds",
+    "exact_command_line",
+    "harness_results",
+    "unwinding_results",
+    "full_output_digest",
+    "repository_postflight_clean"
+  ],
+  "claim_ceiling": [
+    "bounded replay-window implementation safety under the exact admitted proof profile",
+    "not an unbounded replay theorem",
+    "not a liveness theorem",
+    "not cryptographic authenticity or nonce-uniqueness proof",
+    "not compiler or native-binary correctness",
+    "not cross-repository proof portability"
+  ],
+  "nonclaims": [
+    "KaniHarnessesImplemented",
+    "KaniExecutionQualified",
+    "UnboundedReplayCorrectness",
+    "VerusDeductiveProof",
+    "CompilerCorrectness",
+    "RuntimeAuthority"
+  ]
+}
