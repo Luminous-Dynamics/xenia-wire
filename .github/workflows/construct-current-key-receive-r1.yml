@@ -1,0 +1,249 @@
+name: Construct Current-Key Receive R1
+
+on:
+  push:
+    branches:
+      - session-current-key-open-v1-r1-constructor
+  workflow_dispatch:
+
+concurrency:
+  group: construct-current-key-receive-r1-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  BASE_SHA: adccf0fb65365ff492a4529bd209ca6bc846e5f0
+  BASE_TREE: 890df767447cd7aeb7c4cc0e531840c8f9a292bb
+  HISTORICAL_PARENT: 0ad16f308638a378b851ffc461219af62e1135f0
+  HISTORICAL_HEAD: d13f203caeb46497490527c39bfec567f7902e60
+  CANDIDATE_BRANCH: session-current-key-open-v1-r1-candidate
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  RUSTFLAGS: -D warnings
+
+jobs:
+  construct:
+    name: Read-only reconstruct and qualify current-key receive
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      candidate_sha: ${{ steps.candidate.outputs.candidate_sha }}
+      candidate_tree: ${{ steps.candidate.outputs.candidate_tree }}
+    steps:
+      - name: Checkout exact constructor head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Assert exact source lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse "$BASE_SHA^{tree}")" = "$BASE_TREE"
+          git cat-file -e "$HISTORICAL_PARENT^{commit}"
+          git cat-file -e "$HISTORICAL_HEAD^{commit}"
+          test "$(git merge-base "$BASE_SHA" HEAD)" = "$BASE_SHA"
+          test -z "$(git status --porcelain)"
+
+      - name: Reconstruct bounded five-file runtime candidate
+        run: python3 scripts/construct_current_key_receive_r1.py
+
+      - name: Assert exact runtime diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected=$'.github/workflows/nonce-safety.yml\nsrc/lib.rs\nsrc/session.rs\nsrc/strict_receive.rs\ntests/current_key_open.rs'
+          test "$(git diff --name-only | sort)" = "$expected"
+          test "$(git diff --name-only --diff-filter=A | sort)" = 'tests/current_key_open.rs'
+
+      - name: Install Rust 1.94
+        uses: dtolnay/rust-toolchain@1.94
+        with:
+          components: clippy, rustfmt
+
+      - name: Freeze dependency resolution for constructor evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo generate-lockfile
+          git check-ignore -q Cargo.lock
+          sha256sum Cargo.lock
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Focused current-key receive regressions
+        run: |
+          cargo test --locked --test current_key_open
+          cargo test --locked --features consent --test current_key_open
+          cargo test --locked --test strict_nonce_domain
+          cargo test --locked --test install_key_nonce_characterization
+
+      - name: Check default and no-default boundaries
+        run: |
+          cargo check --locked --all-targets
+          cargo check --locked --no-default-features --all-targets
+
+      - name: Strict Clippy default and no-default boundaries
+        run: |
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo clippy --locked --no-default-features --all-targets -- -D warnings
+
+      - name: Run complete test surface
+        run: |
+          cargo test --locked --tests
+          cargo test --locked --features consent --tests
+
+      - name: Build deterministic five-file runtime candidate
+        id: candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/current-key-receive-r1"
+          mkdir -p "$OUT"
+
+          workflow_blob="$(git hash-object -w .github/workflows/nonce-safety.yml)"
+          lib_blob="$(git hash-object -w src/lib.rs)"
+          session_blob="$(git hash-object -w src/session.rs)"
+          strict_blob="$(git hash-object -w src/strict_receive.rs)"
+          test_blob="$(git hash-object -w tests/current_key_open.rs)"
+
+          export GIT_INDEX_FILE="$OUT/candidate.index"
+          rm -f "$GIT_INDEX_FILE"
+          git read-tree "$BASE_SHA"
+          git update-index --cacheinfo "100644,$workflow_blob,.github/workflows/nonce-safety.yml"
+          git update-index --cacheinfo "100644,$lib_blob,src/lib.rs"
+          git update-index --cacheinfo "100644,$session_blob,src/session.rs"
+          git update-index --cacheinfo "100644,$strict_blob,src/strict_receive.rs"
+          git update-index --add --cacheinfo "100644,$test_blob,tests/current_key_open.rs"
+          candidate_tree="$(git write-tree)"
+          unset GIT_INDEX_FILE
+
+          export GIT_AUTHOR_NAME='Xenia Security Constructor'
+          export GIT_AUTHOR_EMAIL='security-constructor@invalid.local'
+          export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME"
+          export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+          export GIT_AUTHOR_DATE="$(git show -s --format=%cI "$HISTORICAL_HEAD")"
+          export GIT_COMMITTER_DATE="$GIT_AUTHOR_DATE"
+          candidate_sha="$(printf '%s\n' 'feat(session): add role-bound current-key live receive' | git commit-tree "$candidate_tree" -p "$BASE_SHA")"
+          git update-ref "refs/heads/${CANDIDATE_BRANCH}-local" "$candidate_sha"
+
+          test "$(git rev-parse "$candidate_sha^")" = "$BASE_SHA"
+          test "$(git rev-parse "$candidate_sha^{tree}")" = "$candidate_tree"
+          expected=$'.github/workflows/nonce-safety.yml\nsrc/lib.rs\nsrc/session.rs\nsrc/strict_receive.rs\ntests/current_key_open.rs'
+          test "$(git diff --name-only "$BASE_SHA" "$candidate_sha" | sort)" = "$expected"
+          test "$(git rev-list --count "$BASE_SHA..$candidate_sha")" = 1
+
+          git diff --binary "$BASE_SHA" "$candidate_sha" > "$OUT/CANDIDATE.patch"
+          git bundle create "$OUT/CANDIDATE.bundle" "refs/heads/${CANDIDATE_BRANCH}-local" ^"$BASE_SHA"
+          sha256sum "$OUT/CANDIDATE.bundle" > "$OUT/CANDIDATE.bundle.sha256"
+          cp Cargo.lock "$OUT/Cargo.lock"
+
+          {
+            echo 'schema=xenia.current-key-receive-r1.candidate.v1'
+            echo 'historical_pr=44'
+            echo 'issue=38'
+            echo "constructor_head=$GITHUB_SHA"
+            echo "base_sha=$BASE_SHA"
+            echo "base_tree=$BASE_TREE"
+            echo "historical_parent=$HISTORICAL_PARENT"
+            echo "historical_head=$HISTORICAL_HEAD"
+            echo "candidate_sha=$candidate_sha"
+            echo "candidate_tree=$candidate_tree"
+            echo "changed_file=.github/workflows/nonce-safety.yml"
+            echo "changed_file=src/lib.rs"
+            echo "changed_file=src/session.rs"
+            echo "changed_file=src/strict_receive.rs"
+            echo "changed_file=tests/current_key_open.rs"
+            echo "candidate_workflow_blob=$workflow_blob"
+            echo "candidate_lib_blob=$lib_blob"
+            echo "candidate_session_blob=$session_blob"
+            echo "candidate_strict_blob=$strict_blob"
+            echo "candidate_test_blob=$test_blob"
+            echo "cargo_lock_sha256=$(sha256sum Cargo.lock | awk '{print $1}')"
+            echo "constructor_sha256=$(sha256sum scripts/construct_current_key_receive_r1.py | awk '{print $1}')"
+            echo "workflow_sha256=$(sha256sum .github/workflows/construct-current-key-receive-r1.yml | awk '{print $1}')"
+            echo 'claim=qualified-construction-candidate-only-no-runtime-promotion-claim'
+          } > "$OUT/PROVENANCE.txt"
+          cat "$OUT/PROVENANCE.txt"
+
+          echo "candidate_sha=$candidate_sha" >> "$GITHUB_OUTPUT"
+          echo "candidate_tree=$candidate_tree" >> "$GITHUB_OUTPUT"
+
+      - name: Prove constructor worktree did not absorb candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git restore .github/workflows/nonce-safety.yml src/lib.rs src/session.rs src/strict_receive.rs
+          rm -f tests/current_key_open.rs Cargo.lock
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain)"
+
+      - name: Retain exact construction capsule
+        uses: actions/upload-artifact@v4
+        with:
+          name: current-key-receive-r1-${{ github.sha }}
+          path: ${{ runner.temp }}/current-key-receive-r1
+          if-no-files-found: error
+          retention-days: 90
+
+  publish:
+    name: Verify capsule and publish isolated candidate
+    needs: construct
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout exact constructor head with push credentials
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Download exact construction capsule
+        uses: actions/download-artifact@v4
+        with:
+          name: current-key-receive-r1-${{ github.sha }}
+          path: ${{ runner.temp }}/current-key-receive-r1
+
+      - name: Verify capsule and candidate identity
+        shell: bash
+        env:
+          EXPECTED_CANDIDATE_SHA: ${{ needs.construct.outputs.candidate_sha }}
+          EXPECTED_CANDIDATE_TREE: ${{ needs.construct.outputs.candidate_tree }}
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/current-key-receive-r1"
+          (cd "$OUT" && sha256sum -c CANDIDATE.bundle.sha256)
+          git bundle verify "$OUT/CANDIDATE.bundle"
+          git fetch "$OUT/CANDIDATE.bundle" "refs/heads/${CANDIDATE_BRANCH}-local:refs/remotes/capsule/candidate"
+          candidate_sha="$(git rev-parse refs/remotes/capsule/candidate)"
+          test "$candidate_sha" = "$EXPECTED_CANDIDATE_SHA"
+          test "$(git rev-parse "$candidate_sha^")" = "$BASE_SHA"
+          test "$(git rev-parse "$candidate_sha^{tree}")" = "$EXPECTED_CANDIDATE_TREE"
+          expected=$'.github/workflows/nonce-safety.yml\nsrc/lib.rs\nsrc/session.rs\nsrc/strict_receive.rs\ntests/current_key_open.rs'
+          test "$(git diff --name-only "$BASE_SHA" "$candidate_sha" | sort)" = "$expected"
+          test "$(git rev-list --count "$BASE_SHA..$candidate_sha")" = 1
+          grep -q "candidate_sha=$candidate_sha" "$OUT/PROVENANCE.txt"
+          grep -q "candidate_tree=$EXPECTED_CANDIDATE_TREE" "$OUT/PROVENANCE.txt"
+
+      - name: Publish collision-checked candidate branch
+        shell: bash
+        env:
+          CANDIDATE_SHA: ${{ needs.construct.outputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --heads origin "$CANDIDATE_BRANCH" >/dev/null 2>&1; then
+            remote_sha="$(git ls-remote origin "refs/heads/$CANDIDATE_BRANCH" | awk '{print $1}')"
+            test "$remote_sha" = "$CANDIDATE_SHA"
+            echo "candidate branch already publishes exact candidate"
+          else
+            git push origin "$CANDIDATE_SHA:refs/heads/$CANDIDATE_BRANCH"
+          fi
