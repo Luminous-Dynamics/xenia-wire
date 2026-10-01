@@ -215,6 +215,7 @@ jobs:
         shell: bash
         run: |
           set +e
+          : > /tmp/kani.json
           if [ "$(cat /tmp/kani-install.exit)" -ne 0 ] ||
              [ "$(cat /tmp/kani-setup.exit)" -ne 0 ] ||
              [ "$(cat /tmp/kani-version.exit)" -ne 0 ] ||
@@ -394,6 +395,23 @@ jobs:
             echo "hostile mutant unexpectedly passed"
             exit 1
           fi
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path("/tmp/kani-mutant.json").read_text())
+          vr = data.get("verification_results", {})
+          results = vr.get("results", []) if isinstance(vr, dict) else []
+          target = next((x for x in results if x.get("harness_id") == "sequence_at_window_width_is_stale"), None)
+          if not isinstance(target, dict) or target.get("status") != "Failure":
+              raise SystemExit("hostile structured verdict was not Failure")
+          checks = target.get("checks", [])
+          if not any(isinstance(x, dict) and str(x.get("status")).lower() == "failure" for x in checks):
+              raise SystemExit("hostile structured result contains no failed property")
+          print(json.dumps({
+              "status": target.get("status"),
+              "failed_checks": [x for x in checks if isinstance(x, dict) and str(x.get("status")).lower() == "failure"]
+          }, indent=2, sort_keys=True))
+          PY
           grep -qi "verification:- failed" /tmp/kani-mutant.log
           grep -qi "assertion failed" /tmp/kani-mutant.log
 
