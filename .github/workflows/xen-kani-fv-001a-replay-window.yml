@@ -431,10 +431,18 @@ jobs:
               "admitted_window_widths_do_not_panic_on_transitions",
           }
           clean = {json.loads(p.read_text())["harness"]: json.loads(p.read_text()) for p in receipts}
-          results = []
           detail = "CleanHarnessesOrHostileControlNotQualified"
+          preflight_exit = root / "xen-kani-fv-001a-preflight-" / "rust-build.exit"
+          preflight_files = list(root.glob("**/rust-build.exit"))
+          hostile_job_result = os.environ.get("HOSTILE_JOB_RESULT", "unknown")
 
-          if len(clean) != len(expected) or set(clean) != expected:
+          if len(preflight_files) != 1:
+              result = "Blocked"
+              detail = "PreflightBuildReceiptMissing"
+          elif preflight_files[0].read_text().strip() != "0":
+              result = "BuildFailure"
+              detail = "OrdinaryRustBuildFailed"
+          elif len(clean) != len(expected) or set(clean) != expected:
               result = "Blocked"
               detail = "IncompleteHarnessReceiptSet"
           elif any(v["result"] == "EnvironmentFailure" for v in clean.values()):
@@ -448,7 +456,10 @@ jobs:
               detail = "OneOrMoreCleanHarnessesDidNotPass"
           else:
               hostile_logs = list(root.glob("**/kani-mutant.log"))
-              if len(hostile_logs) != 1:
+              if hostile_job_result != "success":
+                  result = "Blocked"
+                  detail = "HostileJobDidNotCompleteSuccessfully"
+              elif len(hostile_logs) != 1:
                   result = "Blocked"
                   detail = "HostileEvidenceMissing"
               else:
@@ -508,6 +519,7 @@ jobs:
           EXPECTED_KANI_RELEASE_COMMIT: 0d2328a93f0e0ff66132d6bfa1a7d884877cf862
           EXPECTED_KANI_RUST_TOOLCHAIN: nightly-2026-08-21
           EXPECTED_KANI_RUST_COMMIT_HASH: 8925ea358a0f265ca61026aadc7ecc506c545cbe
+          HOSTILE_JOB_RESULT: ${{ needs.hostile.result }}
 
       - name: Retain canonical evidence
         if: always()
