@@ -76,6 +76,24 @@ jobs:
           assert len(c["harnesses"]) == 8
           PY
 
+      - name: Capture compiler and runner provenance
+        id: toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            printf 'runner_os=%s\n' "${RUNNER_OS:-unknown}"
+            printf 'runner_arch=%s\n' "${RUNNER_ARCH:-unknown}"
+            printf 'image=%s\n' "${ImageOS:-unknown}"
+            printf 'rustc='; rustc --version --verbose
+            printf 'cargo='; cargo --version
+            if command -v rustup >/dev/null 2>&1; then
+              printf 'active_toolchain='; rustup show active-toolchain
+            fi
+            printf 'kernel='; uname -a
+          } > /tmp/toolchain-provenance.txt
+          cat /tmp/toolchain-provenance.txt
+
       - name: Ordinary Rust build remains unaffected
         id: rust_build
         shell: bash
@@ -270,6 +288,8 @@ jobs:
               "fuzz_subject_blob": git("rev-parse", "HEAD:fuzz/fuzz_targets/fuzz_replay_window.rs"),
               "rust_build_status": build_status,
               "rust_build_log_sha256": sha256("/tmp/rust-build.log"),
+              "toolchain_provenance_sha256": sha256("/tmp/toolchain-provenance.txt"),
+              "toolchain_provenance": read("/tmp/toolchain-provenance.txt"),
               "kani_version_requested": os.environ["KANI_VERSION"],
               "kani_version_observed": read("/tmp/kani-version.txt").strip(),
               "default_unwind": 20,
@@ -308,6 +328,7 @@ jobs:
           path: |
             /tmp/xen-kani-fv-001a-receipt.json
             /tmp/rust-build.log
+            /tmp/toolchain-provenance.txt
             /tmp/kani-install.log
             /tmp/kani-setup.log
             /tmp/kani-version.txt
