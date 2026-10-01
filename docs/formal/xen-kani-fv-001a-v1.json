@@ -58,7 +58,9 @@
     "rust_build_status",
     "rust_build_log_sha256",
     "kani_version_requested",
-    "kani_version_observed"
+    "kani_version_observed",
+    "toolchain_provenance_sha256",
+    "toolchain_provenance"
   ],
   "result_semantics": {
     "Pass": "clean bounded proof succeeds and hostile boundary mutant is rejected by the required harness",
