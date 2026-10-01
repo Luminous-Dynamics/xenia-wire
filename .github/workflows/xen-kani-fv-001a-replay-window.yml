@@ -105,10 +105,18 @@ jobs:
         shell: bash
         run: |
           set +e
-          cargo check --locked > /tmp/rust-build.log 2>&1
+          cargo check > /tmp/rust-build.log 2>&1
           status=$?
           set -e
           printf '%s\n' "$status" > /tmp/rust-build.exit
+          if [ -f Cargo.lock ]; then
+            sha256sum Cargo.lock | cut -d' ' -f1 > /tmp/generated-cargo-lock.sha256
+            printf 'generated\n' > /tmp/cargo-lock-status.txt
+            rm -f Cargo.lock
+          else
+            printf 'absent\n' > /tmp/cargo-lock-status.txt
+            : > /tmp/generated-cargo-lock.sha256
+          fi
           cat /tmp/rust-build.log
           # Keep the workflow alive so the evidence receipt can distinguish a
           # repository build failure from Kani environment/proof failures.
@@ -140,19 +148,22 @@ jobs:
           cat /tmp/kani-install.log
           cat /tmp/kani-setup.log
           cat /tmp/kani-version.txt
-          if [ -d "${KANI_HOME:-$HOME/.kani}" ]; then
-            find "${KANI_HOME:-$HOME/.kani}" -maxdepth 5 -type f -name rustc -executable -print > /tmp/kani-bundled-rustc-paths.txt || true
-          else
-            : > /tmp/kani-bundled-rustc-paths.txt
-          fi
+          : > /tmp/kani-bundled-rustc-paths.txt
           : > /tmp/kani-bundled-rustc-provenance.txt
-          while IFS= read -r rustc_path; do
-            printf 'path=%s\n' "$rustc_path" >> /tmp/kani-bundled-rustc-provenance.txt
-            "$rustc_path" --version --verbose >> /tmp/kani-bundled-rustc-provenance.txt 2>&1 || true
-          done < /tmp/kani-bundled-rustc-paths.txt
+          if [ "$install_status" -eq 0 ] && [ "$setup_status" -eq 0 ] && [ "$version_status" -eq 0 ]; then
+            rustc_path="$(rustup which rustc --toolchain "$EXPECTED_KANI_RUST_TOOLCHAIN")"
+            printf '%s\n' "$rustc_path" > /tmp/kani-bundled-rustc-paths.txt
+            {
+              printf 'path=%s\n' "$rustc_path"
+              "$rustc_path" --version --verbose
+              printf 'toolchain='
+              rustup run "$EXPECTED_KANI_RUST_TOOLCHAIN" rustc --version
+            } > /tmp/kani-bundled-rustc-provenance.txt 2>&1
+          fi
           cat /tmp/kani-bundled-rustc-provenance.txt
           if [ "$install_status" -eq 0 ] && [ "$setup_status" -eq 0 ] && [ "$version_status" -eq 0 ]; then
-            grep -q "commit-date: $EXPECTED_KANI_RUST_COMMIT_DATE" /tmp/kani-bundled-rustc-provenance.txt
+            grep -q "commit-date: $EXPECTED_KANI_RUST_COMMIT_DATE" /tmp/kani-bundled-rustc-provenance.txt &&
+            grep -q "toolchain=rustc 1.100.0-nightly (8925ea358 2026-08-20)" /tmp/kani-bundled-rustc-provenance.txt
           fi
           provenance_status=$?
           printf '%s\n' "$provenance_status" > /tmp/kani-provenance.exit
@@ -311,6 +322,8 @@ jobs:
               "fuzz_subject_blob": git("rev-parse", "HEAD:fuzz/fuzz_targets/fuzz_replay_window.rs"),
               "rust_build_status": build_status,
               "rust_build_log_sha256": sha256("/tmp/rust-build.log"),
+              "cargo_lock_status": read("/tmp/cargo-lock-status.txt").strip(),
+              "generated_cargo_lock_sha256": read("/tmp/generated-cargo-lock.sha256").strip() or None,
               "toolchain_provenance_sha256": sha256("/tmp/toolchain-provenance.txt"),
               "toolchain_provenance": read("/tmp/toolchain-provenance.txt"),
               "kani_version_requested": os.environ["KANI_VERSION"],
@@ -357,6 +370,8 @@ jobs:
           path: |
             /tmp/xen-kani-fv-001a-receipt.json
             /tmp/rust-build.log
+            /tmp/cargo-lock-status.txt
+            /tmp/generated-cargo-lock.sha256
             /tmp/toolchain-provenance.txt
             /tmp/kani-install.log
             /tmp/kani-setup.log
