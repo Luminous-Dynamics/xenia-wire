@@ -17,7 +17,9 @@
   "kani": {
     "version": "0.68.0",
     "default_unwind": 20,
-    "test_mode": true
+    "test_mode": true,
+    "expected_rust_toolchain": "nightly-2026-08-21",
+    "expected_rust_commit_date": "2026-08-21"
   },
   "harnesses": [
     "immediate_duplicate_is_rejected",
@@ -62,7 +64,10 @@
     "toolchain_provenance_sha256",
     "toolchain_provenance",
     "kani_bundled_rustc_provenance_sha256",
-    "kani_bundled_rustc_provenance"
+    "kani_bundled_rustc_provenance",
+    "kani_expected_rust_toolchain",
+    "kani_expected_rust_commit_date",
+    "kani_provenance_status"
   ],
   "result_semantics": {
     "Pass": "clean bounded proof succeeds and hostile boundary mutant is rejected by the required harness",
