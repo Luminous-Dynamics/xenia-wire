@@ -39,7 +39,8 @@
     "Pass",
     "Fail",
     "Blocked",
-    "EnvironmentFailure"
+    "EnvironmentFailure",
+    "BuildFailure"
   ],
   "claim_ceiling": [
     "ReplayWindowBoundedModelSafetyWithinRecordedHarnessDomain"
@@ -52,5 +53,18 @@
     "NativeBinaryVerification",
     "RuntimeAuthorization",
     "CrossRepositorySubjectClosure"
-  ]
+  ],
+  "receipt_fields": [
+    "rust_build_status",
+    "rust_build_log_sha256",
+    "kani_version_requested",
+    "kani_version_observed"
+  ],
+  "result_semantics": {
+    "Pass": "clean bounded proof succeeds and hostile boundary mutant is rejected by the required harness",
+    "Fail": "a qualified proof or hostile-control expectation produces an invalid result",
+    "Blocked": "qualification cannot establish the required bounded outcome",
+    "EnvironmentFailure": "the requested Kani verifier environment cannot be installed or initialized",
+    "BuildFailure": "the exact subject does not pass the ordinary locked Rust build prerequisite"
+  }
 }
