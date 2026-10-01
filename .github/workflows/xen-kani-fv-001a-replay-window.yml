@@ -134,6 +134,17 @@ jobs:
           cat /tmp/kani-install.log
           cat /tmp/kani-setup.log
           cat /tmp/kani-version.txt
+          if [ -d "${KANI_HOME:-$HOME/.kani}" ]; then
+            find "${KANI_HOME:-$HOME/.kani}" -maxdepth 5 -type f -name rustc -executable -print > /tmp/kani-bundled-rustc-paths.txt || true
+          else
+            : > /tmp/kani-bundled-rustc-paths.txt
+          fi
+          : > /tmp/kani-bundled-rustc-provenance.txt
+          while IFS= read -r rustc_path; do
+            printf 'path=%s\n' "$rustc_path" >> /tmp/kani-bundled-rustc-provenance.txt
+            "$rustc_path" --version --verbose >> /tmp/kani-bundled-rustc-provenance.txt 2>&1 || true
+          done < /tmp/kani-bundled-rustc-paths.txt
+          cat /tmp/kani-bundled-rustc-provenance.txt
           printf '%s\n' "$install_status" > /tmp/kani-install.exit
           printf '%s\n' "$setup_status" > /tmp/kani-setup.exit
           printf '%s\n' "$version_status" > /tmp/kani-version.exit
@@ -292,6 +303,8 @@ jobs:
               "toolchain_provenance": read("/tmp/toolchain-provenance.txt"),
               "kani_version_requested": os.environ["KANI_VERSION"],
               "kani_version_observed": read("/tmp/kani-version.txt").strip(),
+              "kani_bundled_rustc_provenance_sha256": sha256("/tmp/kani-bundled-rustc-provenance.txt"),
+              "kani_bundled_rustc_provenance": read("/tmp/kani-bundled-rustc-provenance.txt"),
               "default_unwind": 20,
               "test_mode": True,
               "hostile_control": "stale-boundary-off-by-one",
@@ -332,6 +345,8 @@ jobs:
             /tmp/kani-install.log
             /tmp/kani-setup.log
             /tmp/kani-version.txt
+            /tmp/kani-bundled-rustc-paths.txt
+            /tmp/kani-bundled-rustc-provenance.txt
             /tmp/kani-clean.log
             /tmp/kani-mutant.log
           if-no-files-found: error
