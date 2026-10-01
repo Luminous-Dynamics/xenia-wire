@@ -1,0 +1,102 @@
+name: Xenia Viewer Web
+
+on:
+  pull_request:
+    paths:
+      - "xenia-viewer-web/**"
+      - ".github/workflows/viewer-web.yml"
+  push:
+    branches: [main]
+    paths:
+      - "xenia-viewer-web/**"
+      - ".github/workflows/viewer-web.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  RUSTFLAGS: -D warnings
+
+jobs:
+  browser-contract:
+    name: Browser contract (native test host)
+    runs-on: ubuntu-latest
+    steps:
+      # xenia-viewer-web is deliberately excluded from xenia-wire's root Cargo
+      # workspace and has dev-only sibling path dependencies on xenia-peer.
+      # Preserve that topology in CI instead of pretending root `cargo test`
+      # covers the browser crate.
+      - name: Checkout xenia-wire
+        uses: actions/checkout@v4
+        with:
+          path: xenia-wire
+
+      - name: Checkout xenia-peer sibling
+        uses: actions/checkout@v4
+        with:
+          repository: Luminous-Dynamics/xenia-peer
+          path: xenia-peer
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            xenia-wire/xenia-viewer-web -> target
+            xenia-peer -> target
+
+      - name: Format check
+        working-directory: xenia-wire/xenia-viewer-web
+        run: cargo fmt --check
+
+      - name: Browser crate unit tests
+        working-directory: xenia-wire/xenia-viewer-web
+        run: cargo test --lib
+
+      - name: Browser crate clippy
+        working-directory: xenia-wire/xenia-viewer-web
+        run: cargo clippy --lib -- -D warnings
+
+      - name: Browser wasm build
+        working-directory: xenia-wire/xenia-viewer-web
+        run: cargo build --target wasm32-unknown-unknown --lib
+
+  browser-contract-msrv:
+    name: Browser contract (Rust 1.95)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout xenia-wire
+        uses: actions/checkout@v4
+        with:
+          path: xenia-wire
+
+      - name: Checkout xenia-peer sibling
+        uses: actions/checkout@v4
+        with:
+          repository: Luminous-Dynamics/xenia-peer
+          path: xenia-peer
+
+      - uses: dtolnay/rust-toolchain@1.95
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            xenia-wire/xenia-viewer-web -> target
+            xenia-peer -> target
+
+      - name: Native library build at declared MSRV
+        working-directory: xenia-wire/xenia-viewer-web
+        run: cargo build --lib
+
+      - name: Wasm library build at declared MSRV
+        working-directory: xenia-wire/xenia-viewer-web
+        run: cargo build --target wasm32-unknown-unknown --lib
