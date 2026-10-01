@@ -26,6 +26,7 @@ jobs:
       EXPECTED_SOURCE_BLOB: 9e55ddf7bfd7d7851cc3968d3407bd2c78ba9908
       EXPECTED_FUZZ_BLOB: a27128c0c503780ad9e12fda23ee907c8cd6aa1e
       KANI_VERSION: 0.68.0
+      EXPECTED_KANI_RELEASE_COMMIT: 0d2328a93f0e0ff66132d6bfa1a7d884877cf862
       EXPECTED_KANI_RUST_TOOLCHAIN: nightly-2026-08-21
       EXPECTED_KANI_RUST_COMMIT_DATE: 2026-08-21
       REQUESTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -72,6 +73,7 @@ jobs:
           assert c["production_subject"]["blob"] == "9e55ddf7bfd7d7851cc3968d3407bd2c78ba9908"
           assert c["existing_fuzz_subject"]["blob"] == "a27128c0c503780ad9e12fda23ee907c8cd6aa1e"
           assert c["kani"]["version"] == "0.68.0"
+          assert c["kani"]["release_commit"] == "0d2328a93f0e0ff66132d6bfa1a7d884877cf862"
           assert c["kani"]["expected_rust_toolchain"] == "nightly-2026-08-21"
           assert c["kani"]["expected_rust_commit_date"] == "2026-08-21"
           assert c["qualification_result_vocabulary"] == ["Pass", "Fail", "Blocked", "EnvironmentFailure", "BuildFailure"]
@@ -313,6 +315,7 @@ jobs:
               "toolchain_provenance": read("/tmp/toolchain-provenance.txt"),
               "kani_version_requested": os.environ["KANI_VERSION"],
               "kani_version_observed": read("/tmp/kani-version.txt").strip(),
+              "kani_release_commit": os.environ["EXPECTED_KANI_RELEASE_COMMIT"],
               "kani_expected_rust_toolchain": os.environ["EXPECTED_KANI_RUST_TOOLCHAIN"],
               "kani_expected_rust_commit_date": os.environ["EXPECTED_KANI_RUST_COMMIT_DATE"],
               "kani_provenance_status": provenance_status,
