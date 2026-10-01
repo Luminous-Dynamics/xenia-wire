@@ -28,7 +28,7 @@ jobs:
       KANI_VERSION: 0.68.0
       EXPECTED_KANI_RELEASE_COMMIT: 0d2328a93f0e0ff66132d6bfa1a7d884877cf862
       EXPECTED_KANI_RUST_TOOLCHAIN: nightly-2026-08-21
-      EXPECTED_KANI_RUST_COMMIT_DATE: 2026-08-21
+      EXPECTED_KANI_RUST_COMMIT_HASH: 8925ea358a0f265ca61026aadc7ecc506c545cbe
       REQUESTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Checkout exact subject
@@ -75,7 +75,7 @@ jobs:
           assert c["kani"]["version"] == "0.68.0"
           assert c["kani"]["release_commit"] == "0d2328a93f0e0ff66132d6bfa1a7d884877cf862"
           assert c["kani"]["expected_rust_toolchain"] == "nightly-2026-08-21"
-          assert c["kani"]["expected_rust_commit_date"] == "2026-08-21"
+          assert c["kani"]["expected_rust_commit_hash"] == "8925ea358a0f265ca61026aadc7ecc506c545cbe"
           assert c["qualification_result_vocabulary"] == ["Pass", "Fail", "Blocked", "EnvironmentFailure", "BuildFailure"]
           assert "UnboundedReplaySecurityTheorem" in c["nonclaims"]
           assert "CrossRepositorySubjectClosure" in c["nonclaims"]
@@ -162,7 +162,7 @@ jobs:
           fi
           cat /tmp/kani-bundled-rustc-provenance.txt
           if [ "$install_status" -eq 0 ] && [ "$setup_status" -eq 0 ] && [ "$version_status" -eq 0 ]; then
-            grep -q "commit-date: $EXPECTED_KANI_RUST_COMMIT_DATE" /tmp/kani-bundled-rustc-provenance.txt &&
+            grep -q "commit-hash: $EXPECTED_KANI_RUST_COMMIT_HASH" /tmp/kani-bundled-rustc-provenance.txt &&
             grep -q "toolchain=rustc 1.100.0-nightly (8925ea358 2026-08-20)" /tmp/kani-bundled-rustc-provenance.txt
           fi
           provenance_status=$?
@@ -330,7 +330,7 @@ jobs:
               "kani_version_observed": read("/tmp/kani-version.txt").strip(),
               "kani_release_commit": os.environ["EXPECTED_KANI_RELEASE_COMMIT"],
               "kani_expected_rust_toolchain": os.environ["EXPECTED_KANI_RUST_TOOLCHAIN"],
-              "kani_expected_rust_commit_date": os.environ["EXPECTED_KANI_RUST_COMMIT_DATE"],
+              "kani_expected_rust_commit_hash": os.environ["EXPECTED_KANI_RUST_COMMIT_HASH"],
               "kani_provenance_status": provenance_status,
               "kani_bundled_rustc_provenance_sha256": sha256("/tmp/kani-bundled-rustc-provenance.txt"),
               "kani_bundled_rustc_provenance": read("/tmp/kani-bundled-rustc-provenance.txt"),
