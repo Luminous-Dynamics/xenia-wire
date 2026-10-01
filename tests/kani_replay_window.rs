@@ -7,6 +7,10 @@
 //! over the exact production API. They are not an unbounded replay-security
 //! theorem, cryptographic proof, compiler proof, or runtime authorization.
 
+// Ordinary cargo test/clippy still parses this Kani-only target; older stable
+// toolchains do not know the `kani` cfg name. Kani itself supplies it.
+// Keep the allowance scoped to this proof-harness target only.
+#![allow(unexpected_cfgs)]
 #![cfg(kani)]
 
 use xenia_wire::ReplayWindow;
