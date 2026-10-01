@@ -222,7 +222,7 @@ jobs:
             printf 'Kani environment unavailable; harness not executed\n' > /tmp/kani.log
             printf '125\n' > /tmp/kani.exit
           else
-            cargo kani --tests --default-unwind 20 --harness "${{ matrix.harness }}" > /tmp/kani.log 2>&1
+            cargo kani --tests --default-unwind 20 --harness "${{ matrix.harness }}" -Z unstable-options --export-json /tmp/kani.json > /tmp/kani.log 2>&1
             printf '%s\n' "$?" > /tmp/kani.exit
           fi
           set -e
@@ -252,13 +252,33 @@ jobs:
           log = read("/tmp/kani.log")
           lower = log.lower()
           status = num("/tmp/kani.exit")
+          export = {}
+          export_error = None
+          try:
+              export = json.loads(read("/tmp/kani.json"))
+          except Exception as exc:
+              export_error = str(exc)
+
+          structured = export.get("verification_results", {})
+          structured_results = structured.get("results", []) if isinstance(structured, dict) else []
+          selected = next((x for x in structured_results if x.get("harness_id") == os.environ["HARNESS"]), None)
+          structured_status = selected.get("status") if isinstance(selected, dict) else None
+          structured_checks = selected.get("checks", []) if isinstance(selected, dict) else []
+          check_statuses = [str(x.get("status")) for x in structured_checks if isinstance(x, dict)]
+          unreachable_count = sum(s.lower() == "unreachable" for s in check_statuses)
+          undetermined_count = sum(s.lower() == "undetermined" for s in check_statuses)
+          failure_count = sum(s.lower() == "failure" for s in check_statuses)
           if num("/tmp/kani-install.exit") or num("/tmp/kani-setup.exit") or num("/tmp/kani-version.exit") or num("/tmp/kani-provenance.exit"):
               result = "EnvironmentFailure"
-          elif status != 0 and "verification:- failed" in lower:
+          elif status != 0 and structured_status == "Failure":
               result = "Fail"
           elif status != 0:
               result = "Blocked"
-          elif "verification:- successful" not in lower:
+          elif export_error is not None or selected is None:
+              result = "Blocked"
+          elif structured_status != "Success":
+              result = "Blocked"
+          elif unreachable_count != 0 or undetermined_count != 0:
               result = "Blocked"
           else:
               result = "Pass"
@@ -283,6 +303,13 @@ jobs:
               "kani_bundled_rustc_provenance_sha256": sha("/tmp/kani-bundled-rustc-provenance.txt"),
               "kani_bundled_rustc_provenance": read("/tmp/kani-bundled-rustc-provenance.txt"),
               "log_sha256": sha("/tmp/kani.log"),
+              "structured_result_sha256": sha("/tmp/kani.json"),
+              "structured_status": structured_status,
+              "structured_check_statuses": check_statuses,
+              "structured_unreachable_count": unreachable_count,
+              "structured_undetermined_count": undetermined_count,
+              "structured_failure_count": failure_count,
+              "structured_export_error": export_error,
               "default_unwind": 20,
               "test_mode": True,
           }
@@ -300,6 +327,7 @@ jobs:
           path: |
             /tmp/harness-receipt.json
             /tmp/kani.log
+            /tmp/kani.json
             /tmp/kani-version.txt
             /tmp/kani-bundled-rustc-provenance.txt
             /tmp/toolchain-provenance.txt
@@ -356,7 +384,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          cargo kani --tests --default-unwind 20 --harness sequence_at_window_width_is_stale > /tmp/kani-mutant.log 2>&1
+          cargo kani --tests --default-unwind 20 --harness sequence_at_window_width_is_stale -Z unstable-options --export-json /tmp/kani-mutant.json > /tmp/kani-mutant.log 2>&1
           status=$?
           set -e
           printf '%s\n' "$status" > /tmp/kani-mutant.exit
@@ -385,6 +413,7 @@ jobs:
           name: xen-kani-fv-001a-hostile-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
             /tmp/kani-mutant.log
+            /tmp/kani-mutant.json
             /tmp/kani-mutant.exit
             /tmp/hostile-rustc.txt
           if-no-files-found: error
