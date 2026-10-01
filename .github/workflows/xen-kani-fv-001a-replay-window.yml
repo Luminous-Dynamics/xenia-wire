@@ -70,7 +70,7 @@ jobs:
           assert c["production_subject"]["blob"] == "9e55ddf7bfd7d7851cc3968d3407bd2c78ba9908"
           assert c["existing_fuzz_subject"]["blob"] == "a27128c0c503780ad9e12fda23ee907c8cd6aa1e"
           assert c["kani"]["version"] == "0.68.0"
-          assert c["qualification_result_vocabulary"] == ["Pass", "Fail", "Blocked", "EnvironmentFailure"]
+          assert c["qualification_result_vocabulary"] == ["Pass", "Fail", "Blocked", "EnvironmentFailure", "BuildFailure"]
           assert "UnboundedReplaySecurityTheorem" in c["nonclaims"]
           assert "CrossRepositorySubjectClosure" in c["nonclaims"]
           assert len(c["harnesses"]) == 8
