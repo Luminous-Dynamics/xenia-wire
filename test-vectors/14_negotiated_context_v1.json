@@ -1,0 +1,39 @@
+{
+  "schema": "xenia-negotiated-context-v1-test-vectors",
+  "hash_algorithm": "sha256",
+  "domain_utf8": "xenia.negotiated-context.v1\\0",
+  "encoding": {
+    "count": "u32 big-endian",
+    "component_length": "u16 big-endian",
+    "ordering": "lexicographic by exact name bytes, then exact version bytes",
+    "duplicates": "rejected"
+  },
+  "vectors": [
+    {
+      "name": "causal-authority-draft04-only",
+      "capabilities": [
+        {
+          "name_utf8": "xenia.causal-authority",
+          "version_utf8": "draft-04"
+        }
+      ],
+      "canonical_hex": "78656e69612e6e65676f7469617465642d636f6e746578742e76310000000001001678656e69612e63617573616c2d617574686f72697479000864726166742d3034",
+      "sha256": "ffd0c4ad0b133e8aae58b0a79b510fa90f5ebff97751b5fc2b55a7ff796c2a85"
+    },
+    {
+      "name": "causal-authority-plus-operator-rekey",
+      "capabilities": [
+        {
+          "name_utf8": "xenia.operator-rekey",
+          "version_utf8": "v1"
+        },
+        {
+          "name_utf8": "xenia.causal-authority",
+          "version_utf8": "draft-04"
+        }
+      ],
+      "canonical_hex": "78656e69612e6e65676f7469617465642d636f6e746578742e76310000000002001678656e69612e63617573616c2d617574686f72697479000864726166742d3034001478656e69612e6f70657261746f722d72656b657900027631",
+      "sha256": "a48615f6c5b7004aa19cd57e34235ca35775dfe0abd1048c5595fe20a8b555e8"
+    }
+  ]
+}

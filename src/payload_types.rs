@@ -53,20 +53,24 @@ pub const PAYLOAD_TYPE_INPUT: u8 = 0x11;
 /// does not compress. See `SPEC.md` §LZ4-before-AEAD for the full rationale.
 pub const PAYLOAD_TYPE_FRAME_LZ4: u8 = 0x12;
 
-/// Reserved — Week-5 spec differentiator: consent ceremony request.
-///
-/// Implemented in a later release. Reserved now so the wire format is
-/// forward-compatible.
+/// Signed consent ceremony request.
 pub const PAYLOAD_TYPE_CONSENT_REQUEST: u8 = 0x20;
 
-/// Reserved — Week-5 spec differentiator: consent ceremony response.
+/// Signed consent ceremony response.
 pub const PAYLOAD_TYPE_CONSENT_RESPONSE: u8 = 0x21;
 
-/// Reserved — Week-5 spec differentiator: consent revocation (mid-session).
+/// Signed consent revocation (mid-session).
 pub const PAYLOAD_TYPE_CONSENT_REVOCATION: u8 = 0x22;
 
-/// Reserved — Week-5 spec differentiator: attestation-chained action log entry.
+/// Reserved — attestation-chained action log entry.
 pub const PAYLOAD_TYPE_ATTESTED_ACTION: u8 = 0x23;
+
+/// Experimental causal-authority response that signs the exact consent-request
+/// digest. Available only to callers using the `causal-authority` extension.
+///
+/// This additive payload avoids weakening the existing draft-03 response while
+/// closing request-substitution ambiguity for exact external action authority.
+pub const PAYLOAD_TYPE_CAUSAL_AUTHORITY_RESPONSE: u8 = 0x24;
 
 /// Lowest byte available for application-defined payload types.
 ///
