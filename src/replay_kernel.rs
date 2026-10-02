@@ -89,7 +89,7 @@ fn shift_bitmap_left(bitmap: &mut [u64; MAX_BITMAP_WORDS], words: usize, shift: 
             bitmap[i] = hi | lo;
         }
     }
-    for word in &mut bitmap[words..] { *word = 0; }
+    for i in 0..MAX_BITMAP_WORDS { if i >= words { bitmap[i] = 0; } }
 }
 
 #[cfg(kani)]
@@ -148,12 +148,11 @@ mod kani_proofs {
     fn kernel_cross_word_shift_preserves_in_window_history() {
         let mut state = ReplayState::new();
         assert!(transition(&mut state, 128, 100));
-        assert!(transition(&mut state, 128, 35));
-        assert!(transition(&mut state, 128, 110));
-        assert!(!transition(&mut state, 128, 100));
-        assert!(!transition(&mut state, 128, 35));
-        assert!(transition(&mut state, 128, 36));
-        assert!(!transition(&mut state, 128, 36));
+        assert!(transition(&mut state, 128, 99));
+        assert!(transition(&mut state, 128, 164)); // exact 65-bit cross-word shift
+        assert!(!transition(&mut state, 128, 99)); // old bit moved to offset 65
+        assert!(transition(&mut state, 128, 98));  // unseen, still in window
+        assert!(!transition(&mut state, 128, 98));
     }
 
     #[kani::proof]
