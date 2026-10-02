@@ -36,6 +36,7 @@ impl ReplayState {
 ///
 /// This is the production transition function used by ReplayWindow::accept.
 pub(crate) fn transition(state: &mut ReplayState, window_bits: u32, seq: u64) -> bool {
+    #[allow(clippy::manual_is_multiple_of)]
     debug_assert!((64..=1024).contains(&window_bits) && window_bits % WORD_BITS == 0);
     let words = (window_bits / WORD_BITS) as usize;
 
@@ -109,6 +110,7 @@ fn shift_bitmap_left(bitmap: &mut [u64; MAX_BITMAP_WORDS], words: usize, shift: 
             bitmap[i] = hi | lo;
         }
     }
+    #[allow(clippy::needless_range_loop)]
     for i in 0..MAX_BITMAP_WORDS {
         if i >= words {
             bitmap[i] = 0;
