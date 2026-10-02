@@ -169,6 +169,33 @@ mod kani_proofs {
 
     #[kani::proof]
     #[kani::unwind(20)]
+    fn kernel_supported_width_boundary_is_exact() {
+        let width = any_window_bits();
+        let base = width as u64 + 1;
+        let mut state = ReplayState::new();
+        assert!(transition(&mut state, width, base));
+        assert!(!transition(&mut state, width, base - width as u64));
+        assert!(transition(&mut state, width, base - width as u64 + 1));
+    }
+
+    #[kani::proof]
+    #[kani::unwind(20)]
+    fn kernel_bitmap_tail_is_zero_for_supported_widths() {
+        let width = any_window_bits();
+        let words = (width / WORD_BITS) as usize;
+        let mut state = ReplayState::new();
+        let first: u64 = kani::any();
+        let second: u64 = kani::any();
+        kani::assume(second >= first);
+        let _ = transition(&mut state, width, first);
+        let _ = transition(&mut state, width, second);
+        for i in words..MAX_BITMAP_WORDS {
+            assert!(state.bitmap[i] == 0);
+        }
+    }
+
+    #[kani::proof]
+    #[kani::unwind(20)]
     fn kernel_u64_max_advance_preserves_previous_sequence() {
         let mut state = ReplayState::new();
         assert!(transition(&mut state, 64, u64::MAX - 1));
