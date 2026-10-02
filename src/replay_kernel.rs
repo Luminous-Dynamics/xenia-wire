@@ -108,6 +108,29 @@
 
     #[kani::proof]
     #[kani::unwind(20)]
+    fn kernel_symbolic_shift_preserves_or_discards_history_exactly() {
+        let mut state = ReplayState::new();
+        assert!(transition(&mut state, 1024, 1000));
+        assert!(transition(&mut state, 1024, 999)); // mark offset 1
+
+        let delta: u64 = kani::any();
+        kani::assume(delta > 0);
+        kani::assume(delta < 1024);
+
+        assert!(transition(&mut state, 1024, 1000 + delta));
+        assert!(state.highest == 1000 + delta);
+
+        if delta < 1023 {
+            // Original offset 1 moved to 1 + delta and remains inside the window.
+            assert!(!transition(&mut state, 1024, 999));
+        } else {
+            // At delta=1023 the old marker moves to offset 1024 and is discarded.
+            assert!(transition(&mut state, 1024, 999));
+        }
+    }
+
+    #[kani::proof]
+    #[kani::unwind(20)]
     fn kernel_supported_widths_do_not_panic() {
         let mut state = ReplayState::new();
         let width = any_window_bits();
