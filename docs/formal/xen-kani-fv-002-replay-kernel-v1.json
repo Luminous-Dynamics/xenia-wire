@@ -45,6 +45,8 @@
     "kernel_stale_boundary_is_rejected",
     "kernel_higher_sequence_is_monotonic",
     "kernel_cross_word_shift_preserves_in_window_history",
+    "kernel_exact_word_shift_preserves_in_window_history",
+    "kernel_max_width_multiword_shift_preserves_history",
     "kernel_supported_widths_do_not_panic",
     "kernel_supported_width_boundary_is_exact",
     "kernel_bitmap_tail_is_zero_for_supported_widths",
