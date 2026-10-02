@@ -16,8 +16,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: xen-kani-fv-002-${{ github.event.pull_request.head.sha || github.sha }}
-  cancel-in-progress: false
+  group: xen-kani-fv-002-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 env:
   EXACT_PARENT: 057dd03043b8863d8f8280abf333331cc9ddf317
