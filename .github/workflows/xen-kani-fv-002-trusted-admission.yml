@@ -6,7 +6,9 @@ on:
     types: [completed]
 
 permissions:
+  actions: read
   contents: read
+  pull-requests: read
 
 concurrency:
   group: trusted-xen-kani-fv-002-${{ github.event.workflow_run.pull_requests[0].number }}
@@ -330,11 +332,18 @@ jobs:
               "schema":"xenia.formal.kani-replay-kernel.trusted-admission.v1",
               "github_run_id":int(os.environ["GITHUB_RUN_ID"]),
               "github_run_attempt":int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "triggering_run_id":int(os.environ["TRIGGER_RUN_ID"]),
+              "triggering_run_attempt":int(os.environ["TRIGGER_RUN_ATTEMPT"]),
+              "triggering_conclusion":os.environ["TRIGGER_CONCLUSION"],
+              "triggering_workflow":"XEN-KANI-FV-002 Replay Kernel",
+              "triggering_workflow_path":".github/workflows/xen-kani-fv-002-replay-kernel.yml",
               "pr_number":int(os.environ["PR_NUMBER"]),
               "head_sha":os.environ["HEAD_SHA"],
               "head_repo":os.environ["HEAD_REPO"],
               "base_sha":os.environ["BASE_SHA"],
               "kernel_blob":Path("/tmp/xen-kani-trusted/kernel.blob").read_text().strip(),
+              "kernel_blob_expected":os.environ["EXPECTED_KERNEL_BLOB"],
+              "kernel_frozen_binding":Path("/tmp/xen-kani-trusted/kernel.blob").read_text().strip()==os.environ["EXPECTED_KERNEL_BLOB"],
               "kani_version":Path("/tmp/kani-version.txt").read_text().strip(),
               "kani_rust_toolchain":os.environ["EXPECTED_KANI_RUST_TOOLCHAIN"],
               "kani_rust_commit_hash":os.environ["EXPECTED_KANI_RUST_COMMIT_HASH"],
@@ -353,6 +362,7 @@ jobs:
           name: trusted-xen-kani-fv-002-${{ github.event.workflow_run.pull_requests[0].number }}-${{ github.event.workflow_run.head_sha }}
           path: |
             /tmp/trusted-subject.txt
+            /tmp/trigger-run.json
             /tmp/xen-kani-trusted/kernel.blob
             /tmp/kani-version.txt
             /tmp/kani-rustc.txt
