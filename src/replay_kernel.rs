@@ -20,7 +20,11 @@ pub(crate) struct ReplayState {
 
 impl ReplayState {
     pub(crate) fn new() -> Self {
-        Self { highest: 0, bitmap: [0; MAX_BITMAP_WORDS], initialized: false }
+        Self {
+            highest: 0,
+            bitmap: [0; MAX_BITMAP_WORDS],
+            initialized: false,
+        }
     }
 }
 
@@ -62,7 +66,9 @@ pub(crate) fn transition(state: &mut ReplayState, window_bits: u32, seq: u64) ->
             let word_idx = (offset / WORD_BITS as u64) as usize;
             let bit_idx = (offset % WORD_BITS as u64) as u32;
             let mask = 1u64 << bit_idx;
-            if state.bitmap[word_idx] & mask != 0 { false } else {
+            if state.bitmap[word_idx] & mask != 0 {
+                false
+            } else {
                 state.bitmap[word_idx] |= mask;
                 true
             }
@@ -74,22 +80,40 @@ pub(crate) fn transition(state: &mut ReplayState, window_bits: u32, seq: u64) ->
 fn shift_bitmap_left(bitmap: &mut [u64; MAX_BITMAP_WORDS], words: usize, shift: u32) {
     debug_assert!(words > 0 && words <= MAX_BITMAP_WORDS);
     debug_assert!((shift as usize) < words * WORD_BITS as usize);
-    if shift == 0 { return; }
+    if shift == 0 {
+        return;
+    }
     let word_shift = (shift / WORD_BITS) as usize;
     let bit_shift = shift % WORD_BITS;
     if bit_shift == 0 {
         for i in (0..words).rev() {
-            bitmap[i] = if i >= word_shift { bitmap[i - word_shift] } else { 0 };
+            bitmap[i] = if i >= word_shift {
+                bitmap[i - word_shift]
+            } else {
+                0
+            };
         }
     } else {
         let inv = WORD_BITS - bit_shift;
         for i in (0..words).rev() {
-            let hi = if i >= word_shift { bitmap[i - word_shift] << bit_shift } else { 0 };
-            let lo = if i > word_shift { bitmap[i - word_shift - 1] >> inv } else { 0 };
+            let hi = if i >= word_shift {
+                bitmap[i - word_shift] << bit_shift
+            } else {
+                0
+            };
+            let lo = if i > word_shift {
+                bitmap[i - word_shift - 1] >> inv
+            } else {
+                0
+            };
             bitmap[i] = hi | lo;
         }
     }
-    for i in 0..MAX_BITMAP_WORDS { if i >= words { bitmap[i] = 0; } }
+    for i in 0..MAX_BITMAP_WORDS {
+        if i >= words {
+            bitmap[i] = 0;
+        }
+    }
 }
 
 #[cfg(kani)]
@@ -98,7 +122,13 @@ mod kani_proofs {
 
     fn any_window_bits() -> u32 {
         let selector: u8 = kani::any();
-        match selector % 5 { 0 => 64, 1 => 128, 2 => 256, 3 => 512, _ => 1024 }
+        match selector % 5 {
+            0 => 64,
+            1 => 128,
+            2 => 256,
+            3 => 512,
+            _ => 1024,
+        }
     }
 
     #[kani::proof]
@@ -119,7 +149,9 @@ mod kani_proofs {
         assert!(state.initialized);
         assert!(state.highest == seq);
         assert!(state.bitmap[0] == 1);
-        for i in 1..MAX_BITMAP_WORDS { assert!(state.bitmap[i] == 0); }
+        for i in 1..MAX_BITMAP_WORDS {
+            assert!(state.bitmap[i] == 0);
+        }
     }
 
     #[kani::proof]
@@ -151,7 +183,7 @@ mod kani_proofs {
         assert!(transition(&mut state, 128, 99));
         assert!(transition(&mut state, 128, 164)); // exact 65-bit cross-word shift
         assert!(!transition(&mut state, 128, 99)); // old bit moved to offset 65
-        assert!(transition(&mut state, 128, 98));  // unseen, still in window
+        assert!(transition(&mut state, 128, 98)); // unseen, still in window
         assert!(!transition(&mut state, 128, 98));
     }
 
