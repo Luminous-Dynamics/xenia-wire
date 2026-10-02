@@ -396,9 +396,9 @@ jobs:
           r=d.get("verification_results",{})
           rs=r.get("results",[]) if isinstance(r,dict) else []
           t=next((x for x in rs if x.get("harness_id")=="kernel_stale_boundary_is_rejected"),None)
-          if not isinstance(t,dict) or t.get("status")!="Failure":
+          if not isinstance(t,dict) or str(t.get("status","")).upper()!="FAILURE":
               raise SystemExit("hostile control did not produce structured Failure")
-          if not any(isinstance(x,dict) and str(x.get("status")).lower()=="failure" for x in t.get("checks",[])):
+          if not any(isinstance(x,dict) and str(x.get("status","")).upper()=="FAILURE" for x in t.get("checks",[])):
               raise SystemExit("hostile control has no failed structured check")
           PY
 
