@@ -321,7 +321,7 @@ jobs:
             printf '%s\n' "$status" > "$out/kani.exit"
             cat "$out/kani.log"
 
-            HARNESS="$harness" OUT="$out" python3 - <<'PY'
+            if HARNESS="$harness" OUT="$out" python3 - <<'PY'
           import hashlib, json, os, subprocess
           from pathlib import Path
 
@@ -456,8 +456,9 @@ jobs:
           if result != "Pass":
               raise SystemExit(1)
           PY
-            proof_status=$?
-            if [ "$proof_status" -ne 0 ]; then
+            then
+              :
+            else
               overall=1
             fi
           done < /tmp/harnesses.txt
