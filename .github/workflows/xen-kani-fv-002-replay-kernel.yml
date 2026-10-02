@@ -223,7 +223,7 @@ jobs:
               "kani_release_commit":os.environ["EXPECTED_KANI_RELEASE_COMMIT"],
               "kani_rust_toolchain":os.environ["EXPECTED_KANI_RUST_TOOLCHAIN"],
               "kani_rust_commit_hash":os.environ["EXPECTED_KANI_RUST_COMMIT_HASH"],
-              "rustc_provenance_sha256":sha("/tmp/kani-rustc.txt"),
+              "kani_version_output_sha256":sha("/tmp/kani-version.txt"),
               "log_sha256":sha("/tmp/kani.log"),
               "structured_json_sha256":sha("/tmp/kani.json"),
               "structured_status":structured_status,
@@ -246,6 +246,7 @@ jobs:
             /tmp/kani.log
             /tmp/kani.json
             /tmp/kani-rustc.txt
+            /tmp/kani-version.txt
           if-no-files-found: error
           retention-days: 30
 
@@ -295,6 +296,8 @@ jobs:
           p.write_text(s.replace(old,new,1))
           PY
           test "$(git rev-parse HEAD:src/replay_kernel.rs)" = "$EXPECTED_KERNEL_BLOB"
+          test "$(git hash-object src/replay_kernel.rs)" != "$EXPECTED_KERNEL_BLOB"
+          test "$(git diff --numstat -- src/replay_kernel.rs | awk '{print $1+$2}')" = "1"
 
       - name: Run hostile proof
         shell: bash
@@ -338,6 +341,7 @@ jobs:
             /tmp/kani-mutant.json
             /tmp/kani-mutant.exit
             /tmp/hostile-rustc.txt
+            /tmp/hostile-kani-version.txt
           if-no-files-found: error
           retention-days: 30
 
