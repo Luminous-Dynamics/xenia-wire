@@ -35,8 +35,6 @@ env:
 
 jobs:
   preflight:
-    # Qualification runs are intentionally allowed on draft and ready PR revisions;
-    # admission, not draft state, is the formal gate.
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -56,6 +54,7 @@ jobs:
           test "$(git rev-parse HEAD:src/replay_kernel.rs)" = "$EXPECTED_KERNEL_BLOB"
           test "$(git rev-parse HEAD:src/replay_window.rs)" = "$EXPECTED_ROUTER_BLOB"
           test "$(git rev-parse HEAD:fuzz/fuzz_targets/fuzz_replay_window.rs)" = "$EXPECTED_FUZZ_BLOB"
+
           expected=(
             ".github/workflows/xen-kani-fv-002-replay-kernel.yml"
             "Cargo.toml"
@@ -65,7 +64,28 @@ jobs:
             "src/replay_window.rs"
           )
           printf '%s\n' "${expected[@]}" | LC_ALL=C sort > /tmp/expected-files.txt
-          git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort > /tmp/changed-files.txt
+
+          # Do not let runner-local diff configuration alter the admission set.
+          # Compare the frozen parent directly to the exact requested subject and
+          # retain the repository topology/configuration diagnostics alongside the
+          # scope comparison. The GitHub compare API uses the same two endpoints.
+          unset GIT_EXTERNAL_DIFF GIT_DIFF_OPTS
+          git config --local --unset-all diff.external || true
+          git config --local --unset-all diff.trustExitCode || true
+          {
+            echo "head: $(git rev-parse HEAD)"
+            echo "requested_head: $REQUESTED_HEAD"
+            echo "parent: $EXACT_PARENT"
+            echo "merge_base: $(git merge-base "$EXACT_PARENT" HEAD)"
+            echo "git_version: $(git --version)"
+            echo "diff_external: $(git config --local --get diff.external || true)"
+            echo "diff_drivers:"
+            git config --local --get-regexp '^diff\\.' || true
+            echo "changed_files:"
+            git -c core.quotepath=false diff --no-ext-diff --name-only "$EXACT_PARENT" "$REQUESTED_HEAD"
+          } | tee /tmp/scope-topology.txt
+          git -c core.quotepath=false diff --no-ext-diff --name-only "$EXACT_PARENT" "$REQUESTED_HEAD" | LC_ALL=C sort > /tmp/changed-files.txt
+
           {
             echo "expected:"
             cat /tmp/expected-files.txt
@@ -127,6 +147,7 @@ jobs:
             /tmp/expected-files.txt
             /tmp/changed-files.txt
             /tmp/scope-check.txt
+            /tmp/scope-topology.txt
           if-no-files-found: error
           retention-days: 30
 
