@@ -156,10 +156,12 @@ jobs:
           set -euo pipefail
           cargo install --locked kani-verifier --version "$KANI_VERSION"
           cargo kani setup
-          cargo kani --version
-          rustc_path="$(rustup which rustc --toolchain "$EXPECTED_KANI_RUST_TOOLCHAIN")"
-          "$rustc_path" --version --verbose | tee /tmp/kani-rustc.txt
-          grep -q "commit-hash: $EXPECTED_KANI_RUST_COMMIT_HASH" /tmp/kani-rustc.txt
+          cargo kani --version --verbose | tee /tmp/kani-version.txt
+          grep -q "kani-0.68.0" /tmp/kani-version.txt
+          grep -q "$EXPECTED_KANI_RELEASE_COMMIT" /tmp/kani-version.txt
+          grep -q "$EXPECTED_KANI_RUST_TOOLCHAIN" /tmp/kani-version.txt
+          grep -q "$EXPECTED_KANI_RUST_COMMIT_HASH" /tmp/kani-version.txt
+          cp /tmp/kani-version.txt /tmp/kani-rustc.txt
 
       - name: Run clean kernel proof
         shell: bash
@@ -203,7 +205,7 @@ jobs:
               target=None; structured_status=None; statuses=[]; export_error=str(e)
           if target is None or structured_status is None or exit_status != 0:
               result="Blocked"
-          elif structured_status!="Success" or any(s.lower() in {"unreachable","undetermined"} for s in statuses):
+          elif structured_status!="Success" or not statuses or any(s.upper()!="SUCCESS" for s in statuses):
               result="Blocked"
           else:
               result="Pass"
@@ -271,10 +273,12 @@ jobs:
           set -euo pipefail
           cargo install --locked kani-verifier --version "$KANI_VERSION"
           cargo kani setup
-          cargo kani --version
-          rustc_path="$(rustup which rustc --toolchain "$EXPECTED_KANI_RUST_TOOLCHAIN")"
-          "$rustc_path" --version --verbose | tee /tmp/hostile-rustc.txt
-          grep -q "commit-hash: $EXPECTED_KANI_RUST_COMMIT_HASH" /tmp/hostile-rustc.txt
+          cargo kani --version --verbose | tee /tmp/hostile-kani-version.txt
+          grep -q "kani-0.68.0" /tmp/hostile-kani-version.txt
+          grep -q "$EXPECTED_KANI_RELEASE_COMMIT" /tmp/hostile-kani-version.txt
+          grep -q "$EXPECTED_KANI_RUST_TOOLCHAIN" /tmp/hostile-kani-version.txt
+          grep -q "$EXPECTED_KANI_RUST_COMMIT_HASH" /tmp/hostile-kani-version.txt
+          cp /tmp/hostile-kani-version.txt /tmp/hostile-rustc.txt
 
       - name: Apply hostile stale-boundary mutant
         shell: bash
@@ -321,6 +325,7 @@ jobs:
           set -euo pipefail
           git restore --source=HEAD -- src/replay_kernel.rs
           git diff --exit-code -- src/replay_kernel.rs
+          test "$(git hash-object src/replay_kernel.rs)" = "$EXPECTED_KERNEL_BLOB"
           test "$(git rev-parse HEAD:src/replay_kernel.rs)" = "$EXPECTED_KERNEL_BLOB"
 
       - name: Retain hostile evidence
