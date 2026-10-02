@@ -281,71 +281,56 @@ jobs:
           except Exception as e:
               export_error=str(e)
 
-          target=None
-          candidates=[]
-          schema_version=None
-          if isinstance(data,dict):
-              schema_version=data.get("schema_version")
-              harnesses=data.get("harnesses",[])
-              if isinstance(harnesses,list):
-                  candidates=[
-                      h for h in harnesses
-                      if isinstance(h,dict)
-                      and (
-                          h.get("name")==os.environ["HARNESS"]
-                          or str(h.get("name","")).endswith("::"+os.environ["HARNESS"])
-                      )
-                  ]
-              if len(candidates)==1:
-                  target=candidates[0]
+          verification_results=data.get("verification_results",{}) if isinstance(data,dict) else {}
+          results=verification_results.get("results",[]) if isinstance(verification_results,dict) else []
+          candidates=[
+              r for r in results
+              if isinstance(r,dict)
+              and (
+                  r.get("harness_id")==os.environ["HARNESS"]
+                  or str(r.get("harness_id","")).endswith("::"+os.environ["HARNESS"])
+              )
+          ]
+          target=candidates[0] if len(candidates)==1 else None
+          structured_status=target.get("status") if isinstance(target,dict) else None
+          checks=target.get("checks",[]) if isinstance(target,dict) else []
+          statuses=[str(x.get("status")) for x in checks if isinstance(x,dict)]
 
-          structured_status=(
-              target.get("outcome",{}).get("verdict")
-              if isinstance(target,dict) and isinstance(target.get("outcome"),dict)
-              else None
-          )
-          outcome_kind=(
-              target.get("outcome",{}).get("kind")
-              if isinstance(target,dict) and isinstance(target.get("outcome"),dict)
-              else None
-          )
-          checks=target.get("checks") if isinstance(target,dict) else None
-          covers=target.get("covers") if isinstance(target,dict) else None
-          check_failures=list(checks.get("failure",[])) if isinstance(checks,dict) else []
-          check_unreachable=list(checks.get("unreachable",[])) if isinstance(checks,dict) else []
-          check_undetermined=list(checks.get("undetermined",[])) if isinstance(checks,dict) else []
-          check_error=list(checks.get("error",[])) if isinstance(checks,dict) else []
-          check_unknown=list(checks.get("unknown",[])) if isinstance(checks,dict) else []
-          check_other=list(checks.get("other",[])) if isinstance(checks,dict) else []
-          check_total=checks.get("total") if isinstance(checks,dict) else None
-          check_success=checks.get("success") if isinstance(checks,dict) else None
-          cover_bad=[]
-          if isinstance(covers,dict):
-              cover_bad.extend(covers.get("unsatisfiable",[]))
-              cover_bad.extend(covers.get("unreachable",[]))
-              cover_bad.extend(covers.get("undetermined",[]))
-              cover_bad.extend(covers.get("error",[]))
-              cover_bad.extend(covers.get("unknown",[]))
-              cover_bad.extend(covers.get("other",[]))
-          cover_total=covers.get("total") if isinstance(covers,dict) else None
-          covers_satisfied=covers.get("satisfied",[]) if isinstance(covers,dict) else []
+          summary=verification_results.get("summary") if isinstance(verification_results,dict) else None
+          property_details=[]
+          if isinstance(data,dict):
+              for entry in data.get("property_details",[]) if isinstance(data.get("property_details",[]),list) else []:
+                  if isinstance(entry,dict) and (
+                      entry.get("harness_id")==os.environ["HARNESS"]
+                      or str(entry.get("harness_id","")).endswith("::"+os.environ["HARNESS"])
+                  ):
+                      property_details.append(entry.get("property_details",{}))
+          pd=property_details[0] if len(property_details)==1 and isinstance(property_details[0],dict) else None
+
+          counts=[]
+          if isinstance(pd,dict):
+              for key in ("passed","failed","unreachable","undetermined","solver_error","satisfied","unsatisfiable","covered","uncovered"):
+                  counts.append(int(pd.get(key) or 0))
+          counts_sum=sum(counts) if counts else None
+          total_properties=pd.get("total_properties") if isinstance(pd,dict) else None
+
           if (
               target is not None
+              and len(candidates)==1
               and exit_status == 0
-              and outcome_kind == "COMPLETED"
-              and structured_status == "SUCCESS"
-              and isinstance(checks,dict)
-              and check_total is not None
-              and check_success == check_total
-              and not check_failures
-              and not check_unreachable
-              and not check_undetermined
-              and not check_error
-              and not check_unknown
-              and not check_other
-              and isinstance(covers,dict)
-              and cover_total == len(covers_satisfied)
-              and not cover_bad
+              and structured_status.upper() == "SUCCESS"
+              and checks
+              and all(s.upper()=="SUCCESS" for s in statuses)
+              and isinstance(summary,dict)
+              and summary.get("total_harnesses")==1
+              and summary.get("executed")==1
+              and summary.get("successful")==1
+              and summary.get("failed")==0
+              and pd is not None
+              and pd.get("failed")==0
+              and pd.get("unreachable")==0
+              and pd.get("undetermined")==0
+              and counts_sum == total_properties
           ):
               result="Pass"
           else:
@@ -353,7 +338,7 @@ jobs:
 
           receipt={
               "schema":"xenia.formal.kani-replay-kernel.harness.v1",
-              "export_schema_version":schema_version,
+              "export_schema":"kani-0.68-shipped",
               "head":git("rev-parse","HEAD"),
               "tree":git("rev-parse","HEAD^{tree}"),
               "parent":os.environ["EXACT_PARENT"],
@@ -371,26 +356,20 @@ jobs:
               "log_sha256":sha("/tmp/kani.log"),
               "structured_json_sha256":sha("/tmp/kani.json"),
               "structured_status":structured_status,
-              "structured_outcome_kind":outcome_kind,
               "candidate_harness_count":len(candidates),
-              "structured_check_total":check_total,
-              "structured_check_success":check_success,
-              "structured_check_failure":check_failures,
-              "structured_check_unreachable":check_unreachable,
-              "structured_check_undetermined":check_undetermined,
-              "structured_check_error":check_error,
-              "structured_check_unknown":check_unknown,
-              "structured_check_other":check_other,
-              "structured_cover_total":cover_total,
-              "structured_cover_satisfied":len(covers_satisfied),
-              "structured_cover_bad":cover_bad,
+              "structured_check_total":len(checks),
+              "structured_check_statuses":statuses,
+              "property_total":total_properties,
+              "property_passed":pd.get("passed") if pd else None,
+              "property_failed":pd.get("failed") if pd else None,
+              "property_unreachable":pd.get("unreachable") if pd else None,
+              "property_undetermined":pd.get("undetermined") if pd else None,
+              "property_counts_sum":counts_sum,
               "structured_export_error":export_error,
-              "default_unwind":20,
-              "test_mode":True
+              "test_mode":True,
+              "default_unwind":20
           }
-          Path("/tmp/harness-receipt.json").write_text(
-              json.dumps(receipt, indent=2, sort_keys=True)+"\n"
-          )
+          Path("/tmp/harness-receipt.json").write_text(json.dumps(receipt,indent=2,sort_keys=True)+"\n")
           print(Path("/tmp/harness-receipt.json").read_text())
           PY
 
@@ -469,24 +448,22 @@ jobs:
           import json
           from pathlib import Path
           d=json.loads(Path("/tmp/kani-mutant.json").read_text())
-          hs=d.get("harnesses",[])
+          vr=d.get("verification_results",{})
+          rs=vr.get("results",[]) if isinstance(vr,dict) else []
           candidates=[
-              h for h in hs
-              if isinstance(h,dict)
+              r for r in rs
+              if isinstance(r,dict)
               and (
-                  h.get("name")=="kernel_stale_boundary_is_rejected"
-                  or str(h.get("name","")).endswith("::kernel_stale_boundary_is_rejected")
+                  r.get("harness_id")=="kernel_stale_boundary_is_rejected"
+                  or str(r.get("harness_id","")).endswith("::kernel_stale_boundary_is_rejected")
               )
           ]
           if len(candidates)!=1:
               raise SystemExit("hostile control did not identify exactly one target harness")
           t=candidates[0]
-          outcome=t.get("outcome",{})
-          if not isinstance(outcome,dict) or str(outcome.get("verdict","")).upper()!="FAILURE":
+          if str(t.get("status","")).upper()!="FAILURE":
               raise SystemExit("hostile control did not produce structured Failure")
-          if outcome.get("kind")!="COMPLETED":
-              raise SystemExit("hostile control did not complete as a verification result")
-          failed=t.get("checks",{}).get("failure",[])
+          failed=[x for x in t.get("checks",[]) if isinstance(x,dict) and str(x.get("status","")).upper()=="FAILURE"]
           if not failed:
               raise SystemExit("hostile control has no failed structured check")
           PY
@@ -569,19 +546,19 @@ jobs:
               result="Blocked"; detail="hostile evidence missing"
           else:
               h=json.loads(hostile_json[0].read_text())
-              hs=h.get("harnesses",[])
+              vr=h.get("verification_results",{})
+              rs=vr.get("results",[]) if isinstance(vr,dict) else []
               candidates=[
-                  x for x in hs
+                  x for x in rs
                   if isinstance(x,dict)
                   and (
-                      x.get("name")=="kernel_stale_boundary_is_rejected"
-                      or str(x.get("name","")).endswith("::kernel_stale_boundary_is_rejected")
+                      x.get("harness_id")=="kernel_stale_boundary_is_rejected"
+                      or str(x.get("harness_id","")).endswith("::kernel_stale_boundary_is_rejected")
                   )
               ]
               t=candidates[0] if len(candidates)==1 else None
-              outcome=t.get("outcome",{}) if isinstance(t,dict) else {}
-              failed=t.get("checks",{}).get("failure",[]) if isinstance(t,dict) else []
-              if hostile_exit[0].read_text().strip()=="0" or not isinstance(t,dict) or str(outcome.get("verdict","")).upper()!="FAILURE" or outcome.get("kind")!="COMPLETED" or not failed:
+              failed=[x for x in t.get("checks",[]) if isinstance(x,dict) and str(x.get("status","")).upper()=="FAILURE"] if isinstance(t,dict) else []
+              if hostile_exit[0].read_text().strip()=="0" or not isinstance(t,dict) or str(t.get("status","")).upper()!="FAILURE" or not failed:
                   result="Blocked"; detail="hostile mutant did not produce required structured Failure"
               else:
                   result="Pass"; detail="clean structured kernel proofs and hostile counterexample qualified"
