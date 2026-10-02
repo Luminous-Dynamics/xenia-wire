@@ -10,7 +10,7 @@
   "subjects": {
     "production_kernel": {
       "path": "src/replay_kernel.rs",
-      "blob": "3409e7a6e3f95c301b922ac579a7574b1ca360a0"
+      "blob": "910c8f4e5954271f9e603a8fdcdc23a48004d54f"
     },
     "production_router": {
       "path": "src/replay_window.rs",
@@ -34,6 +34,8 @@
     "kernel_higher_sequence_is_monotonic",
     "kernel_cross_word_shift_preserves_in_window_history",
     "kernel_supported_widths_do_not_panic",
+    "kernel_supported_width_boundary_is_exact",
+    "kernel_bitmap_tail_is_zero_for_supported_widths",
     "kernel_u64_max_advance_preserves_previous_sequence"
   ],
   "hostile_control": {
