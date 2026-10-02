@@ -191,6 +191,32 @@ mod kani_proofs {
 
     #[kani::proof]
     #[kani::unwind(20)]
+    fn kernel_exact_word_shift_preserves_in_window_history() {
+        let mut state = ReplayState::new();
+        assert!(transition(&mut state, 128, 100));
+        assert!(transition(&mut state, 128, 99));
+        assert!(transition(&mut state, 128, 164)); // exact 64-bit word shift
+        assert!(!transition(&mut state, 128, 100)); // old highest moved to offset 64
+        assert!(!transition(&mut state, 128, 99)); // old offset 1 moved to offset 65
+        assert!(transition(&mut state, 128, 98)); // unseen, still in window
+        assert!(!transition(&mut state, 128, 98));
+    }
+
+    #[kani::proof]
+    #[kani::unwind(20)]
+    fn kernel_max_width_multiword_shift_preserves_history() {
+        let mut state = ReplayState::new();
+        assert!(transition(&mut state, 1024, 1000));
+        assert!(transition(&mut state, 1024, 999));
+        assert!(transition(&mut state, 1024, 1513)); // exact 513-bit multiword shift
+        assert!(!transition(&mut state, 1024, 1000)); // moved to offset 513
+        assert!(!transition(&mut state, 1024, 999)); // moved to offset 514
+        assert!(transition(&mut state, 1024, 998)); // unseen, still in window
+        assert!(!transition(&mut state, 1024, 998));
+    }
+
+    #[kani::proof]
+    #[kani::unwind(20)]
     fn kernel_supported_widths_do_not_panic() {
         let mut state = ReplayState::new();
         let width = any_window_bits();
