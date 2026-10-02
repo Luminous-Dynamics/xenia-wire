@@ -55,6 +55,7 @@ jobs:
 
           curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github.raw+json"             "https://api.github.com/repos/$HEAD_REPO/contents/src/replay_kernel.rs?ref=$HEAD_SHA"             -o /tmp/xen-kani-trusted/src/replay_kernel.rs
 
+          cp /tmp/xen-kani-trusted/src/replay_kernel.rs /tmp/xen-kani-trusted/src/lib.rs
           printf '%s\n' "$HEAD_SHA" > /tmp/xen-kani-trusted/head.sha
           printf '%s\n' "$PR_NUMBER" > /tmp/xen-kani-trusted/pr.number
 
@@ -117,9 +118,17 @@ jobs:
               "kernel_bitmap_tail_is_zero_for_supported_widths",
               "kernel_u64_max_advance_preserves_previous_sequence",
           }
-          discovered=set(
-              re.findall(r'(?m)^\s*#\[kani::proof\][\s\S]*?^\s*fn\s+([A-Za-z0-9_]+)\s*\(', source)
-          )
+          lines=source.splitlines()
+          discovered=set()
+          for i, line in enumerate(lines):
+              if line.strip()!="#[kani::proof]":
+                  continue
+              window=lines[i+1:i+6]
+              for candidate in window:
+                  match=re.match(r'^\s*fn\s+([A-Za-z0-9_]+)\s*\(', candidate)
+                  if match:
+                      discovered.add(match.group(1))
+                      break
           assert discovered==expected, f"harness manifest mismatch: discovered={sorted(discovered)}"
           assert source.count("#[kani::proof]")==14
           assert "pub(crate) fn transition(" in source
@@ -223,10 +232,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cp src/replay_kernel.rs /tmp/replay_kernel.clean.rs
+          cp src/lib.rs /tmp/replay_kernel.clean.rs
           python3 - <<'PY'
           from pathlib import Path
-          p=Path("src/replay_kernel.rs")
+          p=Path("src/lib.rs")
           s=p.read_text()
           old="if offset >= window_bits as u64 {"
           new="if offset > window_bits as u64 {"
@@ -261,9 +270,8 @@ jobs:
           failed=[x for x in t.get("checks",[]) if isinstance(x,dict) and str(x.get("status","")).upper()=="FAILURE"]
           assert failed
           PY
-          mv /tmp/replay_kernel.clean.rs src/replay_kernel.rs
-          test "$(git hash-object src/replay_kernel.rs)" = "$(cat /tmp/xen-kani-trusted/kernel.blob)"
-          test "$(git hash-object src/replay_kernel.rs)" = "$(cat /tmp/xen-kani-trusted/kernel.blob)"
+          mv /tmp/replay_kernel.clean.rs src/lib.rs
+          test "$(git hash-object src/lib.rs)" = "$(cat /tmp/xen-kani-trusted/kernel.blob)"
 
       - name: Retain trusted receipt
         if: always()
