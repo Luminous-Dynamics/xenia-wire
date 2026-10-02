@@ -45,7 +45,8 @@
   },
   "kani": {
     "version": "0.68.0",
-    "release_commit": "0d2328a93f0e0ff66132d6bfa1a7d884877cf862",
+    "release_commit": null,
+    "release_commit_verified": false,
     "expected_rust_toolchain": "nightly-2026-08-21",
     "expected_rust_commit_hash": "8925ea358a0f265ca61026aadc7ecc506c545cbe",
     "default_unwind": 20,
