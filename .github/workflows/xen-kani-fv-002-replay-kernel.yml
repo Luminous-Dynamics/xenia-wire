@@ -65,26 +65,43 @@ jobs:
           )
           printf '%s\n' "${expected[@]}" | LC_ALL=C sort > /tmp/expected-files.txt
 
-          # Do not let runner-local diff configuration alter the admission set.
-          # Compare the frozen parent directly to the exact requested subject and
-          # retain the repository topology/configuration diagnostics alongside the
-          # scope comparison. The GitHub compare API uses the same two endpoints.
-          unset GIT_EXTERNAL_DIFF GIT_DIFF_OPTS
-          git config --local --unset-all diff.external || true
-          git config --local --unset-all diff.trustExitCode || true
+          # Compute the net tree delta directly from the two frozen trees.
+          # This deliberately avoids diff drivers, external diff commands, rename
+          # heuristics, and runner-local diff configuration. A path is changed when
+          # its mode/blob tuple differs between the parent and requested subject.
           {
-            echo "head: $(git rev-parse HEAD)"
-            echo "requested_head: $REQUESTED_HEAD"
-            echo "parent: $EXACT_PARENT"
-            echo "merge_base: $(git merge-base "$EXACT_PARENT" HEAD)"
-            echo "git_version: $(git --version)"
-            echo "diff_external: $(git config --local --get diff.external || true)"
-            echo "diff_drivers:"
-            git config --local --get-regexp '^diff\\.' || true
-            echo "changed_files:"
-            git -c core.quotepath=false diff --no-ext-diff --name-only "$EXACT_PARENT" "$REQUESTED_HEAD"
+            echo "head: \$(git rev-parse HEAD)"
+            echo "requested_head: \$REQUESTED_HEAD"
+            echo "parent: \$EXACT_PARENT"
+            echo "merge_base: \$(git merge-base "\$EXACT_PARENT" HEAD)"
+            echo "git_version: \$(git --version)"
           } | tee /tmp/scope-topology.txt
-          git -c core.quotepath=false diff --no-ext-diff --name-only "$EXACT_PARENT" "$REQUESTED_HEAD" | LC_ALL=C sort > /tmp/changed-files.txt
+          python3 - <<'PY'
+          import subprocess
+          from pathlib import Path
+
+          def tree(ref):
+              out=subprocess.check_output(
+                  ["git","ls-tree","-r","--full-tree",ref],
+                  text=True,
+              )
+              result={}
+              for line in out.splitlines():
+                  meta, path = line.split("\\t", 1)
+                  mode, kind, blob = meta.split()
+                  result[path]=(mode, kind, blob)
+              return result
+
+          parent=tree("\$EXACT_PARENT")
+          head=tree("\$REQUESTED_HEAD")
+          changed=sorted(path for path in set(parent) | set(head) if parent.get(path)!=head.get(path))
+          Path("/tmp/changed-files.txt").write_text(
+              "".join(f"{path}\\n" for path in changed)
+          )
+          print("tree_delta_count:", len(changed))
+          for path in changed:
+              print(path)
+          PY
 
           {
             echo "expected:"
