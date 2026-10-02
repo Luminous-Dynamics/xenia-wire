@@ -19,8 +19,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: xen-kani-fv-002-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name }}
-  cancel-in-progress: true
+  # Use the run ID as the group during bootstrap so obsolete queued runs cannot
+  # suppress the current qualification subject.
+  group: xen-kani-fv-002-${{ github.run_id }}
+  cancel-in-progress: false
 
 env:
   EXACT_PARENT: 057dd03043b8863d8f8280abf333331cc9ddf317
