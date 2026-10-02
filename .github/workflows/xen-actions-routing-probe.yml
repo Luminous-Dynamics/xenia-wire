@@ -1,0 +1,20 @@
+name: XEN Actions Routing Probe
+
+on:
+  push:
+    branches:
+      - "diagnostic/xen-actions-routing-probe-2026-10-02"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Report routing
+        run: |
+          set -euo pipefail
+          echo "Actions routing probe reached a runner."
+          echo "sha=$GITHUB_SHA"
