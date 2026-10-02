@@ -152,12 +152,61 @@ jobs:
           assert c["subjects"]["production_kernel"]["blob"]=="7270eac3bf1fd9189a67a1493891758e4caa6602"
           assert c["subjects"]["production_router"]["blob"]=="31de631b5c62448525f834e199e68a212cd4a7f3"
           assert c["subjects"]["existing_fuzz_subject"]["blob"]=="a27128c0c503780ad9e12fda23ee907c8cd6aa1e"
-          assert len(c["harnesses"])==13
+          expected_harnesses={
+              "kernel_duplicate_rejected",
+              "kernel_first_sequence_initializes_exactly",
+              "kernel_stale_boundary_is_rejected",
+              "kernel_higher_sequence_is_monotonic",
+              "kernel_cross_word_shift_preserves_in_window_history",
+              "kernel_exact_window_jump_resets_history",
+              "kernel_max_width_near_window_shift_preserves_history_boundary",
+              "kernel_exact_word_shift_preserves_in_window_history",
+              "kernel_max_width_multiword_shift_preserves_history",
+              "kernel_supported_widths_do_not_panic",
+              "kernel_supported_width_boundary_is_exact",
+              "kernel_bitmap_tail_is_zero_for_supported_widths",
+              "kernel_u64_max_advance_preserves_previous_sequence"
+          }
+          assert set(c["harnesses"])==expected_harnesses
+          assert len(c["harnesses"])==len(expected_harnesses)==13
           assert c["kani"]["version"]=="0.68.0"
           assert c["kani"]["release_commit"] is None
           assert c["kani"]["release_commit_verified"] is False
           assert c["kani"]["expected_rust_toolchain"]=="nightly-2026-08-21"
           assert c["kani"]["expected_rust_commit_hash"]=="8925ea358a0f265ca61026aadc7ecc506c545cbe"
+          PY
+
+      - name: Verify source harness manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          expected={
+              "kernel_duplicate_rejected",
+              "kernel_first_sequence_initializes_exactly",
+              "kernel_stale_boundary_is_rejected",
+              "kernel_higher_sequence_is_monotonic",
+              "kernel_cross_word_shift_preserves_in_window_history",
+              "kernel_exact_window_jump_resets_history",
+              "kernel_max_width_near_window_shift_preserves_history_boundary",
+              "kernel_exact_word_shift_preserves_in_window_history",
+              "kernel_max_width_multiword_shift_preserves_history",
+              "kernel_supported_widths_do_not_panic",
+              "kernel_supported_width_boundary_is_exact",
+              "kernel_bitmap_tail_is_zero_for_supported_widths",
+              "kernel_u64_max_advance_preserves_previous_sequence"
+          }
+          source=Path("src/replay_kernel.rs").read_text()
+          discovered=set(
+              re.findall(
+                  r'(?m)^\s*#\[kani::proof\]\s*\n\s*#\[kani::unwind\(20\)\]\s*\n\s*fn\s+([A-Za-z0-9_]+)\s*\(',
+                  source,
+              )
+          )
+          assert discovered==expected, f"harness manifest mismatch: discovered={sorted(discovered)} expected={sorted(expected)}"
+          assert source.count("#[kani::proof]")==len(expected)
           PY
 
       - name: Ordinary Rust build
