@@ -1,0 +1,319 @@
+name: Trusted XEN-KANI-FV-002 Admission
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "src/replay_kernel.rs"
+      - "src/replay_window.rs"
+      - "fuzz/fuzz_targets/fuzz_replay_window.rs"
+      - "src/lib.rs"
+      - "Cargo.toml"
+      - ".github/workflows/xen-kani-fv-002-replay-kernel.yml"
+      - "docs/formal/xen-kani-fv-002-replay-kernel-v1.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trusted-xen-kani-fv-002-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  BASE_SHA: 057dd03043b8863d8f8280abf333331cc9ddf317
+  KANI_VERSION: 0.68.0
+  EXPECTED_KANI_RUST_TOOLCHAIN: nightly-2026-08-21
+  EXPECTED_KANI_RUST_COMMIT_HASH: 8925ea358a0f265ca61026aadc7ecc506c545cbe
+
+jobs:
+  trusted-admission:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Prepare trusted verifier workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/xen-kani-trusted/src
+          cat > /tmp/xen-kani-trusted/Cargo.toml <<'EOF'
+          [package]
+          name = "xen_kani_trusted_subject"
+          version = "0.1.0"
+          edition = "2021"
+          EOF
+
+      - name: Fetch PR replay kernel as data
+        id: fetch-subject
+        shell: bash
+        env:
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          test "${{ github.event.pull_request.base.sha }}" = "$BASE_SHA"
+
+          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github.raw+json"             "https://api.github.com/repos/$HEAD_REPO/contents/src/replay_kernel.rs?ref=$HEAD_SHA"             -o /tmp/xen-kani-trusted/src/replay_kernel.rs
+
+          printf '%s\n' "$HEAD_SHA" > /tmp/xen-kani-trusted/head.sha
+          printf '%s\n' "$PR_NUMBER" > /tmp/xen-kani-trusted/pr.number
+
+          blob_sha="$(git hash-object /tmp/xen-kani-trusted/src/replay_kernel.rs)"
+          printf '%s\n' "$blob_sha" > /tmp/xen-kani-trusted/kernel.blob
+          printf 'head=%s\nrepo=%s\nblob=%s\n' "$HEAD_SHA" "$HEAD_REPO" "$blob_sha" | tee /tmp/trusted-subject.txt
+
+          test -s /tmp/xen-kani-trusted/src/replay_kernel.rs
+          test "$(wc -c < /tmp/xen-kani-trusted/src/replay_kernel.rs)" -gt 1000
+
+      - name: Verify PR scope independently
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/compare/$BASE_SHA...$HEAD_SHA"             -o /tmp/compare.json
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          d=json.loads(Path("/tmp/compare.json").read_text())
+          expected={
+              ".github/workflows/xen-kani-fv-002-replay-kernel.yml",
+              "Cargo.toml",
+              "docs/formal/xen-kani-fv-002-replay-kernel-v1.json",
+              "src/lib.rs",
+              "src/replay_kernel.rs",
+              "src/replay_window.rs",
+          }
+          observed={x["filename"] for x in d.get("files",[])}
+          assert d["status"]=="ahead"
+          assert d["base_commit"]["sha"]=="057dd03043b8863d8f8280abf333331cc9ddf317"
+          assert observed==expected, f"trusted scope mismatch: {sorted(observed)}"
+          PY
+
+      - name: Verify independent harness manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          source=Path("/tmp/xen-kani-trusted/src/replay_kernel.rs").read_text()
+          expected={
+              "kernel_duplicate_rejected",
+              "kernel_first_sequence_initializes_exactly",
+              "kernel_stale_boundary_is_rejected",
+              "kernel_higher_sequence_is_monotonic",
+              "kernel_cross_word_shift_preserves_in_window_history",
+              "kernel_exact_word_shift_preserves_in_window_history",
+              "kernel_max_width_multiword_shift_preserves_history",
+              "kernel_exact_window_jump_resets_history",
+              "kernel_max_width_near_window_shift_preserves_history_boundary",
+              "kernel_symbolic_shift_preserves_or_discards_history_exactly",
+              "kernel_supported_widths_do_not_panic",
+              "kernel_supported_width_boundary_is_exact",
+              "kernel_bitmap_tail_is_zero_for_supported_widths",
+              "kernel_u64_max_advance_preserves_previous_sequence",
+          }
+          discovered=set(
+              re.findall(r'(?m)^\s*#\[kani::proof\][\s\S]*?^\s*fn\s+([A-Za-z0-9_]+)\s*\(', source)
+          )
+          assert discovered==expected, f"harness manifest mismatch: discovered={sorted(discovered)}"
+          assert source.count("#[kani::proof]")==14
+          assert "pub(crate) fn transition(" in source
+          assert "#[cfg(kani)]\nmod kani_proofs {" in source
+          assert not source.rstrip().endswith("#[kani::proof]")
+          PY
+
+      - name: Install pinned Kani
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo install --locked kani-verifier --version "$KANI_VERSION"
+          cargo kani setup
+          cargo kani --version --verbose | tee /tmp/kani-version.txt
+          grep -q "kani-0.68.0" /tmp/kani-version.txt
+          rustup run "$EXPECTED_KANI_RUST_TOOLCHAIN" rustc -Vv | tee /tmp/kani-rustc.txt
+          grep -q "commit-hash: $EXPECTED_KANI_RUST_COMMIT_HASH" /tmp/kani-rustc.txt
+
+      - name: Run all trusted clean proofs
+        shell: bash
+        working-directory: /tmp/xen-kani-trusted
+        run: |
+          set -euo pipefail
+          cat > /tmp/harnesses.txt <<'EOF'
+          kernel_duplicate_rejected
+          kernel_first_sequence_initializes_exactly
+          kernel_stale_boundary_is_rejected
+          kernel_higher_sequence_is_monotonic
+          kernel_cross_word_shift_preserves_in_window_history
+          kernel_exact_word_shift_preserves_in_window_history
+          kernel_max_width_multiword_shift_preserves_history
+          kernel_exact_window_jump_resets_history
+          kernel_max_width_near_window_shift_preserves_history_boundary
+          kernel_symbolic_shift_preserves_or_discards_history_exactly
+          kernel_supported_widths_do_not_panic
+          kernel_supported_width_boundary_is_exact
+          kernel_bitmap_tail_is_zero_for_supported_widths
+          kernel_u64_max_advance_preserves_previous_sequence
+          EOF
+
+          : > /tmp/trusted-clean-results.jsonl
+          while IFS= read -r harness; do
+            echo "=== trusted clean proof: $harness ==="
+            set +e
+            cargo kani -Z unstable-options --tests --default-unwind 20               --harness "$harness"               --export-json "/tmp/$harness.json"               > "/tmp/$harness.log" 2>&1
+            status=$?
+            set -e
+            printf '%s\n' "$status" > "/tmp/$harness.exit"
+            cat "/tmp/$harness.log"
+            test "$status" -eq 0
+
+            python3 - "$harness" "/tmp/$harness.json" <<'PY'
+          import json, sys
+          from pathlib import Path
+          harness=sys.argv[1]
+          d=json.loads(Path(sys.argv[2]).read_text())
+          vr=d.get("verification_results",{})
+          results=vr.get("results",[]) if isinstance(vr,dict) else []
+          candidates=[
+              x for x in results
+              if isinstance(x,dict)
+              and (
+                  x.get("harness_id")==harness
+                  or str(x.get("harness_id","")).endswith("::"+harness)
+              )
+          ]
+          assert len(candidates)==1
+          target=candidates[0]
+          assert str(target.get("status","")).upper()=="SUCCESS"
+          checks=target.get("checks",[])
+          assert checks
+          assert all(str(x.get("status","")).upper()=="SUCCESS" for x in checks if isinstance(x,dict))
+          summary=vr.get("summary",{})
+          assert summary.get("total_harnesses")==1
+          assert summary.get("executed")==1
+          assert summary.get("successful")==1
+          assert summary.get("failed")==0
+          pd=[
+              x.get("property_details",{})
+              for x in d.get("property_details",[])
+              if isinstance(x,dict)
+              and (
+                  x.get("harness_id")==harness
+                  or str(x.get("harness_id","")).endswith("::"+harness)
+              )
+          ]
+          assert len(pd)==1
+          assert pd[0].get("failed")==0
+          assert pd[0].get("unreachable")==0
+          assert pd[0].get("undetermined")==0
+          counts=0
+          for key in ("passed","failed","unreachable","undetermined","solver_error","satisfied","unsatisfiable","covered","uncovered"):
+              counts += int(pd[0].get(key) or 0)
+          assert counts==pd[0].get("total_properties")
+          print(json.dumps({"harness":harness,"status":"Success","properties":pd[0].get("total_properties")}))
+          PY
+          done < /tmp/harnesses.txt
+
+      - name: Run trusted hostile control
+        working-directory: /tmp/xen-kani-trusted
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp src/replay_kernel.rs /tmp/replay_kernel.clean.rs
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path("src/replay_kernel.rs")
+          s=p.read_text()
+          old="if offset >= window_bits as u64 {"
+          new="if offset > window_bits as u64 {"
+          assert s.count(old)==1
+          p.write_text(s.replace(old,new,1))
+          PY
+          test "$(git hash-object src/replay_kernel.rs)" != "$(cat /tmp/xen-kani-trusted/kernel.blob)"
+          set +e
+          cargo kani -Z unstable-options --tests --default-unwind 20             --harness kernel_stale_boundary_is_rejected             --export-json /tmp/hostile.json             > /tmp/hostile.log 2>&1
+          status=$?
+          set -e
+          printf '%s\n' "$status" > /tmp/hostile.exit
+          cat /tmp/hostile.log
+          test "$status" -ne 0
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("/tmp/hostile.json").read_text())
+          vr=d.get("verification_results",{})
+          results=vr.get("results",[]) if isinstance(vr,dict) else []
+          candidates=[
+              x for x in results
+              if isinstance(x,dict)
+              and (
+                  x.get("harness_id")=="kernel_stale_boundary_is_rejected"
+                  or str(x.get("harness_id","")).endswith("::kernel_stale_boundary_is_rejected")
+              )
+          ]
+          assert len(candidates)==1
+          t=candidates[0]
+          assert str(t.get("status","")).upper()=="FAILURE"
+          failed=[x for x in t.get("checks",[]) if isinstance(x,dict) and str(x.get("status","")).upper()=="FAILURE"]
+          assert failed
+          PY
+          mv /tmp/replay_kernel.clean.rs src/replay_kernel.rs
+          test "$(git hash-object src/replay_kernel.rs)" = "$(cat /tmp/xen-kani-trusted/kernel.blob)"
+          test "$(git hash-object src/replay_kernel.rs)" = "$(cat /tmp/xen-kani-trusted/kernel.blob)"
+
+      - name: Retain trusted receipt
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+
+          def git(*args):
+              return subprocess.check_output(["git", *args], text=True).strip()
+
+          receipt={
+              "schema":"xenia.formal.kani-replay-kernel.trusted-admission.v1",
+              "github_run_id":int(os.environ["GITHUB_RUN_ID"]),
+              "github_run_attempt":int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "pr_number":int(os.environ["PR_NUMBER"]),
+              "head_sha":os.environ["HEAD_SHA"],
+              "head_repo":os.environ["HEAD_REPO"],
+              "base_sha":os.environ["BASE_SHA"],
+              "kernel_blob":Path("/tmp/xen-kani-trusted/kernel.blob").read_text().strip(),
+              "kani_version":Path("/tmp/kani-version.txt").read_text().strip(),
+              "kani_rust_toolchain":os.environ["EXPECTED_KANI_RUST_TOOLCHAIN"],
+              "kani_rust_commit_hash":os.environ["EXPECTED_KANI_RUST_COMMIT_HASH"],
+              "clean_harness_count":14,
+              "hostile_control_exit_status":int(Path("/tmp/hostile.exit").read_text().strip()) if Path("/tmp/hostile.exit").exists() else None,
+              "hostile_control_structured_failure":Path("/tmp/hostile.json").exists(),
+          }
+          Path("/tmp/trusted-admission.json").write_text(json.dumps(receipt,indent=2,sort_keys=True)+"\n")
+          print(Path("/tmp/trusted-admission.json").read_text())
+          PY
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+
+      - name: Upload trusted evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: trusted-xen-kani-fv-002-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+          path: |
+            /tmp/trusted-subject.txt
+            /tmp/xen-kani-trusted/kernel.blob
+            /tmp/kani-version.txt
+            /tmp/kani-rustc.txt
+            /tmp/trusted-admission.json
+            /tmp/hostile.json
+            /tmp/hostile.log
+            /tmp/hostile.exit
+          if-no-files-found: error
+          retention-days: 30
