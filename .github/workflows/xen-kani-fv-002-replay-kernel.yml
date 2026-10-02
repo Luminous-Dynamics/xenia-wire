@@ -564,6 +564,83 @@ jobs:
           test "$(cat /tmp/hostile-restored-kernel.blob)" = "$EXPECTED_KERNEL_BLOB"
           test "$(git rev-parse HEAD:src/replay_kernel.rs)" = "$EXPECTED_KERNEL_BLOB"
 
+      - name: Build hostile receipt
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os, subprocess
+          from pathlib import Path
+
+          def read(p):
+              q=Path(p)
+              return q.read_text(errors="replace") if q.exists() else ""
+
+          def sha(p):
+              q=Path(p)
+              return hashlib.sha256(q.read_bytes()).hexdigest() if q.exists() else None
+
+          def git(*args):
+              return subprocess.check_output(["git", *args], text=True).strip()
+
+          data=None
+          export_error=None
+          try:
+              data=json.loads(read("/tmp/kani-mutant.json"))
+          except Exception as e:
+              export_error=str(e)
+
+          vr=data.get("verification_results",{}) if isinstance(data,dict) else {}
+          results=vr.get("results",[]) if isinstance(vr,dict) else []
+          candidates=[
+              x for x in results
+              if isinstance(x,dict)
+              and (
+                  x.get("harness_id")=="kernel_stale_boundary_is_rejected"
+                  or str(x.get("harness_id","")).endswith("::kernel_stale_boundary_is_rejected")
+              )
+          ]
+          target=candidates[0] if len(candidates)==1 else None
+          failed_checks=[
+              x for x in target.get("checks",[])
+              if isinstance(x,dict) and str(x.get("status","")).upper()=="FAILURE"
+          ] if isinstance(target,dict) else []
+
+          receipt={
+              "schema":"xenia.formal.kani-replay-kernel.hostile.v1",
+              "export_schema":"kani-0.68-shipped",
+              "github_run_id":int(os.environ["GITHUB_RUN_ID"]),
+              "github_run_attempt":int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "head":git("rev-parse","HEAD"),
+              "tree":git("rev-parse","HEAD^{tree}"),
+              "parent":os.environ["EXACT_PARENT"],
+              "kernel_blob":git("rev-parse","HEAD:src/replay_kernel.rs"),
+              "router_blob":git("rev-parse","HEAD:src/replay_window.rs"),
+              "fuzz_blob":git("rev-parse","HEAD:fuzz/fuzz_targets/fuzz_replay_window.rs"),
+              "workflow_blob":git("rev-parse","HEAD:.github/workflows/xen-kani-fv-002-replay-kernel.yml"),
+              "evidence_contract_blob":git("rev-parse","HEAD:docs/formal/xen-kani-fv-002-replay-kernel-v1.json"),
+              "harness":"kernel_stale_boundary_is_rejected",
+              "exit_status":int(read("/tmp/kani-mutant.exit").strip() or "125"),
+              "structured_status":target.get("status") if isinstance(target,dict) else None,
+              "candidate_harness_count":len(candidates),
+              "structured_check_total":len(target.get("checks",[])) if isinstance(target,dict) else 0,
+              "structured_failed_check_total":len(failed_checks),
+              "structured_json_sha256":sha("/tmp/kani-mutant.json"),
+              "log_sha256":sha("/tmp/kani-mutant.log"),
+              "kani_version":read("/tmp/hostile-kani-version.txt").strip(),
+              "kani_rust_toolchain":os.environ["EXPECTED_KANI_RUST_TOOLCHAIN"],
+              "kani_rust_commit_hash":os.environ["EXPECTED_KANI_RUST_COMMIT_HASH"],
+              "mutant_kernel_blob":read("/tmp/hostile-mutant-kernel.blob").strip() or None,
+              "restored_kernel_blob":read("/tmp/hostile-restored-kernel.blob").strip() or None,
+              "mutation":"offset >= window_bits becomes offset > window_bits",
+              "structured_export_error":export_error
+          }
+          Path("/tmp/hostile-receipt.json").write_text(json.dumps(receipt,indent=2,sort_keys=True)+"
+")
+          print(Path("/tmp/hostile-receipt.json").read_text())
+          PY
+
       - name: Retain hostile evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -577,6 +654,7 @@ jobs:
             /tmp/hostile-kani-version.txt
             /tmp/hostile-mutant-kernel.blob
             /tmp/hostile-restored-kernel.blob
+            /tmp/hostile-receipt.json
           if-no-files-found: error
           retention-days: 30
 
@@ -643,6 +721,7 @@ jobs:
           hostile_exit=list(root.glob("**/kani-mutant.exit"))
           hostile_mutant_blob=list(root.glob("**/hostile-mutant-kernel.blob"))
           hostile_restored_blob=list(root.glob("**/hostile-restored-kernel.blob"))
+          hostile_receipts=list(root.glob("**/hostile-receipt.json"))
 
           expected_tree=subprocess.check_output(
               ["git","rev-parse","HEAD^{tree}"], text=True
@@ -704,13 +783,33 @@ jobs:
               or len(hostile_exit)!=1
               or len(hostile_mutant_blob)!=1
               or len(hostile_restored_blob)!=1
+              or len(hostile_receipts)!=1
               or hostile_mutant_blob[0].read_text().strip()==os.environ["EXPECTED_KERNEL_BLOB"]
               or hostile_restored_blob[0].read_text().strip()!=os.environ["EXPECTED_KERNEL_BLOB"]
           ):
               result="Blocked"; detail="hostile mutation/restoration identity evidence missing or invalid"
           else:
-              h=json.loads(hostile_json[0].read_text())
-              vr=h.get("verification_results",{})
+              hr=json.loads(hostile_receipts[0].read_text())
+              if (
+                  hr.get("head")!=os.environ["REQUESTED_HEAD"]
+                  or hr.get("parent")!=os.environ["EXACT_PARENT"]
+                  or hr.get("kernel_blob")!=os.environ["EXPECTED_KERNEL_BLOB"]
+                  or hr.get("router_blob")!=os.environ["EXPECTED_ROUTER_BLOB"]
+                  or hr.get("fuzz_blob")!=os.environ["EXPECTED_FUZZ_BLOB"]
+                  or "kani-0.68.0" not in hr.get("kani_version","")
+                  or hr.get("kani_rust_toolchain")!=os.environ["EXPECTED_KANI_RUST_TOOLCHAIN"]
+                  or hr.get("kani_rust_commit_hash")!=os.environ["EXPECTED_KANI_RUST_COMMIT_HASH"]
+                  or hr.get("candidate_harness_count")!=1
+                  or str(hr.get("structured_status","")).upper()!="FAILURE"
+                  or hr.get("structured_failed_check_total",0)<1
+                  or hr.get("mutant_kernel_blob")==os.environ["EXPECTED_KERNEL_BLOB"]
+                  or hr.get("restored_kernel_blob")!=os.environ["EXPECTED_KERNEL_BLOB"]
+                  or hr.get("exit_status")==0
+              ):
+                  result="Blocked"; detail="hostile receipt failed exact source/provenance binding"
+              else:
+                  h=json.loads(hostile_json[0].read_text())
+                  vr=h.get("verification_results",{})
               rs=vr.get("results",[]) if isinstance(vr,dict) else []
               candidates=[
                   x for x in rs
@@ -754,6 +853,7 @@ jobs:
               "github_run_attempt":int(os.environ["GITHUB_RUN_ATTEMPT"]),
               "hostile_mutant_blob":hostile_mutant_blob[0].read_text().strip() if len(hostile_mutant_blob)==1 else None,
               "hostile_restored_blob":hostile_restored_blob[0].read_text().strip() if len(hostile_restored_blob)==1 else None,
+              "hostile_receipt":json.loads(hostile_receipts[0].read_text()) if len(hostile_receipts)==1 else None,
               "expected_harnesses":sorted(expected),
               "observed_harnesses":sorted(harness for harness in receipts if harness is not None),
               "receipt_file_count":len(receipt_list),
