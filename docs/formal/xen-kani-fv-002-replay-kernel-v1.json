@@ -45,6 +45,7 @@
     "kernel_stale_boundary_is_rejected",
     "kernel_higher_sequence_is_monotonic",
     "kernel_cross_word_shift_preserves_in_window_history",
+    "kernel_symbolic_shift_preserves_or_discards_history_exactly",
     "kernel_exact_window_jump_resets_history",
     "kernel_max_width_near_window_shift_preserves_history_boundary",
     "kernel_exact_word_shift_preserves_in_window_history",
