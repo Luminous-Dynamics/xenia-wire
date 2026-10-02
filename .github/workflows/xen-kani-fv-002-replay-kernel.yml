@@ -88,7 +88,7 @@ jobs:
               )
               result={}
               for line in out.splitlines():
-                  meta, path = line.split("\\t", 1)
+                  meta, path = line.split(chr(9), 1)
                   mode, kind, blob = meta.split()
                   result[path]=(mode, kind, blob)
               return result
@@ -97,7 +97,7 @@ jobs:
           head=tree(os.environ["REQUESTED_HEAD"])
           changed=sorted(path for path in set(parent) | set(head) if parent.get(path)!=head.get(path))
           Path("/tmp/changed-files.txt").write_text(
-              "".join(f"{path}\\n" for path in changed)
+              "".join(path + chr(10) for path in changed)
           )
           print("tree_delta_count:", len(changed))
           for path in changed:
