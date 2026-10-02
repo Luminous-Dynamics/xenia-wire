@@ -64,6 +64,8 @@
 
 use std::collections::HashMap;
 
+use crate::replay_kernel::{transition, ReplayState};
+
 /// Default replay window width in bits.
 ///
 /// 64 bits is the standard IPsec/DTLS replay window width. See SPEC §5.1.
@@ -84,34 +86,6 @@ pub const MAX_WINDOW_BITS: u32 = 1024;
 /// compatible public API; new code should use `DEFAULT_WINDOW_BITS`.
 pub const WINDOW_BITS: u64 = DEFAULT_WINDOW_BITS as u64;
 
-/// Per-stream replay state: highest sequence seen + bitmap of the most
-/// recent `window_bits` sequences. The bitmap is stored as a vector of
-/// u64 words, length = `window_bits / 64`.
-#[derive(Debug, Clone)]
-struct StreamWindow {
-    /// Highest sequence number seen so far. The bitmap tracks
-    /// `[highest - window_bits + 1, highest]`. Bit position 0 = highest,
-    /// bit position `window_bits-1` = oldest.
-    highest: u64,
-    /// Bitmap of received sequences. `bitmap[w]` covers bits
-    /// `[64*w .. 64*(w+1))` in offset-from-highest space. Bit 0 of
-    /// `bitmap[0]` is always set once the window is initialized
-    /// (corresponds to `highest`).
-    bitmap: Vec<u64>,
-    /// Whether this window has seen any sequence yet.
-    initialized: bool,
-}
-
-impl StreamWindow {
-    fn new(bitmap_words: usize) -> Self {
-        Self {
-            highest: 0,
-            bitmap: vec![0u64; bitmap_words],
-            initialized: false,
-        }
-    }
-}
-
 /// Sliding-window replay protection for multiple independent streams.
 ///
 /// Streams are keyed by `(source_id, payload_type, key_epoch)` — see
@@ -128,7 +102,7 @@ impl StreamWindow {
 /// makes a future collision require billions of rekeys instead of 256).
 #[derive(Debug, Clone)]
 pub struct ReplayWindow {
-    streams: HashMap<(u64, u8, u32), StreamWindow>,
+    streams: HashMap<(u64, u8, u32), ReplayState>,
     window_bits: u32,
     bitmap_words: usize,
 }
@@ -191,57 +165,12 @@ impl ReplayWindow {
     /// key that verified the AEAD tag, not (for example) the current
     /// epoch if the previous key is what actually opened the envelope.
     pub fn accept(&mut self, source_id: u64, payload_type: u8, key_epoch: u32, seq: u64) -> bool {
-        let window_bits_u64 = self.window_bits as u64;
-        let bitmap_words = self.bitmap_words;
         let win = self
             .streams
             .entry((source_id, payload_type, key_epoch))
-            .or_insert_with(|| StreamWindow::new(bitmap_words));
+            .or_insert_with(ReplayState::new);
 
-        if !win.initialized {
-            // First sequence for this stream: accept and initialize.
-            win.highest = seq;
-            win.bitmap.fill(0);
-            win.bitmap[0] = 1; // bit 0 (offset 0 = highest) = "seq seen"
-            win.initialized = true;
-            return true;
-        }
-
-        if seq > win.highest {
-            // New high sequence: shift the bitmap left by (seq - highest)
-            // bits. Bits shifted past the window edge are discarded.
-            let shift = seq - win.highest;
-            if shift >= window_bits_u64 {
-                // Jumped entirely past the old bitmap. Clear + seed.
-                win.bitmap.fill(0);
-                win.bitmap[0] = 1;
-            } else {
-                shift_bitmap_left(&mut win.bitmap, shift as u32);
-                // Seed bit 0 (the new highest) AFTER shifting.
-                win.bitmap[0] |= 1;
-            }
-            win.highest = seq;
-            true
-        } else {
-            // seq <= highest: check if it falls within the window and is
-            // unseen.
-            let offset = win.highest - seq;
-            if offset >= window_bits_u64 {
-                // Too old.
-                false
-            } else {
-                let word_idx = (offset / DEFAULT_WINDOW_BITS as u64) as usize;
-                let bit_idx = (offset % DEFAULT_WINDOW_BITS as u64) as u32;
-                let mask = 1u64 << bit_idx;
-                if win.bitmap[word_idx] & mask != 0 {
-                    false
-                } else {
-                    win.bitmap[word_idx] |= mask;
-                    true
-                }
-            }
-        }
-    }
+        transition(win, self.window_bits, seq)
 
     /// Drop all stream state associated with a specific `key_epoch`.
     /// Called by [`crate::Session::tick`] when the previous-key grace
@@ -257,63 +186,6 @@ impl ReplayWindow {
     /// observability; not part of the protection guarantee.
     pub fn stream_count(&self) -> usize {
         self.streams.len()
-    }
-}
-
-/// Shift a multi-word bitmap left by `shift` bits, filling low bits
-/// with zeros. `bitmap[0]` is the LOW word (covers bit offsets 0..64).
-/// `bitmap[N]` is higher. A left shift moves bits toward higher offsets
-/// — equivalent to `u64::<<` semantics extended across words.
-///
-/// Precondition: `shift < bitmap.len() * 64`. The caller (`accept`)
-/// handles the shift-past-end case by clearing the bitmap instead.
-///
-/// Runs in O(N) where N is the number of words. For the default
-/// 1-word (64-bit) case this degenerates to a single `u64 << shift`.
-#[inline]
-fn shift_bitmap_left(bitmap: &mut [u64], shift: u32) {
-    debug_assert!(
-        (shift as usize) < bitmap.len() * 64,
-        "shift {} out of range for {}-word bitmap",
-        shift,
-        bitmap.len()
-    );
-    if bitmap.is_empty() || shift == 0 {
-        return;
-    }
-    let word_shift = (shift / 64) as usize;
-    let bit_shift = shift % 64;
-    let len = bitmap.len();
-
-    if bit_shift == 0 {
-        // Pure word shift — move whole words, zero the low ones.
-        for i in (0..len).rev() {
-            bitmap[i] = if i >= word_shift {
-                bitmap[i - word_shift]
-            } else {
-                0
-            };
-        }
-        return;
-    }
-
-    // General case: each output word gets a contribution from the
-    // high part of one source word (<< bit_shift) OR'd with the
-    // low part of the next-lower source word (>> (64 - bit_shift)).
-    // Iterate from high to low so we don't clobber sources.
-    let inv_bit_shift = 64 - bit_shift;
-    for i in (0..len).rev() {
-        let hi_src = if i >= word_shift {
-            bitmap[i - word_shift] << bit_shift
-        } else {
-            0
-        };
-        let lo_src = if i > word_shift {
-            bitmap[i - word_shift - 1] >> inv_bit_shift
-        } else {
-            0
-        };
-        bitmap[i] = hi_src | lo_src;
     }
 }
 
