@@ -19,7 +19,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: xen-kani-fv-002-${{ github.event.pull_request.number || github.ref }}
+  group: xen-kani-fv-002-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 env:
