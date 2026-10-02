@@ -7,6 +7,8 @@
 //!
 //! Formal qualification harnesses are kept separate from this public facade.
 //!
+//! Qualification evidence is bound to exact source-tree identities.
+//!
 //! **Pre-alpha.** The wire format is not yet frozen and breaking changes
 //! will land between `0.1.x` releases. Do not deploy in production.
 //!
