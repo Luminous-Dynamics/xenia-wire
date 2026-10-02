@@ -5,6 +5,8 @@
 //!
 //! AEAD-sealed binary wire protocol for remote-control streams.
 //!
+//! Formal qualification harnesses are kept separate from this public facade.
+//!
 //! **Pre-alpha.** The wire format is not yet frozen and breaking changes
 //! will land between `0.1.x` releases. Do not deploy in production.
 //!
