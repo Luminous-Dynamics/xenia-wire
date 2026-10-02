@@ -11,9 +11,6 @@ on:
       - "docs/formal/xen-kani-fv-002-replay-kernel-v1.json"
       - ".github/workflows/xen-kani-fv-002-replay-kernel.yml"
   workflow_dispatch:
-  push:
-    branches:
-      - formal/xen-kani-fv-002-replay-kernel
 
 permissions:
   contents: read
@@ -483,7 +480,7 @@ jobs:
               vr=h.get("verification_results",{})
               rs=vr.get("results",[]) if isinstance(vr,dict) else []
               t=next((x for x in rs if x.get("harness_id")=="kernel_stale_boundary_is_rejected"),None)
-              if hostile_exit[0].read_text().strip()=="0" or not isinstance(t,dict) or t.get("status")!="Failure":
+              if hostile_exit[0].read_text().strip()=="0" or not isinstance(t,dict) or str(t.get("status","")).upper()!="FAILURE":
                   result="Blocked"; detail="hostile mutant did not produce required structured Failure"
               else:
                   result="Pass"; detail="clean structured kernel proofs and hostile counterexample qualified"
