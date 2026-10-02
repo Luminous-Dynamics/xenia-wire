@@ -151,7 +151,7 @@ jobs:
           assert c["subjects"]["production_kernel"]["blob"]=="2c286a642cae6eb641300999ee7bfa38462c7845"
           assert c["subjects"]["production_router"]["blob"]=="31de631b5c62448525f834e199e68a212cd4a7f3"
           assert c["subjects"]["existing_fuzz_subject"]["blob"]=="a27128c0c503780ad9e12fda23ee907c8cd6aa1e"
-          assert len(c["harnesses"])==9
+          assert len(c["harnesses"])==11
           assert c["kani"]["version"]=="0.68.0"
           assert c["kani"]["release_commit"] is None
           assert c["kani"]["release_commit_verified"] is False
@@ -208,6 +208,8 @@ jobs:
           - kernel_stale_boundary_is_rejected
           - kernel_higher_sequence_is_monotonic
           - kernel_cross_word_shift_preserves_in_window_history
+          - kernel_exact_word_shift_preserves_in_window_history
+          - kernel_max_width_multiword_shift_preserves_history
           - kernel_supported_widths_do_not_panic
           - kernel_supported_width_boundary_is_exact
           - kernel_bitmap_tail_is_zero_for_supported_widths
@@ -542,6 +544,8 @@ jobs:
             "kernel_stale_boundary_is_rejected",
             "kernel_higher_sequence_is_monotonic",
             "kernel_cross_word_shift_preserves_in_window_history",
+            "kernel_exact_word_shift_preserves_in_window_history",
+            "kernel_max_width_multiword_shift_preserves_history",
             "kernel_supported_widths_do_not_panic",
             "kernel_supported_width_boundary_is_exact",
             "kernel_bitmap_tail_is_zero_for_supported_widths",
