@@ -247,7 +247,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          cargo kani --tests --default-unwind 20 --harness "${{ matrix.harness }}" --export-json /tmp/kani.json > /tmp/kani.log 2>&1
+          cargo kani -Z unstable-options --tests --default-unwind 20 --harness "${{ matrix.harness }}" --export-json /tmp/kani.json > /tmp/kani.log 2>&1
           status=$?
           set -e
           printf '%s\n' "$status" > /tmp/kani.exit
@@ -382,7 +382,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          cargo kani --tests --default-unwind 20 --harness kernel_stale_boundary_is_rejected --export-json /tmp/kani-mutant.json > /tmp/kani-mutant.log 2>&1
+          cargo kani -Z unstable-options --tests --default-unwind 20 --harness kernel_stale_boundary_is_rejected --export-json /tmp/kani-mutant.json > /tmp/kani-mutant.log 2>&1
           status=$?
           set -e
           printf '%s\n' "$status" > /tmp/kani-mutant.exit
