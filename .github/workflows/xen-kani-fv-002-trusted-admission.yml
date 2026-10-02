@@ -1,16 +1,9 @@
 name: Trusted XEN-KANI-FV-002 Admission
 
 on:
-  pull_request_target:
-    types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - "src/replay_kernel.rs"
-      - "src/replay_window.rs"
-      - "fuzz/fuzz_targets/fuzz_replay_window.rs"
-      - "src/lib.rs"
-      - "Cargo.toml"
-      - ".github/workflows/xen-kani-fv-002-replay-kernel.yml"
-      - "docs/formal/xen-kani-fv-002-replay-kernel-v1.json"
+  workflow_run:
+    workflows: ["XEN-KANI-FV-002 Replay Kernel"]
+    types: [completed]
 
 permissions:
   contents: read
@@ -27,8 +20,13 @@ env:
 
 jobs:
   trusted-admission:
+    if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.pull_requests[0].number != null
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    env:
+      PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
     steps:
       - name: Prepare trusted verifier workspace
         shell: bash
@@ -42,16 +40,26 @@ jobs:
           edition = "2021"
           EOF
 
+      - name: Verify triggering PR identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/pulls/$PR_NUMBER"             -o /tmp/pr.json
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          d=json.loads(Path("/tmp/pr.json").read_text())
+          assert d["number"]==int(os.environ["PR_NUMBER"])
+          assert d["base"]["sha"]==os.environ["BASE_SHA"]
+          assert d["head"]["sha"]==os.environ["HEAD_SHA"]
+          assert d["head"]["repo"]["full_name"]==os.environ["HEAD_REPO"]
+          PY
+
       - name: Fetch PR replay kernel as data
         id: fetch-subject
         shell: bash
-        env:
-          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
-          test "${{ github.event.pull_request.base.sha }}" = "$BASE_SHA"
 
           curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github.raw+json"             "https://api.github.com/repos/$HEAD_REPO/contents/src/replay_kernel.rs?ref=$HEAD_SHA"             -o /tmp/xen-kani-trusted/src/replay_kernel.rs
 
@@ -313,7 +321,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: trusted-xen-kani-fv-002-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+          name: trusted-xen-kani-fv-002-${{ github.event.workflow_run.pull_requests[0].number }}-${{ github.event.workflow_run.head_sha }}
           path: |
             /tmp/trusted-subject.txt
             /tmp/xen-kani-trusted/kernel.blob
