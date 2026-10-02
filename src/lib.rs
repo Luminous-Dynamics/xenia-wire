@@ -9,6 +9,8 @@
 //!
 //! Qualification evidence is bound to exact source-tree identities.
 //!
+//! Formal runner scheduling is independent of production replay semantics.
+//!
 //! **Pre-alpha.** The wire format is not yet frozen and breaking changes
 //! will land between `0.1.x` releases. Do not deploy in production.
 //!
