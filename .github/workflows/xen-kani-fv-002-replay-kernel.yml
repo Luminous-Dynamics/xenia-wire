@@ -49,11 +49,27 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$REQUESTED_HEAD"
-          test "$(git merge-base "$EXACT_PARENT" HEAD)" = "$EXACT_PARENT"
-          test "$(git rev-parse HEAD:src/replay_kernel.rs)" = "$EXPECTED_KERNEL_BLOB"
-          test "$(git rev-parse HEAD:src/replay_window.rs)" = "$EXPECTED_ROUTER_BLOB"
-          test "$(git rev-parse HEAD:fuzz/fuzz_targets/fuzz_replay_window.rs)" = "$EXPECTED_FUZZ_BLOB"
+          : > /tmp/scope-assertions.txt
+          status=0
+          check() {
+            local name="$1"
+            shift
+            if "$@"; then
+              printf 'PASS %s\\n' "$name" | tee -a /tmp/scope-assertions.txt
+            else
+              printf 'FAIL %s\\n' "$name" | tee -a /tmp/scope-assertions.txt
+              status=1
+            fi
+          }
+          check "head" test "$(git rev-parse HEAD)" = "$REQUESTED_HEAD"
+          check "lineage" test "$(git merge-base "$EXACT_PARENT" HEAD)" = "$EXACT_PARENT"
+          check "kernel-blob" test "$(git rev-parse HEAD:src/replay_kernel.rs)" = "$EXPECTED_KERNEL_BLOB"
+          check "router-blob" test "$(git rev-parse HEAD:src/replay_window.rs)" = "$EXPECTED_ROUTER_BLOB"
+          check "fuzz-blob" test "$(git rev-parse HEAD:fuzz/fuzz_targets/fuzz_replay_window.rs)" = "$EXPECTED_FUZZ_BLOB"
+          if [ "$status" -ne 0 ]; then
+            echo "scope identity preconditions failed" >&2
+            exit "$status"
+          fi
 
           expected=(
             ".github/workflows/xen-kani-fv-002-replay-kernel.yml"
@@ -166,6 +182,7 @@ jobs:
             /tmp/changed-files.txt
             /tmp/scope-check.txt
             /tmp/scope-topology.txt
+            /tmp/scope-assertions.txt
           if-no-files-found: error
           retention-days: 30
 
