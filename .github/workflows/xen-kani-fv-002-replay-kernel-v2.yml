@@ -90,6 +90,7 @@ jobs:
           fi
 
           expected=(
+            ".github/workflows/xen-kani-fv-002-replay-kernel.yml"
             ".github/workflows/xen-kani-fv-002-replay-kernel-v2.yml"
             "Cargo.toml"
             "docs/formal/xen-kani-fv-002-replay-kernel-v1.json"
