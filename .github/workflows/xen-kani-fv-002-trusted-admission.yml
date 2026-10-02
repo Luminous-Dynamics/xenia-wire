@@ -144,14 +144,14 @@ jobs:
             -o /tmp/head-commit.json
 
           python3 - <<'PY'
-          import json
+          import json, os
           from pathlib import Path
           base=json.loads(Path("/tmp/base-commit.json").read_text())
           head=json.loads(Path("/tmp/head-commit.json").read_text())
-          Path("/tmp/base-tree-sha").write_text(base["sha"] and base["commit"]["tree"]["sha"]+"\n")
-          Path("/tmp/head-tree-sha").write_text(head["sha"] and head["commit"]["tree"]["sha"]+"\n")
-          assert base["sha"]=="$BASE_SHA"
-          assert head["sha"]=="$HEAD_SHA"
+          assert base["sha"]==os.environ["BASE_SHA"]
+          assert head["sha"]==os.environ["HEAD_SHA"]
+          Path("/tmp/base-tree-sha").write_text(base["commit"]["tree"]["sha"]+"\n")
+          Path("/tmp/head-tree-sha").write_text(head["commit"]["tree"]["sha"]+"\n")
           PY
 
           BASE_TREE="$(cat /tmp/base-tree-sha)"
