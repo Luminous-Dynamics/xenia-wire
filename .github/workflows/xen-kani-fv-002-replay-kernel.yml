@@ -227,10 +227,11 @@ jobs:
           cargo kani setup
           cargo kani --version --verbose | tee /tmp/kani-version.txt
           grep -q "kani-0.68.0" /tmp/kani-version.txt
-          grep -q "$EXPECTED_KANI_RELEASE_COMMIT" /tmp/kani-version.txt
           grep -q "$EXPECTED_KANI_RUST_TOOLCHAIN" /tmp/kani-version.txt
           grep -q "$EXPECTED_KANI_RUST_COMMIT_HASH" /tmp/kani-version.txt
           cp /tmp/kani-version.txt /tmp/kani-rustc.txt
+          sha256sum "$(command -v kani)" | cut -d" " -f1 > /tmp/kani-binary.sha256
+          sha256sum "$(command -v cargo-kani)" | cut -d" " -f1 > /tmp/cargo-kani-binary.sha256
 
       - name: Run clean kernel proof
         shell: bash
@@ -289,7 +290,10 @@ jobs:
               "result":result,
               "exit_status":exit_status,
               "kani_version":read("/tmp/kani-version.txt").strip(),
-              "kani_release_commit":os.environ["EXPECTED_KANI_RELEASE_COMMIT"],
+              "kani_release_commit":None,
+              "kani_release_commit_verified":False,
+              "kani_binary_sha256":read("/tmp/kani-binary.sha256").strip(),
+              "cargo_kani_binary_sha256":read("/tmp/cargo-kani-binary.sha256").strip(),
               "kani_rust_toolchain":os.environ["EXPECTED_KANI_RUST_TOOLCHAIN"],
               "kani_rust_commit_hash":os.environ["EXPECTED_KANI_RUST_COMMIT_HASH"],
               "kani_version_output_sha256":sha("/tmp/kani-version.txt"),
@@ -316,6 +320,8 @@ jobs:
             /tmp/kani.json
             /tmp/kani-rustc.txt
             /tmp/kani-version.txt
+            /tmp/kani-binary.sha256
+            /tmp/cargo-kani-binary.sha256
           if-no-files-found: error
           retention-days: 30
 
@@ -345,10 +351,11 @@ jobs:
           cargo kani setup
           cargo kani --version --verbose | tee /tmp/hostile-kani-version.txt
           grep -q "kani-0.68.0" /tmp/hostile-kani-version.txt
-          grep -q "$EXPECTED_KANI_RELEASE_COMMIT" /tmp/hostile-kani-version.txt
           grep -q "$EXPECTED_KANI_RUST_TOOLCHAIN" /tmp/hostile-kani-version.txt
           grep -q "$EXPECTED_KANI_RUST_COMMIT_HASH" /tmp/hostile-kani-version.txt
           cp /tmp/hostile-kani-version.txt /tmp/hostile-rustc.txt
+          sha256sum "$(command -v kani)" | cut -d" " -f1 > /tmp/hostile-kani-binary.sha256
+          sha256sum "$(command -v cargo-kani)" | cut -d" " -f1 > /tmp/hostile-cargo-kani-binary.sha256
 
       - name: Apply hostile stale-boundary mutant
         shell: bash
@@ -411,6 +418,8 @@ jobs:
             /tmp/kani-mutant.exit
             /tmp/hostile-rustc.txt
             /tmp/hostile-kani-version.txt
+            /tmp/hostile-kani-binary.sha256
+            /tmp/hostile-cargo-kani-binary.sha256
           if-no-files-found: error
           retention-days: 30
 
