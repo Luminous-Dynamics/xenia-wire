@@ -26,7 +26,6 @@ env:
   EXPECTED_ROUTER_BLOB: 31de631b5c62448525f834e199e68a212cd4a7f3
   EXPECTED_FUZZ_BLOB: a27128c0c503780ad9e12fda23ee907c8cd6aa1e
   KANI_VERSION: 0.68.0
-  EXPECTED_KANI_RELEASE_COMMIT: 0d2328a93f0e0ff66132d6bfa1a7d884877cf862
   EXPECTED_KANI_RUST_TOOLCHAIN: nightly-2026-08-21
   EXPECTED_KANI_RUST_COMMIT_HASH: 8925ea358a0f265ca61026aadc7ecc506c545cbe
   REQUESTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -400,6 +399,8 @@ jobs:
           receipt={
               "schema":"xenia.formal.kani-replay-kernel.harness.v1",
               "export_schema":"kani-0.68-shipped",
+              "github_run_id":int(os.environ["GITHUB_RUN_ID"]),
+              "github_run_attempt":int(os.environ["GITHUB_RUN_ATTEMPT"]),
               "head":git("rev-parse","HEAD"),
               "tree":git("rev-parse","HEAD^{tree}"),
               "parent":os.environ["EXACT_PARENT"],
@@ -643,6 +644,8 @@ jobs:
               and set(receipts)==expected
               and all(
                   r.get("result")=="Pass"
+                  and r.get("github_run_id")==int(os.environ["GITHUB_RUN_ID"])
+                  and r.get("github_run_attempt")==int(os.environ["GITHUB_RUN_ATTEMPT"])
                   and r.get("head")==os.environ["REQUESTED_HEAD"]
                   and r.get("tree")==expected_tree
                   and r.get("parent")==os.environ["EXACT_PARENT"]
@@ -729,6 +732,8 @@ jobs:
               "preflight_result":os.environ.get("PREFLIGHT_RESULT"),
               "clean_result":os.environ.get("CLEAN_RESULT"),
               "hostile_result":os.environ.get("HOSTILE_RESULT"),
+              "github_run_id":int(os.environ["GITHUB_RUN_ID"]),
+              "github_run_attempt":int(os.environ["GITHUB_RUN_ATTEMPT"]),
               "hostile_mutant_blob":hostile_mutant_blob[0].read_text().strip() if len(hostile_mutant_blob)==1 else None,
               "hostile_restored_blob":hostile_restored_blob[0].read_text().strip() if len(hostile_restored_blob)==1 else None,
               "expected_harnesses":sorted(expected),
