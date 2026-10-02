@@ -11,6 +11,9 @@ on:
       - "docs/formal/xen-kani-fv-002-replay-kernel-v1.json"
       - ".github/workflows/xen-kani-fv-002-replay-kernel.yml"
   workflow_dispatch:
+  push:
+    branches:
+      - formal/xen-kani-fv-002-replay-kernel
 
 permissions:
   contents: read
