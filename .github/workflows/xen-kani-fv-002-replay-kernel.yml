@@ -1,6 +1,6 @@
 name: XEN-KANI-FV-002 Replay Kernel
 
-# Fresh-run sentinel: workflow changes intentionally retrigger qualification on synchronize.
+# Fresh-run sentinel: default-branch bootstrap installed; current PR requalification pass.
 
 on:
   pull_request:
