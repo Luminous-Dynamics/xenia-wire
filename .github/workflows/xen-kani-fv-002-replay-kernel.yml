@@ -143,7 +143,7 @@ jobs:
           assert c["authority"]=="EvidenceOnly"
           assert c["evidence_class"]=="BoundedModelSafety"
           assert c["parent"]["commit"]=="057dd03043b8863d8f8280abf333331cc9ddf317"
-          assert c["subjects"]["production_kernel"]["blob"]=="910c8f4e5954271f9e603a8fdcdc23a48004d54f"
+          assert c["subjects"]["production_kernel"]["blob"]=="f8abd27e617d4ea79ee65239039e524ff327c880"
           assert len(c["harnesses"])==9
           assert c["kani"]["version"]=="0.68.0"
           assert c["kani"]["expected_rust_toolchain"]=="nightly-2026-08-21"
