@@ -137,6 +137,16 @@ jobs:
                       break
           assert discovered==expected, f"harness manifest mismatch: discovered={sorted(discovered)}"
           assert source.count("#[kani::proof]")==14
+          for forbidden in (
+              "include!(",
+              "include_bytes!(",
+              "extern "",
+              "std::process",
+              "std::fs",
+              "proc_macro",
+              "unsafe",
+          ):
+              assert forbidden not in source, f"forbidden escape hatch present: {forbidden}"
           assert "pub(crate) fn transition(" in source
           assert "#[cfg(kani)]\nmod kani_proofs {" in source
           assert not source.rstrip().endswith("#[kani::proof]")
