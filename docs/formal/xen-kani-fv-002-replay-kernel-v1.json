@@ -90,5 +90,9 @@
     "session or key-management correctness",
     "compiler or native-binary correctness",
     "runtime authorization"
-  ]
+  ],
+  "bootstrap": {
+    "default_branch_commit": "af7f82085cb56e2ec55a9832a1f09ebb6aa21705",
+    "purpose": "formal workflow installed on default branch before trusted admission activation"
+  }
 }
