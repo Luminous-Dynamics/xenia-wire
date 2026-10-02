@@ -297,6 +297,11 @@ jobs:
           statuses=[str(x.get("status")) for x in checks if isinstance(x,dict)]
 
           summary=verification_results.get("summary") if isinstance(verification_results,dict) else None
+          result_ids=[
+              str(r.get("harness_id"))
+              for r in results
+              if isinstance(r,dict) and r.get("harness_id") is not None
+          ]
           property_details=[]
           if isinstance(data,dict):
               for entry in data.get("property_details",[]) if isinstance(data.get("property_details",[]),list) else []:
@@ -326,6 +331,8 @@ jobs:
               and summary.get("executed")==1
               and summary.get("successful")==1
               and summary.get("failed")==0
+              and len(result_ids)==1
+              and result_ids[0]==target.get("harness_id")
               and pd is not None
               and pd.get("failed")==0
               and pd.get("unreachable")==0
@@ -357,6 +364,7 @@ jobs:
               "structured_json_sha256":sha("/tmp/kani.json"),
               "structured_status":structured_status,
               "candidate_harness_count":len(candidates),
+              "verification_result_harness_ids":result_ids,
               "structured_check_total":len(checks),
               "structured_check_statuses":statuses,
               "property_total":total_properties,
@@ -540,8 +548,17 @@ jobs:
           if len(pre)!=1 or pre[0].read_text().strip()!="0":
               result="BuildFailure" if pre and pre[0].read_text().strip()!="0" else "Blocked"
               detail="ordinary Rust build did not qualify"
-          elif set(receipts)!=expected or any(r["result"]!="Pass" for r in receipts.values()):
-              result="Blocked"; detail="one or more clean kernel harnesses lacked structured Pass"
+          elif (
+              set(receipts)!=expected
+              or any(r["result"]!="Pass" for r in receipts.values())
+              or any(
+                  r.get("candidate_harness_count")!=1
+                  or len(r.get("verification_result_harness_ids",[]))!=1
+                  or r.get("verification_result_harness_ids",[])[0] != r.get("harness")
+                  for r in receipts.values()
+              )
+          ):
+              result="Blocked"; detail="one or more clean kernel receipts lacked exact harness identity"
           elif len(hostile_json)!=1 or len(hostile_exit)!=1:
               result="Blocked"; detail="hostile evidence missing"
           else:
