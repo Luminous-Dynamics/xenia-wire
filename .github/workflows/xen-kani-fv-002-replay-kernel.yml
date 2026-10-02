@@ -32,7 +32,8 @@ env:
 
 jobs:
   preflight:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    # Qualification runs are intentionally allowed on draft and ready PR revisions;
+    # admission, not draft state, is the formal gate.
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
