@@ -85,7 +85,8 @@ jobs:
           from pathlib import Path
           d=json.loads(Path("/tmp/pr.json").read_text())
           assert d["number"]==int(os.environ["PR_NUMBER"])
-          assert d["base"]["sha"]==os.environ["BASE_SHA"]
+          assert d["base"]["ref"]=="main"
+          assert d["base"]["repo"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]
           assert d["head"]["sha"]==os.environ["HEAD_SHA"]
           assert d["head"]["repo"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]
           assert d["head"]["repo"]["full_name"]==os.environ["HEAD_REPO"]
@@ -437,7 +438,8 @@ jobs:
               "head_sha":os.environ["HEAD_SHA"],
               "head_repo":os.environ["HEAD_REPO"],
               "head_repo_expected":os.environ["EXPECTED_HEAD_REPO"],
-              "base_sha":os.environ["BASE_SHA"],
+              "base_sha_anchor":os.environ["BASE_SHA"],
+              "pr_base_ref":"main",
               "kernel_blob":read_optional("/tmp/xen-kani-trusted/kernel.blob"),
               "kernel_blob_expected":os.environ["EXPECTED_KERNEL_BLOB"],
               "kernel_frozen_binding":read_optional("/tmp/xen-kani-trusted/kernel.blob")==os.environ["EXPECTED_KERNEL_BLOB"],
