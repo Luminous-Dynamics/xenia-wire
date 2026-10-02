@@ -64,7 +64,7 @@
 
 use std::collections::HashMap;
 
-use crate::replay_kernel::{transition, ReplayState};
+use crate::replay_kernel::{ReplayState, transition};
 
 /// Default replay window width in bits.
 ///
@@ -104,7 +104,6 @@ pub const WINDOW_BITS: u64 = DEFAULT_WINDOW_BITS as u64;
 pub struct ReplayWindow {
     streams: HashMap<(u64, u8, u32), ReplayState>,
     window_bits: u32,
-    bitmap_words: usize,
 }
 
 impl Default for ReplayWindow {
@@ -133,7 +132,6 @@ impl ReplayWindow {
         Self {
             streams: HashMap::new(),
             window_bits: bits,
-            bitmap_words: (bits / DEFAULT_WINDOW_BITS) as usize,
         }
     }
 
