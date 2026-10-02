@@ -659,3 +659,19 @@ jobs:
               "expected_harnesses":sorted(expected),
               "observed_harnesses":sorted(harness for harness in receipts if harness is not None),
               "receipt_file_count":len(receipt_list),
+              "duplicate_harnesses":duplicate_harnesses
+          }
+          out=Path("/tmp/canonical-receipt.json"); out.write_text(json.dumps(receipt,indent=2,sort_keys=True)+"\n")
+          print(out.read_text())
+          if result!="Pass":
+              raise SystemExit(1)
+          PY
+
+      - name: Retain canonical receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: xen-kani-fv-002-admission-${{ github.event.pull_request.head.sha || github.sha }}
+          path: /tmp/canonical-receipt.json
+          if-no-files-found: error
+          retention-days: 30
