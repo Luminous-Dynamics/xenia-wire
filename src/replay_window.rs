@@ -370,4 +370,27 @@ mod tests {
         );
         assert_eq!(w.stream_count(), 2);
     }
+
+    #[test]
+    fn supported_widths_preserve_boundary_semantics() {
+        for bits in [64, 128, 256, 512, 1024] {
+            let mut w = ReplayWindow::with_window_bits(bits);
+            assert!(w.accept(SRC, 0x10, EPOCH, 1000));
+            assert!(!w.accept(SRC, 0x10, EPOCH, 1000));
+            assert!(w.accept(SRC, 0x10, EPOCH, 999));
+            assert!(!w.accept(SRC, 0x10, EPOCH, 999));
+            assert!(!w.accept(SRC, 0x10, EPOCH, 1000 - bits as u64));
+            assert!(w.accept(SRC, 0x10, EPOCH, 1001));
+        }
+    }
+
+    #[test]
+    fn u64_max_transition_does_not_wrap() {
+        let mut w = ReplayWindow::new();
+        assert!(w.accept(SRC, 0x10, EPOCH, u64::MAX - 1));
+        assert!(w.accept(SRC, 0x10, EPOCH, u64::MAX));
+        assert!(!w.accept(SRC, 0x10, EPOCH, u64::MAX));
+        assert!(!w.accept(SRC, 0x10, EPOCH, u64::MAX - 1));
+    }
+
 }
