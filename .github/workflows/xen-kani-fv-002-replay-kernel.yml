@@ -24,7 +24,7 @@ concurrency:
 
 env:
   EXACT_PARENT: 057dd03043b8863d8f8280abf333331cc9ddf317
-  EXPECTED_KERNEL_BLOB: 3409e7a6e3f95c301b922ac579a7574b1ca360a0
+  EXPECTED_KERNEL_BLOB: 910c8f4e5954271f9e603a8fdcdc23a48004d54f
   EXPECTED_ROUTER_BLOB: 961d5a7650e36e506fe222e226eaf4ca3df4daf7
   EXPECTED_FUZZ_BLOB: a27128c0c503780ad9e12fda23ee907c8cd6aa1e
   KANI_VERSION: 0.68.0
@@ -81,7 +81,7 @@ jobs:
           assert c["authority"]=="EvidenceOnly"
           assert c["evidence_class"]=="BoundedModelSafety"
           assert c["parent"]["commit"]=="057dd03043b8863d8f8280abf333331cc9ddf317"
-          assert c["subjects"]["production_kernel"]["blob"]=="3409e7a6e3f95c301b922ac579a7574b1ca360a0"
+          assert c["subjects"]["production_kernel"]["blob"]=="910c8f4e5954271f9e603a8fdcdc23a48004d54f"
           assert len(c["harnesses"])==7
           assert c["kani"]["version"]=="0.68.0"
           assert c["kani"]["expected_rust_toolchain"]=="nightly-2026-08-21"
@@ -132,6 +132,8 @@ jobs:
           - kernel_higher_sequence_is_monotonic
           - kernel_cross_word_shift_preserves_in_window_history
           - kernel_supported_widths_do_not_panic
+          - kernel_supported_width_boundary_is_exact
+          - kernel_bitmap_tail_is_zero_for_supported_widths
           - kernel_u64_max_advance_preserves_previous_sequence
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -380,6 +382,8 @@ jobs:
             "kernel_higher_sequence_is_monotonic",
             "kernel_cross_word_shift_preserves_in_window_history",
             "kernel_supported_widths_do_not_panic",
+            "kernel_supported_width_boundary_is_exact",
+            "kernel_bitmap_tail_is_zero_for_supported_widths",
             "kernel_u64_max_advance_preserves_previous_sequence"
           }
           receipts={}
