@@ -126,6 +126,86 @@ jobs:
           assert observed==expected, f"trusted scope mismatch: {sorted(observed)}"
           PY
 
+      - name: Verify complete tree delta independently
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/commits/$BASE_SHA" \
+            -o /tmp/base-commit.json
+
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$HEAD_REPO/commits/$HEAD_SHA" \
+            -o /tmp/head-commit.json
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          base=json.loads(Path("/tmp/base-commit.json").read_text())
+          head=json.loads(Path("/tmp/head-commit.json").read_text())
+          Path("/tmp/base-tree-sha").write_text(base["sha"] and base["commit"]["tree"]["sha"]+"\n")
+          Path("/tmp/head-tree-sha").write_text(head["sha"] and head["commit"]["tree"]["sha"]+"\n")
+          assert base["sha"]=="$BASE_SHA"
+          assert head["sha"]=="$HEAD_SHA"
+          PY
+
+          BASE_TREE="$(cat /tmp/base-tree-sha)"
+          HEAD_TREE="$(cat /tmp/head-tree-sha)"
+
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/git/trees/$BASE_TREE?recursive=1" \
+            -o /tmp/base-tree.json
+
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$HEAD_REPO/git/trees/$HEAD_TREE?recursive=1" \
+            -o /tmp/head-tree.json
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          base=json.loads(Path("/tmp/base-tree.json").read_text())
+          head=json.loads(Path("/tmp/head-tree.json").read_text())
+
+          assert base.get("truncated") is False, "base tree response truncated"
+          assert head.get("truncated") is False, "head tree response truncated"
+
+          def index(doc):
+              return {
+                  item["path"]:(item.get("mode"),item.get("type"),item.get("sha"))
+                  for item in doc["tree"]
+              }
+
+          b=index(base)
+          h=index(head)
+          changed=sorted(path for path in set(b)|set(h) if b.get(path)!=h.get(path))
+          expected=sorted({
+              ".github/workflows/xen-kani-fv-002-replay-kernel.yml",
+              "Cargo.toml",
+              "docs/formal/xen-kani-fv-002-replay-kernel-v1.json",
+              "src/lib.rs",
+              "src/replay_kernel.rs",
+              "src/replay_window.rs",
+          })
+          assert changed==expected, f"complete tree delta mismatch: {changed}"
+          for path in expected:
+              assert h[path][1]=="blob", f"head path is not a blob: {path}"
+          Path("/tmp/trusted-tree-delta.txt").write_text(
+              "base_tree="+Path("/tmp/base-tree-sha").read_text().strip()+"\n"
+              "head_tree="+Path("/tmp/head-tree-sha").read_text().strip()+"\n"
+              "changed="+",".join(changed)+"\n"
+          )
+          PY
+
       - name: Verify independent harness manifest
         shell: bash
         run: |
