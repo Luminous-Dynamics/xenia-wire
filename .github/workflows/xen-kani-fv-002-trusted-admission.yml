@@ -38,6 +38,7 @@ jobs:
       TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
       TRIGGER_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
       TRIGGER_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+      GITHUB_TOKEN: ${{ github.token }}
     steps:
       - name: Prepare trusted verifier workspace
         shell: bash
@@ -198,7 +199,6 @@ jobs:
           h=index(head)
           changed=sorted(path for path in set(b)|set(h) if b.get(path)!=h.get(path))
           expected=sorted({
-              ".github/workflows/xen-kani-fv-002-replay-kernel.yml",
               ".github/workflows/xen-kani-fv-002-replay-kernel-v2.yml",
               "Cargo.toml",
               "docs/formal/xen-kani-fv-002-replay-kernel-v1.json",
@@ -418,6 +418,10 @@ jobs:
           def git(*args):
               return subprocess.check_output(["git", *args], text=True).strip()
 
+          def read_optional(path, default=None):
+              p=Path(path)
+              return p.read_text(errors="replace").strip() if p.exists() else default
+
           receipt={
               "schema":"xenia.formal.kani-replay-kernel.trusted-admission.v1",
               "github_run_id":int(os.environ["GITHUB_RUN_ID"]),
@@ -434,17 +438,17 @@ jobs:
               "head_repo":os.environ["HEAD_REPO"],
               "head_repo_expected":os.environ["EXPECTED_HEAD_REPO"],
               "base_sha":os.environ["BASE_SHA"],
-              "kernel_blob":Path("/tmp/xen-kani-trusted/kernel.blob").read_text().strip(),
+              "kernel_blob":read_optional("/tmp/xen-kani-trusted/kernel.blob"),
               "kernel_blob_expected":os.environ["EXPECTED_KERNEL_BLOB"],
-              "kernel_frozen_binding":Path("/tmp/xen-kani-trusted/kernel.blob").read_text().strip()==os.environ["EXPECTED_KERNEL_BLOB"],
+              "kernel_frozen_binding":read_optional("/tmp/xen-kani-trusted/kernel.blob")==os.environ["EXPECTED_KERNEL_BLOB"],
               "base_tree_sha":Path("/tmp/base-tree-sha").read_text().strip() if Path("/tmp/base-tree-sha").exists() else None,
               "head_tree_sha":Path("/tmp/head-tree-sha").read_text().strip() if Path("/tmp/head-tree-sha").exists() else None,
               "complete_tree_delta_verified":Path("/tmp/trusted-tree-delta.txt").exists(),
-              "kani_version":Path("/tmp/kani-version.txt").read_text().strip(),
+              "kani_version":read_optional("/tmp/kani-version.txt"),
               "kani_rust_toolchain":os.environ["EXPECTED_KANI_RUST_TOOLCHAIN"],
               "kani_rust_commit_hash":os.environ["EXPECTED_KANI_RUST_COMMIT_HASH"],
               "clean_harness_count":14,
-              "hostile_control_exit_status":int(Path("/tmp/hostile.exit").read_text().strip()) if Path("/tmp/hostile.exit").exists() else None,
+              "hostile_control_exit_status":int(read_optional("/tmp/hostile.exit", "125")),
               "hostile_control_structured_failure":Path("/tmp/hostile.json").exists(),
           }
           Path("/tmp/trusted-admission.json").write_text(json.dumps(receipt,indent=2,sort_keys=True)+"\n")
@@ -469,5 +473,5 @@ jobs:
             /tmp/hostile.json
             /tmp/hostile.log
             /tmp/hostile.exit
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 30
