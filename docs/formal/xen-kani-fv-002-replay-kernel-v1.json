@@ -14,7 +14,7 @@
     },
     "production_router": {
       "path": "src/replay_window.rs",
-      "blob": "961d5a7650e36e506fe222e226eaf4ca3df4daf7"
+      "blob": "67e298060a94727c47ebce99367fce835f249cd1"
     },
     "existing_fuzz_subject": {
       "path": "fuzz/fuzz_targets/fuzz_replay_window.rs",
