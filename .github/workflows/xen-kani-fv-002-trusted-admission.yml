@@ -18,20 +18,23 @@ env:
   BASE_SHA: 057dd03043b8863d8f8280abf333331cc9ddf317
   EXPECTED_HEAD_REPO: Luminous-Dynamics/xenia-wire
   EXPECTED_KERNEL_BLOB: b6b1a9dc12f3824b5e52cd694222f6fefefd3558
-  EXPECTED_TRIGGER_WORKFLOW_ID: 262609031
+  EXPECTED_TRIGGER_WORKFLOW_ID: 373424313
+  EXPECTED_TRIGGER_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-replay-kernel-v2.yml
+  EXPECTED_TRIGGER_BRANCH: formal/xen-kani-fv-002-replay-kernel
   KANI_VERSION: 0.68.0
   EXPECTED_KANI_RUST_TOOLCHAIN: nightly-2026-08-21
   EXPECTED_KANI_RUST_COMMIT_HASH: 8925ea358a0f265ca61026aadc7ecc506c545cbe
 
 jobs:
   trusted-admission:
-    if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.pull_requests[0].number != null
+    if: (github.event.workflow_run.event == 'pull_request' || github.event.workflow_run.event == 'push') && github.event.workflow_run.pull_requests[0].number != null && github.event.workflow_run.head_branch == 'formal/xen-kani-fv-002-replay-kernel'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
       PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
       HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
       HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
+      HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
       TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
       TRIGGER_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
       TRIGGER_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
@@ -60,8 +63,9 @@ jobs:
           assert d["id"]==int(os.environ["TRIGGER_RUN_ID"])
           assert d["run_attempt"]==int(os.environ["TRIGGER_RUN_ATTEMPT"])
           assert d["name"]=="XEN-KANI-FV-002 Replay Kernel"
-          assert d["path"]==".github/workflows/xen-kani-fv-002-replay-kernel.yml"
+          assert d["path"]==os.environ["EXPECTED_TRIGGER_WORKFLOW_PATH"]
           assert d["workflow_id"]==int(os.environ["EXPECTED_TRIGGER_WORKFLOW_ID"])
+          assert d["head_branch"]==os.environ["EXPECTED_TRIGGER_BRANCH"]
           assert d["event"]=="pull_request"
           assert d["head_sha"]==os.environ["HEAD_SHA"]
           assert d["head_repository"]["full_name"]==os.environ["HEAD_REPO"]
@@ -118,7 +122,7 @@ jobs:
 
           d=json.loads(Path("/tmp/compare.json").read_text())
           expected={
-              ".github/workflows/xen-kani-fv-002-replay-kernel.yml",
+              ".github/workflows/xen-kani-fv-002-replay-kernel-v2.yml",
               "Cargo.toml",
               "docs/formal/xen-kani-fv-002-replay-kernel-v1.json",
               "src/lib.rs",
@@ -194,7 +198,7 @@ jobs:
           h=index(head)
           changed=sorted(path for path in set(b)|set(h) if b.get(path)!=h.get(path))
           expected=sorted({
-              ".github/workflows/xen-kani-fv-002-replay-kernel.yml",
+              ".github/workflows/xen-kani-fv-002-replay-kernel-v2.yml",
               "Cargo.toml",
               "docs/formal/xen-kani-fv-002-replay-kernel-v1.json",
               "src/lib.rs",
@@ -421,7 +425,8 @@ jobs:
               "triggering_run_attempt":int(os.environ["TRIGGER_RUN_ATTEMPT"]),
               "triggering_conclusion":os.environ["TRIGGER_CONCLUSION"],
               "triggering_workflow":"XEN-KANI-FV-002 Replay Kernel",
-              "triggering_workflow_path":".github/workflows/xen-kani-fv-002-replay-kernel.yml",
+              "triggering_workflow_path":os.environ["EXPECTED_TRIGGER_WORKFLOW_PATH"],
+              "triggering_branch":os.environ["HEAD_BRANCH"],
               "triggering_workflow_id":int(os.environ["EXPECTED_TRIGGER_WORKFLOW_ID"]),
               "pr_number":int(os.environ["PR_NUMBER"]),
               "head_sha":os.environ["HEAD_SHA"],
