@@ -424,6 +424,9 @@ jobs:
               "kernel_blob":Path("/tmp/xen-kani-trusted/kernel.blob").read_text().strip(),
               "kernel_blob_expected":os.environ["EXPECTED_KERNEL_BLOB"],
               "kernel_frozen_binding":Path("/tmp/xen-kani-trusted/kernel.blob").read_text().strip()==os.environ["EXPECTED_KERNEL_BLOB"],
+              "base_tree_sha":Path("/tmp/base-tree-sha").read_text().strip() if Path("/tmp/base-tree-sha").exists() else None,
+              "head_tree_sha":Path("/tmp/head-tree-sha").read_text().strip() if Path("/tmp/head-tree-sha").exists() else None,
+              "complete_tree_delta_verified":Path("/tmp/trusted-tree-delta.txt").exists(),
               "kani_version":Path("/tmp/kani-version.txt").read_text().strip(),
               "kani_rust_toolchain":os.environ["EXPECTED_KANI_RUST_TOOLCHAIN"],
               "kani_rust_commit_hash":os.environ["EXPECTED_KANI_RUST_COMMIT_HASH"],
@@ -443,6 +446,9 @@ jobs:
           path: |
             /tmp/trusted-subject.txt
             /tmp/trigger-run.json
+            /tmp/base-tree-sha
+            /tmp/head-tree-sha
+            /tmp/trusted-tree-delta.txt
             /tmp/xen-kani-trusted/kernel.blob
             /tmp/kani-version.txt
             /tmp/kani-rustc.txt
