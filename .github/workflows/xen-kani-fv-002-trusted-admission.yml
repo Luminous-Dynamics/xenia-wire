@@ -14,6 +14,7 @@ concurrency:
 
 env:
   BASE_SHA: 057dd03043b8863d8f8280abf333331cc9ddf317
+  EXPECTED_KERNEL_BLOB: b6b1a9dc12f3824b5e52cd694222f6fefefd3558
   KANI_VERSION: 0.68.0
   EXPECTED_KANI_RUST_TOOLCHAIN: nightly-2026-08-21
   EXPECTED_KANI_RUST_COMMIT_HASH: 8925ea358a0f265ca61026aadc7ecc506c545cbe
@@ -27,6 +28,9 @@ jobs:
       PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
       HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
       HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
+      TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
+      TRIGGER_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+      TRIGGER_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
     steps:
       - name: Prepare trusted verifier workspace
         shell: bash
@@ -39,6 +43,26 @@ jobs:
           version = "0.1.0"
           edition = "2021"
           EOF
+
+      - name: Verify triggering workflow identity and provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/actions/runs/$TRIGGER_RUN_ID"             -o /tmp/trigger-run.json
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          d=json.loads(Path("/tmp/trigger-run.json").read_text())
+          assert d["id"]==int(os.environ["TRIGGER_RUN_ID"])
+          assert d["run_attempt"]==int(os.environ["TRIGGER_RUN_ATTEMPT"])
+          assert d["name"]=="XEN-KANI-FV-002 Replay Kernel"
+          assert d["path"]==".github/workflows/xen-kani-fv-002-replay-kernel.yml"
+          assert d["event"]=="pull_request"
+          assert d["head_sha"]==os.environ["HEAD_SHA"]
+          assert d["head_repository"]["full_name"]==os.environ["HEAD_REPO"]
+          assert d["pull_requests"] and d["pull_requests"][0]["number"]==int(os.environ["PR_NUMBER"])
+          assert d["conclusion"]==os.environ["TRIGGER_CONCLUSION"]
+          PY
 
       - name: Verify triggering PR identity
         shell: bash
@@ -73,6 +97,7 @@ jobs:
 
           test -s /tmp/xen-kani-trusted/src/replay_kernel.rs
           test "$(wc -c < /tmp/xen-kani-trusted/src/replay_kernel.rs)" -gt 1000
+          test "$blob_sha" = "$EXPECTED_KERNEL_BLOB"
 
       - name: Verify PR scope independently
         shell: bash
