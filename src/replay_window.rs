@@ -171,6 +171,7 @@ impl ReplayWindow {
             .or_insert_with(ReplayState::new);
 
         transition(win, self.window_bits, seq)
+    }
 
     /// Drop all stream state associated with a specific `key_epoch`.
     /// Called by [`crate::Session::tick`] when the previous-key grace
