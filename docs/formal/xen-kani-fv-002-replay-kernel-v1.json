@@ -1,0 +1,68 @@
+{
+  "schema": "xenia.formal.kani-replay-kernel.v1",
+  "tracking_issue": 84,
+  "successor_revision": "XEN-KANI-FV-002",
+  "authority": "EvidenceOnly",
+  "evidence_class": "BoundedModelSafety",
+  "parent": {
+    "commit": "057dd03043b8863d8f8280abf333331cc9ddf317"
+  },
+  "subjects": {
+    "production_kernel": {
+      "path": "src/replay_kernel.rs",
+      "blob": "c583634c465c856741b3c5aaf6ec7cddd1e6a469"
+    },
+    "production_router": {
+      "path": "src/replay_window.rs",
+      "blob": "961d5a7650e36e506fe222e226eaf4ca3df4daf7"
+    },
+    "existing_fuzz_subject": {
+      "path": "fuzz/fuzz_targets/fuzz_replay_window.rs",
+      "blob": "a27128c0c503780ad9e12fda23ee907c8cd6aa1e"
+    }
+  },
+  "kernel_boundary": {
+    "state": "highest + fixed [u64;16] bitmap + initialized",
+    "inputs": "window_bits + sequence",
+    "excludes": ["HashMap routing", "hashing", "allocator-backed bitmap storage", "AEAD", "session lifecycle"],
+    "supported_window_bits": [64, 128, 256, 512, 1024]
+  },
+  "harnesses": [
+    "kernel_duplicate_rejected",
+    "kernel_first_sequence_initializes_exactly",
+    "kernel_stale_boundary_is_rejected",
+    "kernel_higher_sequence_is_monotonic",
+    "kernel_cross_word_shift_preserves_in_window_history",
+    "kernel_supported_widths_do_not_panic",
+    "kernel_u64_max_advance_preserves_previous_sequence"
+  ],
+  "hostile_control": {
+    "harness": "kernel_stale_boundary_is_rejected",
+    "mutation": "offset >= window_bits becomes offset > window_bits",
+    "required_structured_status": "Failure"
+  },
+  "kani": {
+    "version": "0.68.0",
+    "release_commit": "0d2328a93f0e0ff66132d6bfa1a7d884877cf862",
+    "expected_rust_toolchain": "nightly-2026-08-21",
+    "expected_rust_commit_hash": "8925ea358a0f265ca61026aadc7ecc506c545cbe",
+    "default_unwind": 20,
+    "structured_export_required": true
+  },
+  "qualification_result_vocabulary": [
+    "Pass",
+    "Fail",
+    "Blocked",
+    "EnvironmentFailure",
+    "BuildFailure"
+  ],
+  "claim_ceiling": "ReplayWindowTransitionKernelBoundedModelSafetyWithinRecordedHarnessDomain",
+  "nonclaims": [
+    "unbounded replay-security theorem",
+    "AEAD cryptographic security",
+    "nonce uniqueness",
+    "session or key-management correctness",
+    "compiler or native-binary correctness",
+    "runtime authorization"
+  ]
+}
