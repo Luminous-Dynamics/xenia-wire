@@ -375,12 +375,13 @@ mod tests {
     fn supported_widths_preserve_boundary_semantics() {
         for bits in [64, 128, 256, 512, 1024] {
             let mut w = ReplayWindow::with_window_bits(bits);
-            assert!(w.accept(SRC, 0x10, EPOCH, 1000));
-            assert!(!w.accept(SRC, 0x10, EPOCH, 1000));
-            assert!(w.accept(SRC, 0x10, EPOCH, 999));
-            assert!(!w.accept(SRC, 0x10, EPOCH, 999));
-            assert!(!w.accept(SRC, 0x10, EPOCH, 1000 - bits as u64));
-            assert!(w.accept(SRC, 0x10, EPOCH, 1001));
+            let base = bits as u64 + 1000;
+            assert!(w.accept(SRC, 0x10, EPOCH, base));
+            assert!(!w.accept(SRC, 0x10, EPOCH, base));
+            assert!(w.accept(SRC, 0x10, EPOCH, base - 1));
+            assert!(!w.accept(SRC, 0x10, EPOCH, base - 1));
+            assert!(!w.accept(SRC, 0x10, EPOCH, base - bits as u64));
+            assert!(w.accept(SRC, 0x10, EPOCH, base + 1));
         }
     }
 
