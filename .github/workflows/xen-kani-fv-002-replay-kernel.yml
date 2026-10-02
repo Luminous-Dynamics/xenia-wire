@@ -351,6 +351,9 @@ jobs:
               "parent":os.environ["EXACT_PARENT"],
               "kernel_blob":git("rev-parse","HEAD:src/replay_kernel.rs"),
               "router_blob":git("rev-parse","HEAD:src/replay_window.rs"),
+              "fuzz_blob":git("rev-parse","HEAD:fuzz/fuzz_targets/fuzz_replay_window.rs"),
+              "workflow_blob":git("rev-parse","HEAD:.github/workflows/xen-kani-fv-002-replay-kernel.yml"),
+              "evidence_contract_blob":git("rev-parse","HEAD:docs/formal/xen-kani-fv-002-replay-kernel-v1.json"),
               "harness":os.environ["HARNESS"],
               "result":result,
               "exit_status":exit_status,
@@ -521,10 +524,15 @@ jobs:
 
       - name: Evaluate canonical admission
         shell: bash
+        env:
+          PREFLIGHT_RESULT: ${{ needs.preflight.result }}
+          CLEAN_RESULT: ${{ needs.clean.result }}
+          HOSTILE_RESULT: ${{ needs.hostile.result }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
           import json
+          import os
           from pathlib import Path
           root=Path("/tmp/qualification")
           expected={
@@ -538,29 +546,73 @@ jobs:
             "kernel_bitmap_tail_is_zero_for_supported_widths",
             "kernel_u64_max_advance_preserves_previous_sequence"
           }
-          receipts={}
-          for p in root.glob("**/harness-receipt.json"):
-              r=json.loads(p.read_text())
-              receipts[r["harness"]]=r
+
+          receipt_paths=list(root.glob("**/harness-receipt.json"))
+          receipt_list=[json.loads(p.read_text()) for p in receipt_paths]
+          duplicate_harnesses=[
+              h for h in sorted({r.get("harness") for r in receipt_list})
+              if sum(r.get("harness")==h for r in receipt_list) != 1
+          ]
+          receipts={r.get("harness"): r for r in receipt_list}
           pre=list(root.glob("**/rust-build.exit"))
           hostile_json=list(root.glob("**/kani-mutant.json"))
           hostile_exit=list(root.glob("**/kani-mutant.exit"))
-          if len(pre)!=1 or pre[0].read_text().strip()!="0":
-              result="BuildFailure" if pre and pre[0].read_text().strip()!="0" else "Blocked"
-              detail="ordinary Rust build did not qualify"
-          elif (
-              set(receipts)!=expected
-              or any(r["result"]!="Pass" for r in receipts.values())
-              or any(
-                  r.get("candidate_harness_count")!=1
-                  or len(r.get("verification_result_harness_ids",[]))!=1
-                  or r.get("verification_result_harness_ids",[])[0] != r.get("harness")
-                  for r in receipts.values()
+
+          expected_tree=subprocess.check_output(
+              ["git","rev-parse","HEAD^{tree}"], text=True
+          ).strip()
+          expected_workflow_blob=subprocess.check_output(
+              ["git","rev-parse","HEAD:.github/workflows/xen-kani-fv-002-replay-kernel.yml"],
+              text=True
+          ).strip()
+          expected_evidence_blob=subprocess.check_output(
+              ["git","rev-parse","HEAD:docs/formal/xen-kani-fv-002-replay-kernel-v1.json"],
+              text=True
+          ).strip()
+
+          exact_clean_receipts=(
+              len(receipt_list)==len(expected)
+              and not duplicate_harnesses
+              and set(receipts)==expected
+              and all(
+                  r.get("result")=="Pass"
+                  and r.get("head")==os.environ["GITHUB_SHA"]
+                  and r.get("tree")==expected_tree
+                  and r.get("parent")==os.environ["EXACT_PARENT"]
+                  and r.get("kernel_blob")==os.environ["EXPECTED_KERNEL_BLOB"]
+                  and r.get("router_blob")==os.environ["EXPECTED_ROUTER_BLOB"]
+                  and r.get("fuzz_blob")==os.environ["EXPECTED_FUZZ_BLOB"]
+                  and r.get("workflow_blob")==expected_workflow_blob
+                  and r.get("evidence_contract_blob")==expected_evidence_blob
+                  and r.get("kani_rust_toolchain")==os.environ["EXPECTED_KANI_RUST_TOOLCHAIN"]
+                  and r.get("kani_rust_commit_hash")==os.environ["EXPECTED_KANI_RUST_COMMIT_HASH"]
+                  and "kani-0.68.0" in r.get("kani_version","")
+                  and r.get("default_unwind")==20
+                  and r.get("test_mode") is True
+                  and r.get("structured_status","").upper()=="SUCCESS"
+                  and r.get("candidate_harness_count")==1
+                  and r.get("verification_result_harness_ids",[])==[r.get("harness")]
+                  and r.get("structured_check_total",0)>0
+                  and all(str(s).upper()=="SUCCESS" for s in r.get("structured_check_statuses",[]))
+                  and r.get("property_failed")==0
+                  and r.get("property_unreachable")==0
+                  and r.get("property_undetermined")==0
+                  and r.get("property_counts_sum")==r.get("property_total")
               )
-          ):
-              result="Blocked"; detail="one or more clean kernel receipts lacked exact harness identity"
+              for r in receipt_list
+          )
+
+          if os.environ.get("PREFLIGHT_RESULT")!="success":
+              result="BuildFailure" if pre and pre[0].read_text().strip()!="0" else "Blocked"
+              detail=f"preflight job result was {os.environ.get('PREFLIGHT_RESULT')}"
+          elif os.environ.get("CLEAN_RESULT")!="success":
+              result="Blocked"; detail=f"clean job result was {os.environ.get('CLEAN_RESULT')}"
+          elif not exact_clean_receipts:
+              result="Blocked"; detail="clean receipt set was not an exact pass-bound subject set"
+          elif os.environ.get("HOSTILE_RESULT")!="success":
+              result="Blocked"; detail=f"hostile job result was {os.environ.get('HOSTILE_RESULT')}"
           elif len(hostile_json)!=1 or len(hostile_exit)!=1:
-              result="Blocked"; detail="hostile evidence missing"
+              result="Blocked"; detail="hostile evidence missing or duplicated"
           else:
               h=json.loads(hostile_json[0].read_text())
               vr=h.get("verification_results",{})
@@ -574,12 +626,40 @@ jobs:
                   )
               ]
               t=candidates[0] if len(candidates)==1 else None
-              failed=[x for x in t.get("checks",[]) if isinstance(x,dict) and str(x.get("status","")).upper()=="FAILURE"] if isinstance(t,dict) else []
-              if hostile_exit[0].read_text().strip()=="0" or not isinstance(t,dict) or str(t.get("status","")).upper()!="FAILURE" or not failed:
+              failed=[
+                  x for x in t.get("checks",[])
+                  if isinstance(x,dict) and str(x.get("status","")).upper()=="FAILURE"
+              ] if isinstance(t,dict) else []
+              if (
+                  hostile_exit[0].read_text().strip()=="0"
+                  or not isinstance(t,dict)
+                  or str(t.get("status","")).upper()!="FAILURE"
+                  or not failed
+              ):
                   result="Blocked"; detail="hostile mutant did not produce required structured Failure"
               else:
                   result="Pass"; detail="clean structured kernel proofs and hostile counterexample qualified"
-          receipt={"schema":"xenia.formal.kani-replay-kernel.receipt.v1","result":result,"detail":detail,"expected_harnesses":sorted(expected),"observed_harnesses":sorted(receipts)}
+
+          receipt={
+              "schema":"xenia.formal.kani-replay-kernel.receipt.v2",
+              "result":result,
+              "detail":detail,
+              "requested_head":os.environ["GITHUB_SHA"],
+              "expected_tree":expected_tree,
+              "expected_parent":os.environ["EXACT_PARENT"],
+              "expected_kernel_blob":os.environ["EXPECTED_KERNEL_BLOB"],
+              "expected_router_blob":os.environ["EXPECTED_ROUTER_BLOB"],
+              "expected_fuzz_blob":os.environ["EXPECTED_FUZZ_BLOB"],
+              "expected_workflow_blob":expected_workflow_blob,
+              "expected_evidence_contract_blob":expected_evidence_blob,
+              "preflight_result":os.environ.get("PREFLIGHT_RESULT"),
+              "clean_result":os.environ.get("CLEAN_RESULT"),
+              "hostile_result":os.environ.get("HOSTILE_RESULT"),
+              "expected_harnesses":sorted(expected),
+              "observed_harnesses":sorted(harness for harness in receipts if harness is not None),
+              "receipt_file_count":len(receipt_list),
+              "duplicate_harnesses":duplicate_harnesses
+          }
           out=Path("/tmp/canonical-receipt.json"); out.write_text(json.dumps(receipt,indent=2,sort_keys=True)+"\n")
           print(out.read_text())
           if result!="Pass":
