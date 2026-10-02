@@ -10,7 +10,7 @@
   "subjects": {
     "production_kernel": {
       "path": "src/replay_kernel.rs",
-      "blob": "7270eac3bf1fd9189a67a1493891758e4caa6602"
+      "blob": "6bf6bb2f1ccb1ff1c16993b6e7080ae15b147f31"
     },
     "production_router": {
       "path": "src/replay_window.rs",
