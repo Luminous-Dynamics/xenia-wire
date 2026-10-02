@@ -533,6 +533,7 @@ jobs:
           python3 - <<'PY'
           import json
           import os
+          import subprocess
           from pathlib import Path
           root=Path("/tmp/qualification")
           expected={
@@ -576,7 +577,7 @@ jobs:
               and set(receipts)==expected
               and all(
                   r.get("result")=="Pass"
-                  and r.get("head")==os.environ["GITHUB_SHA"]
+                  and r.get("head")==os.environ["REQUESTED_HEAD"]
                   and r.get("tree")==expected_tree
                   and r.get("parent")==os.environ["EXACT_PARENT"]
                   and r.get("kernel_blob")==os.environ["EXPECTED_KERNEL_BLOB"]
@@ -644,7 +645,7 @@ jobs:
               "schema":"xenia.formal.kani-replay-kernel.receipt.v2",
               "result":result,
               "detail":detail,
-              "requested_head":os.environ["GITHUB_SHA"],
+              "requested_head":os.environ["REQUESTED_HEAD"],
               "expected_tree":expected_tree,
               "expected_parent":os.environ["EXACT_PARENT"],
               "expected_kernel_blob":os.environ["EXPECTED_KERNEL_BLOB"],
@@ -658,19 +659,3 @@ jobs:
               "expected_harnesses":sorted(expected),
               "observed_harnesses":sorted(harness for harness in receipts if harness is not None),
               "receipt_file_count":len(receipt_list),
-              "duplicate_harnesses":duplicate_harnesses
-          }
-          out=Path("/tmp/canonical-receipt.json"); out.write_text(json.dumps(receipt,indent=2,sort_keys=True)+"\n")
-          print(out.read_text())
-          if result!="Pass":
-              raise SystemExit(1)
-          PY
-
-      - name: Retain canonical receipt
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: xen-kani-fv-002-admission-${{ github.event.pull_request.head.sha || github.sha }}
-          path: /tmp/canonical-receipt.json
-          if-no-files-found: error
-          retention-days: 30
