@@ -242,7 +242,7 @@ jobs:
           assert s.count(old)==1
           p.write_text(s.replace(old,new,1))
           PY
-          test "$(git hash-object src/replay_kernel.rs)" != "$(cat /tmp/xen-kani-trusted/kernel.blob)"
+          test "$(git hash-object src/lib.rs)" != "$(cat /tmp/xen-kani-trusted/kernel.blob)"
           set +e
           cargo kani -Z unstable-options --tests --default-unwind 20             --harness kernel_stale_boundary_is_rejected             --export-json /tmp/hostile.json             > /tmp/hostile.log 2>&1
           status=$?
