@@ -3,6 +3,17 @@ name: XEN-KANI-FV-002 Replay Kernel
 # Fresh-run sentinel: default-branch bootstrap installed; current PR requalification pass.
 
 on:
+  push:
+    branches:
+      - "formal/xen-kani-fv-002-replay-kernel"
+    paths:
+      - "src/replay_kernel.rs"
+      - "src/replay_window.rs"
+      - "fuzz/fuzz_targets/fuzz_replay_window.rs"
+      - "src/lib.rs"
+      - "Cargo.toml"
+      - "docs/formal/xen-kani-fv-002-replay-kernel-v1.json"
+      - ".github/workflows/xen-kani-fv-002-replay-kernel.yml"
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
