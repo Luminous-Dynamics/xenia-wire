@@ -122,6 +122,7 @@ jobs:
 
           d=json.loads(Path("/tmp/compare.json").read_text())
           expected={
+              ".github/workflows/xen-kani-fv-002-replay-kernel.yml",
               ".github/workflows/xen-kani-fv-002-replay-kernel-v2.yml",
               "Cargo.toml",
               "docs/formal/xen-kani-fv-002-replay-kernel-v1.json",
@@ -198,6 +199,7 @@ jobs:
           h=index(head)
           changed=sorted(path for path in set(b)|set(h) if b.get(path)!=h.get(path))
           expected=sorted({
+              ".github/workflows/xen-kani-fv-002-replay-kernel.yml",
               ".github/workflows/xen-kani-fv-002-replay-kernel-v2.yml",
               "Cargo.toml",
               "docs/formal/xen-kani-fv-002-replay-kernel-v1.json",
