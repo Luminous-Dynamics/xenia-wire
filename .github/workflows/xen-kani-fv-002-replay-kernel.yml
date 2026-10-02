@@ -151,10 +151,15 @@ jobs:
           assert c["authority"]=="EvidenceOnly"
           assert c["evidence_class"]=="BoundedModelSafety"
           assert c["parent"]["commit"]=="057dd03043b8863d8f8280abf333331cc9ddf317"
-          assert c["subjects"]["production_kernel"]["blob"]=="f8abd27e617d4ea79ee65239039e524ff327c880"
+          assert c["subjects"]["production_kernel"]["blob"]=="2c286a642cae6eb641300999ee7bfa38462c7845"
+          assert c["subjects"]["production_router"]["blob"]=="31de631b5c62448525f834e199e68a212cd4a7f3"
+          assert c["subjects"]["existing_fuzz_subject"]["blob"]=="a27128c0c503780ad9e12fda23ee907c8cd6aa1e"
           assert len(c["harnesses"])==9
           assert c["kani"]["version"]=="0.68.0"
+          assert c["kani"]["release_commit"] is None
+          assert c["kani"]["release_commit_verified"] is False
           assert c["kani"]["expected_rust_toolchain"]=="nightly-2026-08-21"
+          assert c["kani"]["expected_rust_commit_hash"]=="8925ea358a0f265ca61026aadc7ecc506c545cbe"
           PY
 
       - name: Ordinary Rust build
