@@ -76,6 +76,12 @@
     "EnvironmentFailure",
     "BuildFailure"
   ],
+  "trusted_admission": {
+    "status": "proposed",
+    "pull_request": 86,
+    "workflow": ".github/workflows/xen-kani-fv-002-trusted-admission.yml",
+    "authority_transfers_only_after_main_merge": true
+  },
   "claim_ceiling": "ReplayWindowTransitionKernelBoundedModelSafetyWithinRecordedHarnessDomain",
   "nonclaims": [
     "unbounded replay-security theorem",
