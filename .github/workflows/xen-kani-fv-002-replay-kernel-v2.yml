@@ -13,7 +13,7 @@ on:
       - "src/lib.rs"
       - "Cargo.toml"
       - "docs/formal/xen-kani-fv-002-replay-kernel-v1.json"
-      - ".github/workflows/xen-kani-fv-002-replay-kernel.yml"
+      - ".github/workflows/xen-kani-fv-002-replay-kernel-v2.yml"
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
@@ -23,7 +23,7 @@ on:
       - "src/lib.rs"
       - "Cargo.toml"
       - "docs/formal/xen-kani-fv-002-replay-kernel-v1.json"
-      - ".github/workflows/xen-kani-fv-002-replay-kernel.yml"
+      - ".github/workflows/xen-kani-fv-002-replay-kernel-v2.yml"
   workflow_dispatch:
 
 permissions:
@@ -90,7 +90,7 @@ jobs:
           fi
 
           expected=(
-            ".github/workflows/xen-kani-fv-002-replay-kernel.yml"
+            ".github/workflows/xen-kani-fv-002-replay-kernel-v2.yml"
             "Cargo.toml"
             "docs/formal/xen-kani-fv-002-replay-kernel-v1.json"
             "src/lib.rs"
@@ -423,7 +423,7 @@ jobs:
               "kernel_blob":git("rev-parse","HEAD:src/replay_kernel.rs"),
               "router_blob":git("rev-parse","HEAD:src/replay_window.rs"),
               "fuzz_blob":git("rev-parse","HEAD:fuzz/fuzz_targets/fuzz_replay_window.rs"),
-              "workflow_blob":git("rev-parse","HEAD:.github/workflows/xen-kani-fv-002-replay-kernel.yml"),
+              "workflow_blob":git("rev-parse","HEAD:.github/workflows/xen-kani-fv-002-replay-kernel-v2.yml"),
               "evidence_contract_blob":git("rev-parse","HEAD:docs/formal/xen-kani-fv-002-replay-kernel-v1.json"),
               "harness":os.environ["HARNESS"],
               "result":result,
@@ -617,7 +617,7 @@ jobs:
               "kernel_blob":git("rev-parse","HEAD:src/replay_kernel.rs"),
               "router_blob":git("rev-parse","HEAD:src/replay_window.rs"),
               "fuzz_blob":git("rev-parse","HEAD:fuzz/fuzz_targets/fuzz_replay_window.rs"),
-              "workflow_blob":git("rev-parse","HEAD:.github/workflows/xen-kani-fv-002-replay-kernel.yml"),
+              "workflow_blob":git("rev-parse","HEAD:.github/workflows/xen-kani-fv-002-replay-kernel-v2.yml"),
               "evidence_contract_blob":git("rev-parse","HEAD:docs/formal/xen-kani-fv-002-replay-kernel-v1.json"),
               "harness":"kernel_stale_boundary_is_rejected",
               "exit_status":int(read("/tmp/kani-mutant.exit").strip() or "125"),
@@ -725,7 +725,7 @@ jobs:
               ["git","rev-parse","HEAD^{tree}"], text=True
           ).strip()
           expected_workflow_blob=subprocess.check_output(
-              ["git","rev-parse","HEAD:.github/workflows/xen-kani-fv-002-replay-kernel.yml"],
+              ["git","rev-parse","HEAD:.github/workflows/xen-kani-fv-002-replay-kernel-v2.yml"],
               text=True
           ).strip()
           expected_evidence_blob=subprocess.check_output(

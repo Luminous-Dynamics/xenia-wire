@@ -94,5 +94,16 @@
   "bootstrap": {
     "default_branch_commit": "af7f82085cb56e2ec55a9832a1f09ebb6aa21705",
     "purpose": "formal workflow installed on default branch before trusted admission activation"
+  },
+  "scope": {
+    "changed_files": [
+      ".github/workflows/xen-kani-fv-002-replay-kernel.yml",
+      ".github/workflows/xen-kani-fv-002-replay-kernel-v2.yml",
+      "Cargo.toml",
+      "docs/formal/xen-kani-fv-002-replay-kernel-v1.json",
+      "src/lib.rs",
+      "src/replay_kernel.rs",
+      "src/replay_window.rs"
+    ]
   }
 }
