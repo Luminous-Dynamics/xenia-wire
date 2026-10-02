@@ -10,7 +10,7 @@
   "subjects": {
     "production_kernel": {
       "path": "src/replay_kernel.rs",
-      "blob": "f8abd27e617d4ea79ee65239039e524ff327c880"
+      "blob": "2c286a642cae6eb641300999ee7bfa38462c784c"
     },
     "production_router": {
       "path": "src/replay_window.rs",
@@ -24,8 +24,20 @@
   "kernel_boundary": {
     "state": "highest + fixed [u64;16] bitmap + initialized",
     "inputs": "window_bits + sequence",
-    "excludes": ["HashMap routing", "hashing", "allocator-backed bitmap storage", "AEAD", "session lifecycle"],
-    "supported_window_bits": [64, 128, 256, 512, 1024]
+    "excludes": [
+      "HashMap routing",
+      "hashing",
+      "allocator-backed bitmap storage",
+      "AEAD",
+      "session lifecycle"
+    ],
+    "supported_window_bits": [
+      64,
+      128,
+      256,
+      512,
+      1024
+    ]
   },
   "harnesses": [
     "kernel_duplicate_rejected",
