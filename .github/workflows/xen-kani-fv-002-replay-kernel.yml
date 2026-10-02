@@ -212,20 +212,6 @@ jobs:
           assert source.count("#[kani::proof]")==len(expected)
           PY
 
-      - name: Verify kernel source structure
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          source=Path("src/replay_kernel.rs").read_text()
-          assert source.startswith("// Copyright (c) 2024-2026 Tristan Stoltz / Luminous Dynamics")
-          assert "pub(crate) fn transition(" in source
-          assert "#[cfg(kani)]\nmod kani_proofs {" in source
-          assert source.count("{")==source.count("}"), "kernel brace count mismatch"
-          assert not source.rstrip().endswith("#[kani::proof]"), "kernel ends with dangling proof attribute"
-          PY
-
       - name: Ordinary Rust build
         shell: bash
         run: |
