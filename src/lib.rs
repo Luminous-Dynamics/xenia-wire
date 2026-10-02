@@ -92,6 +92,7 @@
 
 mod error;
 pub mod payload_types;
+mod replay_kernel;
 mod replay_window;
 mod session;
 mod wire;
