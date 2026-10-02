@@ -56,7 +56,6 @@ jobs:
           test "$(git rev-parse HEAD:src/replay_kernel.rs)" = "$EXPECTED_KERNEL_BLOB"
           test "$(git rev-parse HEAD:src/replay_window.rs)" = "$EXPECTED_ROUTER_BLOB"
           test "$(git rev-parse HEAD:fuzz/fuzz_targets/fuzz_replay_window.rs)" = "$EXPECTED_FUZZ_BLOB"
-          mapfile -t changed < <(git diff --name-only "$EXACT_PARENT"...HEAD | sort)
           expected=(
             ".github/workflows/xen-kani-fv-002-replay-kernel.yml"
             "Cargo.toml"
@@ -65,8 +64,17 @@ jobs:
             "src/replay_kernel.rs"
             "src/replay_window.rs"
           )
-          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
-          diff -u <(printf '%s\n' "${expected_sorted[@]}") <(printf '%s\n' "${changed[@]}")
+          printf '%s\n' "${expected[@]}" | LC_ALL=C sort > /tmp/expected-files.txt
+          git diff --name-only "$EXACT_PARENT"...HEAD | LC_ALL=C sort > /tmp/changed-files.txt
+          {
+            echo "expected:"
+            cat /tmp/expected-files.txt
+            echo "observed:"
+            cat /tmp/changed-files.txt
+            echo "diff:"
+            diff -u /tmp/expected-files.txt /tmp/changed-files.txt || true
+          } | tee /tmp/scope-check.txt
+          diff -u /tmp/expected-files.txt /tmp/changed-files.txt
 
       - name: Validate evidence contract
         shell: bash
@@ -116,6 +124,9 @@ jobs:
             /tmp/rust-build.exit
             /tmp/cargo-lock-status.txt
             /tmp/generated-cargo-lock.sha256
+            /tmp/expected-files.txt
+            /tmp/changed-files.txt
+            /tmp/scope-check.txt
           if-no-files-found: error
           retention-days: 30
 
