@@ -252,6 +252,7 @@ jobs:
           set -e
           printf '%s\n' "$status" > /tmp/kani.exit
           cat /tmp/kani.log
+          exit "$status"
 
       - name: Build structured receipt
         if: always()
