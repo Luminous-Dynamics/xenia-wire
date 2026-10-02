@@ -10,11 +10,11 @@
   "subjects": {
     "production_kernel": {
       "path": "src/replay_kernel.rs",
-      "blob": "910c8f4e5954271f9e603a8fdcdc23a48004d54f"
+      "blob": "f8abd27e617d4ea79ee65239039e524ff327c880"
     },
     "production_router": {
       "path": "src/replay_window.rs",
-      "blob": "67e298060a94727c47ebce99367fce835f249cd1"
+      "blob": "31de631b5c62448525f834e199e68a212cd4a7f3"
     },
     "existing_fuzz_subject": {
       "path": "fuzz/fuzz_targets/fuzz_replay_window.rs",
