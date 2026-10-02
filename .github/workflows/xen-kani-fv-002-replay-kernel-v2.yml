@@ -253,25 +253,7 @@ jobs:
 
   clean:
     needs: preflight
-    strategy:
-      fail-fast: false
-      max-parallel: 7
-      matrix:
-        harness:
-          - kernel_duplicate_rejected
-          - kernel_first_sequence_initializes_exactly
-          - kernel_stale_boundary_is_rejected
-          - kernel_higher_sequence_is_monotonic
-          - kernel_cross_word_shift_preserves_in_window_history
-          - kernel_symbolic_shift_preserves_or_discards_history_exactly
-          - kernel_exact_window_jump_resets_history
-          - kernel_max_width_near_window_shift_preserves_history_boundary
-          - kernel_exact_word_shift_preserves_in_window_history
-          - kernel_max_width_multiword_shift_preserves_history
-          - kernel_supported_widths_do_not_panic
-          - kernel_supported_width_boundary_is_exact
-          - kernel_bitmap_tail_is_zero_for_supported_widths
-          - kernel_u64_max_advance_preserves_previous_sequence
+    timeout-minutes: 120
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -300,27 +282,51 @@ jobs:
           rustup run "$EXPECTED_KANI_RUST_TOOLCHAIN" rustc -Vv | tee /tmp/kani-rustc.txt
           grep -q "commit-hash: $EXPECTED_KANI_RUST_COMMIT_HASH" /tmp/kani-rustc.txt
 
-      - name: Run clean kernel proof
-        shell: bash
-        run: |
-          set +e
-          cargo kani -Z unstable-options --tests --default-unwind 20 --harness "${{ matrix.harness }}" --export-json /tmp/kani.json > /tmp/kani.log 2>&1
-          status=$?
-          set -e
-          printf '%s\n' "$status" > /tmp/kani.exit
-          cat /tmp/kani.log
-          exit "$status"
-
-      - name: Build structured receipt
-        if: always()
-        env:
-          HARNESS: ${{ matrix.harness }}
+      - name: Run all clean kernel proofs
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
+          mkdir -p /tmp/clean-evidence
+          cat > /tmp/harnesses.txt <<'EOF'
+          kernel_duplicate_rejected
+          kernel_first_sequence_initializes_exactly
+          kernel_stale_boundary_is_rejected
+          kernel_higher_sequence_is_monotonic
+          kernel_cross_word_shift_preserves_in_window_history
+          kernel_symbolic_shift_preserves_or_discards_history_exactly
+          kernel_exact_window_jump_resets_history
+          kernel_max_width_near_window_shift_preserves_history_boundary
+          kernel_exact_word_shift_preserves_in_window_history
+          kernel_max_width_multiword_shift_preserves_history
+          kernel_supported_widths_do_not_panic
+          kernel_supported_width_boundary_is_exact
+          kernel_bitmap_tail_is_zero_for_supported_widths
+          kernel_u64_max_advance_preserves_previous_sequence
+          EOF
+
+          overall=0
+          while IFS= read -r harness; do
+            out="/tmp/clean-evidence/$harness"
+            mkdir -p "$out"
+            echo "=== clean proof: $harness ==="
+
+            set +e
+            cargo kani -Z unstable-options --tests --default-unwind 20 \
+              --harness "$harness" \
+              --export-json "$out/kani.json" \
+              > "$out/kani.log" 2>&1
+            status=$?
+            set -e
+
+            printf '%s\n' "$status" > "$out/kani.exit"
+            cat "$out/kani.log"
+
+            HARNESS="$harness" OUT="$out" python3 - <<'PY'
           import hashlib, json, os, subprocess
           from pathlib import Path
+
+          harness=os.environ["HARNESS"]
+          out=Path(os.environ["OUT"])
 
           def read(p):
               q=Path(p)
@@ -333,11 +339,11 @@ jobs:
           def git(*a):
               return subprocess.check_output(["git", *a], text=True).strip()
 
-          exit_status=int(read("/tmp/kani.exit").strip() or "125")
+          exit_status=int(read(out/"kani.exit").strip() or "125")
           data=None
           export_error=None
           try:
-              data=json.loads(read("/tmp/kani.json"))
+              data=json.loads(read(out/"kani.json"))
           except Exception as e:
               export_error=str(e)
 
@@ -347,8 +353,8 @@ jobs:
               r for r in results
               if isinstance(r,dict)
               and (
-                  r.get("harness_id")==os.environ["HARNESS"]
-                  or str(r.get("harness_id","")).endswith("::"+os.environ["HARNESS"])
+                  r.get("harness_id")==harness
+                  or str(r.get("harness_id","")).endswith("::"+harness)
               )
           ]
           target=candidates[0] if len(candidates)==1 else None
@@ -364,12 +370,14 @@ jobs:
           ]
           property_details=[]
           if isinstance(data,dict):
-              for entry in data.get("property_details",[]) if isinstance(data.get("property_details",[]),list) else []:
-                  if isinstance(entry,dict) and (
-                      entry.get("harness_id")==os.environ["HARNESS"]
-                      or str(entry.get("harness_id","")).endswith("::"+os.environ["HARNESS"])
-                  ):
-                      property_details.append(entry.get("property_details",{}))
+              entries=data.get("property_details",[])
+              if isinstance(entries,list):
+                  for entry in entries:
+                      if isinstance(entry,dict) and (
+                          entry.get("harness_id")==harness
+                          or str(entry.get("harness_id","")).endswith("::"+harness)
+                      ):
+                          property_details.append(entry.get("property_details",{}))
           pd=property_details[0] if len(property_details)==1 and isinstance(property_details[0],dict) else None
 
           counts=[]
@@ -381,9 +389,8 @@ jobs:
 
           if (
               target is not None
-              and len(candidates)==1
               and exit_status == 0
-              and structured_status.upper() == "SUCCESS"
+              and str(structured_status or "").upper()=="SUCCESS"
               and checks
               and all(s.upper()=="SUCCESS" for s in statuses)
               and isinstance(summary,dict)
@@ -391,6 +398,7 @@ jobs:
               and summary.get("executed")==1
               and summary.get("successful")==1
               and summary.get("failed")==0
+              and len(candidates)==1
               and len(result_ids)==1
               and result_ids[0]==target.get("harness_id")
               and pd is not None
@@ -416,7 +424,7 @@ jobs:
               "fuzz_blob":git("rev-parse","HEAD:fuzz/fuzz_targets/fuzz_replay_window.rs"),
               "workflow_blob":git("rev-parse","HEAD:.github/workflows/xen-kani-fv-002-replay-kernel-v2.yml"),
               "evidence_contract_blob":git("rev-parse","HEAD:docs/formal/xen-kani-fv-002-replay-kernel-v1.json"),
-              "harness":os.environ["HARNESS"],
+              "harness":harness,
               "result":result,
               "exit_status":exit_status,
               "kani_version":read("/tmp/kani-version.txt").strip(),
@@ -425,8 +433,8 @@ jobs:
               "kani_rust_toolchain":os.environ["EXPECTED_KANI_RUST_TOOLCHAIN"],
               "kani_rust_commit_hash":os.environ["EXPECTED_KANI_RUST_COMMIT_HASH"],
               "kani_version_output_sha256":sha("/tmp/kani-version.txt"),
-              "log_sha256":sha("/tmp/kani.log"),
-              "structured_json_sha256":sha("/tmp/kani.json"),
+              "log_sha256":sha(out/"kani.log"),
+              "structured_json_sha256":sha(out/"kani.json"),
               "structured_status":structured_status,
               "candidate_harness_count":len(candidates),
               "verification_result_harness_ids":result_ids,
@@ -442,21 +450,29 @@ jobs:
               "test_mode":True,
               "default_unwind":20
           }
-          Path("/tmp/harness-receipt.json").write_text(json.dumps(receipt,indent=2,sort_keys=True)+"\n")
-          print(Path("/tmp/harness-receipt.json").read_text())
+          (out/"harness-receipt.json").write_text(json.dumps(receipt,indent=2,sort_keys=True)+"\n")
+          print((out/"harness-receipt.json").read_text())
+
+          if result != "Pass":
+              raise SystemExit(1)
           PY
+            proof_status=$?
+            if [ "$proof_status" -ne 0 ]; then
+              overall=1
+            fi
+          done < /tmp/harnesses.txt
+
+          cp /tmp/kani-version.txt /tmp/clean-evidence/kani-version.txt
+          cp /tmp/kani-rustc.txt /tmp/clean-evidence/kani-rustc.txt
+          printf '%s\n' "$overall" > /tmp/clean-evidence/overall.exit
+          exit "$overall"
 
       - name: Retain clean evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: xen-kani-fv-002-clean-${{ matrix.harness }}-${{ github.event.pull_request.head.sha || github.sha }}
-          path: |
-            /tmp/harness-receipt.json
-            /tmp/kani.log
-            /tmp/kani.json
-            /tmp/kani-rustc.txt
-            /tmp/kani-version.txt
+          name: xen-kani-fv-002-clean-${{ github.event.pull_request.head.sha || github.sha }}
+          path: /tmp/clean-evidence
           if-no-files-found: error
           retention-days: 30
 
