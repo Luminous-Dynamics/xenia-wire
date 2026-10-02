@@ -240,8 +240,8 @@ jobs:
           cargo kani setup
           cargo kani --version --verbose | tee /tmp/kani-version.txt
           grep -q "kani-0.68.0" /tmp/kani-version.txt
-          rustup run "$EXPECTED_KANI_RUST_TOOLCHAIN" rustc --version | tee /tmp/kani-rustc.txt
-          grep -q "$EXPECTED_KANI_RUST_COMMIT_HASH" /tmp/kani-rustc.txt
+          rustup run "$EXPECTED_KANI_RUST_TOOLCHAIN" rustc -Vv | tee /tmp/kani-rustc.txt
+          grep -q "commit-hash: $EXPECTED_KANI_RUST_COMMIT_HASH" /tmp/kani-rustc.txt
 
       - name: Run clean kernel proof
         shell: bash
@@ -357,8 +357,8 @@ jobs:
           cargo kani setup
           cargo kani --version --verbose | tee /tmp/hostile-kani-version.txt
           grep -q "kani-0.68.0" /tmp/hostile-kani-version.txt
-          rustup run "$EXPECTED_KANI_RUST_TOOLCHAIN" rustc --version | tee /tmp/hostile-rustc.txt
-          grep -q "$EXPECTED_KANI_RUST_COMMIT_HASH" /tmp/hostile-rustc.txt
+          rustup run "$EXPECTED_KANI_RUST_TOOLCHAIN" rustc -Vv | tee /tmp/hostile-rustc.txt
+          grep -q "commit-hash: $EXPECTED_KANI_RUST_COMMIT_HASH" /tmp/hostile-rustc.txt
 
       - name: Apply hostile stale-boundary mutant
         shell: bash
