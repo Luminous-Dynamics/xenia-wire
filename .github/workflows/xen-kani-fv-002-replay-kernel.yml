@@ -297,7 +297,7 @@ jobs:
           PY
           test "$(git rev-parse HEAD:src/replay_kernel.rs)" = "$EXPECTED_KERNEL_BLOB"
           test "$(git hash-object src/replay_kernel.rs)" != "$EXPECTED_KERNEL_BLOB"
-          test "$(git diff --numstat -- src/replay_kernel.rs | awk '{print $1+$2}')" = "1"
+          test "$(git diff --numstat -- src/replay_kernel.rs | awk '{print $1+$2}')" = "2"
 
       - name: Run hostile proof
         shell: bash
