@@ -61,11 +61,19 @@ jobs:
               status=1
             fi
           }
+          actual_kernel="$(git rev-parse "$REQUESTED_HEAD:src/replay_kernel.rs")"
+          actual_router="$(git rev-parse "$REQUESTED_HEAD:src/replay_window.rs")"
+          actual_fuzz="$(git rev-parse "$REQUESTED_HEAD:fuzz/fuzz_targets/fuzz_replay_window.rs")"
+          {
+            printf 'kernel actual=%s expected=%s\\n' "$actual_kernel" "$EXPECTED_KERNEL_BLOB"
+            printf 'router actual=%s expected=%s\\n' "$actual_router" "$EXPECTED_ROUTER_BLOB"
+            printf 'fuzz actual=%s expected=%s\\n' "$actual_fuzz" "$EXPECTED_FUZZ_BLOB"
+          } | tee -a /tmp/scope-assertions.txt
           check "head" test "$(git rev-parse HEAD)" = "$REQUESTED_HEAD"
           check "lineage" test "$(git merge-base "$EXACT_PARENT" HEAD)" = "$EXACT_PARENT"
-          check "kernel-blob" test "$(git rev-parse HEAD:src/replay_kernel.rs)" = "$EXPECTED_KERNEL_BLOB"
-          check "router-blob" test "$(git rev-parse HEAD:src/replay_window.rs)" = "$EXPECTED_ROUTER_BLOB"
-          check "fuzz-blob" test "$(git rev-parse HEAD:fuzz/fuzz_targets/fuzz_replay_window.rs)" = "$EXPECTED_FUZZ_BLOB"
+          check "kernel-blob" test "$actual_kernel" = "$EXPECTED_KERNEL_BLOB"
+          check "router-blob" test "$actual_router" = "$EXPECTED_ROUTER_BLOB"
+          check "fuzz-blob" test "$actual_fuzz" = "$EXPECTED_FUZZ_BLOB"
           if [ "$status" -ne 0 ]; then
             echo "scope identity preconditions failed" >&2
             exit "$status"
