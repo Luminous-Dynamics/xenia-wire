@@ -22,7 +22,7 @@ concurrency:
 
 env:
   EXACT_PARENT: 057dd03043b8863d8f8280abf333331cc9ddf317
-  EXPECTED_KERNEL_BLOB: 7270eac3bf1fd9189a67a1493891758e4caa6602
+  EXPECTED_KERNEL_BLOB: 6bf6bb2f1ccb1ff1c16993b6e7080ae15b147f31
   EXPECTED_ROUTER_BLOB: 31de631b5c62448525f834e199e68a212cd4a7f3
   EXPECTED_FUZZ_BLOB: a27128c0c503780ad9e12fda23ee907c8cd6aa1e
   KANI_VERSION: 0.68.0
@@ -148,7 +148,7 @@ jobs:
           assert c["authority"]=="EvidenceOnly"
           assert c["evidence_class"]=="BoundedModelSafety"
           assert c["parent"]["commit"]=="057dd03043b8863d8f8280abf333331cc9ddf317"
-          assert c["subjects"]["production_kernel"]["blob"]=="7270eac3bf1fd9189a67a1493891758e4caa6602"
+          assert c["subjects"]["production_kernel"]["blob"]=="6bf6bb2f1ccb1ff1c16993b6e7080ae15b147f31"
           assert c["subjects"]["production_router"]["blob"]=="31de631b5c62448525f834e199e68a212cd4a7f3"
           assert c["subjects"]["existing_fuzz_subject"]["blob"]=="a27128c0c503780ad9e12fda23ee907c8cd6aa1e"
           expected_harnesses={
@@ -157,6 +157,7 @@ jobs:
               "kernel_stale_boundary_is_rejected",
               "kernel_higher_sequence_is_monotonic",
               "kernel_cross_word_shift_preserves_in_window_history",
+              "kernel_symbolic_shift_preserves_or_discards_history_exactly",
               "kernel_exact_window_jump_resets_history",
               "kernel_max_width_near_window_shift_preserves_history_boundary",
               "kernel_exact_word_shift_preserves_in_window_history",
@@ -167,7 +168,7 @@ jobs:
               "kernel_u64_max_advance_preserves_previous_sequence"
           }
           assert set(c["harnesses"])==expected_harnesses
-          assert len(c["harnesses"])==len(expected_harnesses)==13
+          assert len(c["harnesses"])==len(expected_harnesses)==14
           assert c["kani"]["version"]=="0.68.0"
           assert c["kani"]["release_commit"] is None
           assert c["kani"]["release_commit_verified"] is False
@@ -257,6 +258,7 @@ jobs:
           - kernel_stale_boundary_is_rejected
           - kernel_higher_sequence_is_monotonic
           - kernel_cross_word_shift_preserves_in_window_history
+          - kernel_symbolic_shift_preserves_or_discards_history_exactly
           - kernel_exact_window_jump_resets_history
           - kernel_max_width_near_window_shift_preserves_history_boundary
           - kernel_exact_word_shift_preserves_in_window_history
@@ -603,6 +605,7 @@ jobs:
             "kernel_stale_boundary_is_rejected",
             "kernel_higher_sequence_is_monotonic",
             "kernel_cross_word_shift_preserves_in_window_history",
+            "kernel_symbolic_shift_preserves_or_discards_history_exactly",
             "kernel_exact_window_jump_resets_history",
             "kernel_max_width_near_window_shift_preserves_history_boundary",
             "kernel_exact_word_shift_preserves_in_window_history",
