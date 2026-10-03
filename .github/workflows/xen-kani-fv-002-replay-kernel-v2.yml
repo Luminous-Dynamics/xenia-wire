@@ -428,6 +428,7 @@ jobs:
               "tree":git("rev-parse","HEAD^{tree}"),
               "parent":os.environ["EXACT_PARENT"],
               "kernel_blob":git("rev-parse","HEAD:src/replay_kernel.rs"),
+              "proof_blob":git("rev-parse","HEAD:src/replay_kernel_kani.rs"),
               "router_blob":git("rev-parse","HEAD:src/replay_window.rs"),
               "fuzz_blob":git("rev-parse","HEAD:fuzz/fuzz_targets/fuzz_replay_window.rs"),
               "workflow_blob":git("rev-parse","HEAD:.github/workflows/xen-kani-fv-002-replay-kernel-v2.yml"),
@@ -632,6 +633,7 @@ jobs:
               "tree":git("rev-parse","HEAD^{tree}"),
               "parent":os.environ["EXACT_PARENT"],
               "kernel_blob":git("rev-parse","HEAD:src/replay_kernel.rs"),
+              "proof_blob":git("rev-parse","HEAD:src/replay_kernel_kani.rs"),
               "router_blob":git("rev-parse","HEAD:src/replay_window.rs"),
               "fuzz_blob":git("rev-parse","HEAD:fuzz/fuzz_targets/fuzz_replay_window.rs"),
               "workflow_blob":git("rev-parse","HEAD:.github/workflows/xen-kani-fv-002-replay-kernel-v2.yml"),
@@ -762,6 +764,7 @@ jobs:
                   and r.get("tree")==expected_tree
                   and r.get("parent")==os.environ["EXACT_PARENT"]
                   and r.get("kernel_blob")==os.environ["EXPECTED_KERNEL_BLOB"]
+                  and r.get("proof_blob")==os.environ["EXPECTED_PROOF_BLOB"]
                   and r.get("router_blob")==os.environ["EXPECTED_ROUTER_BLOB"]
                   and r.get("fuzz_blob")==os.environ["EXPECTED_FUZZ_BLOB"]
                   and r.get("workflow_blob")==expected_workflow_blob
@@ -809,6 +812,7 @@ jobs:
                   hr.get("head")!=os.environ["REQUESTED_HEAD"]
                   or hr.get("parent")!=os.environ["EXACT_PARENT"]
                   or hr.get("kernel_blob")!=os.environ["EXPECTED_KERNEL_BLOB"]
+                  or hr.get("proof_blob")!=os.environ["EXPECTED_PROOF_BLOB"]
                   or hr.get("router_blob")!=os.environ["EXPECTED_ROUTER_BLOB"]
                   or hr.get("fuzz_blob")!=os.environ["EXPECTED_FUZZ_BLOB"]
                   or "kani-0.68.0" not in hr.get("kani_version","")
@@ -857,6 +861,7 @@ jobs:
               "expected_tree":expected_tree,
               "expected_parent":os.environ["EXACT_PARENT"],
               "expected_kernel_blob":os.environ["EXPECTED_KERNEL_BLOB"],
+              "expected_proof_blob":os.environ["EXPECTED_PROOF_BLOB"],
               "expected_router_blob":os.environ["EXPECTED_ROUTER_BLOB"],
               "expected_fuzz_blob":os.environ["EXPECTED_FUZZ_BLOB"],
               "expected_workflow_blob":expected_workflow_blob,
