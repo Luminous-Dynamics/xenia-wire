@@ -392,5 +392,4 @@ mod tests {
         assert!(!w.accept(SRC, 0x10, EPOCH, u64::MAX));
         assert!(!w.accept(SRC, 0x10, EPOCH, u64::MAX - 1));
     }
-
 }
