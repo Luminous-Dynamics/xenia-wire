@@ -42,7 +42,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout exact subject
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v5.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
@@ -250,7 +250,7 @@ jobs:
 
       - name: Retain preflight evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: xen-kani-fv-002-preflight-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
@@ -272,7 +272,7 @@ jobs:
     timeout-minutes: 120
     steps:
       - name: Checkout exact subject
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v5.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
@@ -489,7 +489,7 @@ jobs:
 
       - name: Retain clean evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: xen-kani-fv-002-clean-${{ github.event.pull_request.head.sha || github.sha }}
           path: /tmp/clean-evidence
@@ -503,7 +503,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout exact subject
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v5.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
@@ -669,7 +669,7 @@ jobs:
 
       - name: Retain hostile evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: xen-kani-fv-002-hostile-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
@@ -691,7 +691,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout exact subject
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v5.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
@@ -896,7 +896,7 @@ jobs:
 
       - name: Retain canonical receipt
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: xen-kani-fv-002-admission-${{ github.event.pull_request.head.sha || github.sha }}
           path: /tmp/canonical-receipt.json
