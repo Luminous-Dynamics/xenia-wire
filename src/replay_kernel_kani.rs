@@ -7,7 +7,7 @@
 //! not alter the production subject blob. This module is compiled only under
 //! Kani and exercises the crate-private production transition API.
 
-use crate::replay_kernel::{transition, ReplayState};
+use crate::replay_kernel::{ReplayState, transition};
 
 const WORD_BITS: u32 = u64::BITS;
 
