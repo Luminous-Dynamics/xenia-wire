@@ -28,7 +28,17 @@ fn kernel_duplicate_rejected() {
     let mut state = ReplayState::new();
     let seq: u64 = kani::any();
     assert!(transition(&mut state, 64, seq));
+
+    let highest_before = state.highest;
+    let initialized_before = state.initialized;
+    let bitmap_before = state.bitmap;
+
     assert!(!transition(&mut state, 64, seq));
+    assert!(state.highest == highest_before);
+    assert!(state.initialized == initialized_before);
+    for i in 0..state.bitmap.len() {
+        assert!(state.bitmap[i] == bitmap_before[i]);
+    }
 }
 
 #[kani::proof]
@@ -50,7 +60,16 @@ fn kernel_first_sequence_initializes_exactly() {
 fn kernel_stale_boundary_is_rejected() {
     let mut state = ReplayState::new();
     assert!(transition(&mut state, 64, 100));
+
+    let highest_before = state.highest;
+    let bitmap_before = state.bitmap;
+
     assert!(!transition(&mut state, 64, 36));
+    assert!(state.highest == highest_before);
+    for i in 0..state.bitmap.len() {
+        assert!(state.bitmap[i] == bitmap_before[i]);
+    }
+
     assert!(transition(&mut state, 64, 37));
 }
 
@@ -133,17 +152,32 @@ fn kernel_max_width_near_window_shift_preserves_history_boundary() {
 #[kani::unwind(20)]
 fn kernel_symbolic_shift_preserves_or_discards_history_exactly() {
     let mut state = ReplayState::new();
-    assert!(transition(&mut state, 1024, 1000));
-    assert!(transition(&mut state, 1024, 999)); // mark offset 1
+    assert!(transition(&mut state, 1024, 5000));
+    assert!(transition(&mut state, 1024, 4999)); // mark offset 1
+    assert!(transition(&mut state, 1024, 3977)); // mark offset 1023
 
     let delta: u64 = kani::any();
     kani::assume(delta > 0);
     kani::assume(delta < 1024);
 
-    assert!(transition(&mut state, 1024, 1000 + delta));
-    assert!(state.highest == 1000 + delta);
+    assert!(transition(&mut state, 1024, 5000 + delta));
+    assert!(state.highest == 5000 + delta);
 
-    assert!(!transition(&mut state, 1024, 999));
+    // The old offset-1023 bit always falls outside the 1024-bit window.
+    assert!(state.bitmap[15] & (1u64 << 63) == 0);
+
+    // The old offset-1 bit moves to offset 1 + delta and is retained until
+    // the exact 1023-bit shift, where it becomes offset 1024 and is discarded.
+    let moved_offset = 1 + delta;
+    if moved_offset < 1024 {
+        let word_idx = (moved_offset / WORD_BITS as u64) as usize;
+        let bit_idx = (moved_offset % WORD_BITS as u64) as u32;
+        assert!(state.bitmap[word_idx] & (1u64 << bit_idx) != 0);
+    } else {
+        assert!(state.bitmap[15] & (1u64 << 63) == 0);
+    }
+
+    assert!(!transition(&mut state, 1024, 4999));
 }
 
 #[kani::proof]
