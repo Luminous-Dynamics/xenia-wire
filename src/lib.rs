@@ -99,6 +99,9 @@
 mod error;
 pub mod payload_types;
 mod replay_kernel;
+#[cfg(kani)]
+#[path = "replay_kernel_kani.rs"]
+mod replay_kernel_kani;
 mod replay_window;
 mod session;
 mod wire;
