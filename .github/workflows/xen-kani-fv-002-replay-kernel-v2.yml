@@ -237,7 +237,7 @@ jobs:
             : > /tmp/generated-cargo-lock.sha256
           fi
           cat /tmp/rust-build.log
-          exit 0
+          exit "$status"
 
       - name: Retain preflight evidence
         if: always()
