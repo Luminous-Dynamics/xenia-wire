@@ -144,7 +144,7 @@ use crate::replay_kernel::{transition, ReplayState, MAX_BITMAP_WORDS, WORD_BITS}
         assert!(transition(&mut state, 1024, 1000 + delta));
         assert!(state.highest == 1000 + delta);
 
-        if delta < 1023 {
+        if delta <= 1023 {
             assert!(!transition(&mut state, 1024, 999));
         } else {
             assert!(transition(&mut state, 1024, 999));
