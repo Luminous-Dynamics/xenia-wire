@@ -386,6 +386,8 @@ jobs:
                   counts.append(int(pd.get(key) or 0))
           counts_sum=sum(counts) if counts else None
           total_properties=pd.get("total_properties") if isinstance(pd,dict) else None
+          property_unreachable=int(pd.get("unreachable") or 0) if isinstance(pd,dict) else None
+          property_reachable=(total_properties - property_unreachable) if total_properties is not None and property_unreachable is not None else None
 
           if (
               target is not None
@@ -444,6 +446,7 @@ jobs:
               "property_passed":pd.get("passed") if pd else None,
               "property_failed":pd.get("failed") if pd else None,
               "property_unreachable":pd.get("unreachable") if pd else None,
+              "property_reachable":property_reachable,
               "property_undetermined":pd.get("undetermined") if pd else None,
               "property_counts_sum":counts_sum,
               "structured_export_error":export_error,
@@ -767,7 +770,6 @@ jobs:
                   and r.get("verification_result_harness_ids",[])==[r.get("harness")]
                   and r.get("structured_check_total",0)>0
                   and all(str(s).upper()=="SUCCESS" for s in r.get("structured_check_statuses",[]))
-                  and r.get("property_failed")==0
                   and r.get("property_failed")==0
                   and r.get("property_undetermined")==0
                   and r.get("property_reachable",0)>0
