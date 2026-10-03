@@ -282,24 +282,19 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
+          import re
           from pathlib import Path
 
           kernel=Path("/tmp/xen-kani-trusted/src/replay_kernel.rs").read_text()
           proof=Path("/tmp/xen-kani-trusted/src/replay_kernel_kani.rs").read_text()
 
-          forbidden=(
-              "include!(",
-              "include_bytes!(",
-              "extern ",
-              "std::process",
-              "std::fs",
-              "proc_macro",
-              "unsafe ",
-          )
+          forbidden=("include!(", "include_bytes!(", "std::process", "std::fs", "proc_macro")
+          lexical_escape=re.compile(r"\\b(?:unsafe|extern)\\b|(?:asm|global_asm)!\\s*\\(")
 
           for name, source in (("replay_kernel.rs", kernel), ("replay_kernel_kani.rs", proof)):
               for token in forbidden:
                   assert token not in source, f"forbidden escape hatch in {name}: {token}"
+              assert lexical_escape.search(source) is None, f"forbidden language escape hatch in {name}"
 
           assert not Path("/tmp/xen-kani-trusted/build.rs").exists()
           assert not Path("/tmp/xen-kani-trusted/.cargo/config.toml").exists()
