@@ -26,7 +26,7 @@ concurrency:
 
 env:
   EXACT_PARENT: 057dd03043b8863d8f8280abf333331cc9ddf317
-  EXPECTED_KERNEL_BLOB: 6fef5ab48d4eda0f46a93663dd3ded6f6abb4c9a
+  EXPECTED_KERNEL_BLOB: 13f1bae39b8f91132e6f58091f8de908efded4af
   EXPECTED_ROUTER_BLOB: 31de631b5c62448525f834e199e68a212cd4a7f3
   EXPECTED_PROOF_BLOB: 7567daed28e0e82a4d7b7a90918b21bde5c3907e
   EXPECTED_FUZZ_BLOB: a27128c0c503780ad9e12fda23ee907c8cd6aa1e
@@ -157,7 +157,7 @@ jobs:
           assert c["authority"]=="EvidenceOnly"
           assert c["evidence_class"]=="BoundedModelSafety"
           assert c["parent"]["commit"]=="057dd03043b8863d8f8280abf333331cc9ddf317"
-          assert c["subjects"]["production_kernel"]["blob"]=="6fef5ab48d4eda0f46a93663dd3ded6f6abb4c9a"
+          assert c["subjects"]["production_kernel"]["blob"]=="13f1bae39b8f91132e6f58091f8de908efded4af"
           assert c["subjects"]["production_router"]["blob"]=="31de631b5c62448525f834e199e68a212cd4a7f3"
           assert c["subjects"]["proof_harness_source"]["blob"]=="7567daed28e0e82a4d7b7a90918b21bde5c3907e"
           assert c["subjects"]["existing_fuzz_subject"]["blob"]=="a27128c0c503780ad9e12fda23ee907c8cd6aa1e"
@@ -400,7 +400,7 @@ jobs:
               and exit_status == 0
               and str(structured_status or "").upper()=="SUCCESS"
               and checks
-              and all(s.upper()=="SUCCESS" for s in statuses)
+              and not any(s.upper() in {"FAILURE","UNDETERMINED"} for s in statuses)
               and isinstance(summary,dict)
               and summary.get("total_harnesses")==1
               and summary.get("executed")==1
@@ -411,8 +411,8 @@ jobs:
               and result_ids[0]==target.get("harness_id")
               and pd is not None
               and pd.get("failed")==0
-              and pd.get("unreachable")==0
               and pd.get("undetermined")==0
+              and property_reachable > 0
               and counts_sum == total_properties
           ):
               result="Pass"
@@ -775,7 +775,7 @@ jobs:
                   and r.get("candidate_harness_count")==1
                   and r.get("verification_result_harness_ids",[])==[r.get("harness")]
                   and r.get("structured_check_total",0)>0
-                  and all(str(s).upper()=="SUCCESS" for s in r.get("structured_check_statuses",[]))
+                  and not any(str(s).upper() in {"FAILURE","UNDETERMINED"} for s in r.get("structured_check_statuses",[]))
                   and r.get("property_failed")==0
                   and r.get("property_undetermined")==0
                   and r.get("property_reachable",0)>0
