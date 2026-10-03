@@ -39,7 +39,6 @@ jobs:
       TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
       TRIGGER_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
       TRIGGER_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
-      GITHUB_TOKEN: ${{ github.token }}
     steps:
       - name: Prepare trusted verifier workspace
         shell: bash
@@ -55,6 +54,8 @@ jobs:
 
       - name: Verify triggering workflow identity and provenance
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/actions/runs/$TRIGGER_RUN_ID"             -o /tmp/trigger-run.json
@@ -78,6 +79,8 @@ jobs:
 
       - name: Verify triggering PR identity
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/pulls/$PR_NUMBER"             -o /tmp/pr.json
@@ -96,6 +99,8 @@ jobs:
       - name: Fetch PR replay kernel as data
         id: fetch-subject
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
@@ -124,6 +129,8 @@ jobs:
 
       - name: Verify PR scope independently
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/compare/$BASE_SHA...$HEAD_SHA"             -o /tmp/compare.json
@@ -153,6 +160,8 @@ jobs:
 
       - name: Verify complete tree delta independently
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
@@ -232,6 +241,33 @@ jobs:
           )
           PY
 
+      - name: Verify independent fetched source policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          kernel=Path("/tmp/xen-kani-trusted/src/replay_kernel.rs").read_text()
+          proof=Path("/tmp/xen-kani-trusted/src/replay_kernel_kani.rs").read_text()
+
+          forbidden=(
+              "include!(",
+              "include_bytes!(",
+              "extern ",
+              "std::process",
+              "std::fs",
+              "proc_macro",
+              "unsafe ",
+          )
+
+          for name, source in (("replay_kernel.rs", kernel), ("replay_kernel_kani.rs", proof)):
+              for token in forbidden:
+                  assert token not in source, f"forbidden escape hatch in {name}: {token}"
+
+          assert not Path("/tmp/xen-kani-trusted/build.rs").exists()
+          assert not Path("/tmp/xen-kani-trusted/.cargo/config.toml").exists()
+          PY
       - name: Verify independent harness manifest
         shell: bash
         run: |
