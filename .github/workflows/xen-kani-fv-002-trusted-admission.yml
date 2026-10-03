@@ -17,6 +17,7 @@ concurrency:
 env:
   BASE_SHA: 057dd03043b8863d8f8280abf333331cc9ddf317
   EXPECTED_HEAD_REPO: Luminous-Dynamics/xenia-wire
+  EXPECTED_TRUSTED_WORKFLOW_BLOB: ff1f0113a1e874a350705abcad6955f196ed9a4e
   EXPECTED_KERNEL_BLOB: d1bc8a1f8fc0883856d5073fa37b1658a7ea63ad
   EXPECTED_PROOF_BLOB: e119c18571de9691d6085dd0d91b131494b515f0
   EXPECTED_TRIGGER_WORKFLOW_ID: 373424313
@@ -52,6 +53,22 @@ jobs:
           edition = "2021"
           EOF
 
+      - name: Verify trusted workflow self-integrity
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "$EXPECTED_HEAD_REPO"
+          test "$GITHUB_REF" = "refs/heads/main"
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.raw+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/contents/.github/workflows/xen-kani-fv-002-trusted-admission.yml?ref=$GITHUB_SHA" \
+            -o /tmp/trusted-admission-workflow.yml
+          observed="$(git hash-object /tmp/trusted-admission-workflow.yml)"
+          printf 'trusted_workflow_blob observed=%s expected=%s\n' "$observed" "$EXPECTED_TRUSTED_WORKFLOW_BLOB"
+          test "$observed" = "$EXPECTED_TRUSTED_WORKFLOW_BLOB"
       - name: Verify triggering workflow identity and provenance
         shell: bash
         env:
@@ -602,6 +619,8 @@ jobs:
               "triggering_workflow_path":os.environ["EXPECTED_TRIGGER_WORKFLOW_PATH"],
               "triggering_branch":os.environ["HEAD_BRANCH"],
               "triggering_workflow_id":int(os.environ["EXPECTED_TRIGGER_WORKFLOW_ID"]),
+              "trusted_workflow_blob_expected":os.environ["EXPECTED_TRUSTED_WORKFLOW_BLOB"],
+              "trusted_workflow_self_binding":Path("/tmp/trusted-admission-workflow.yml").exists(),
               "pr_number":int(os.environ["PR_NUMBER"]),
               "head_sha":os.environ["HEAD_SHA"],
               "head_repo":os.environ["HEAD_REPO"],
