@@ -1,0 +1,118 @@
+{
+  "schema": "xenia.formal.kani-replay-kernel.v1",
+  "tracking_issue": 84,
+  "successor_revision": "XEN-KANI-FV-002",
+  "authority": "EvidenceOnly",
+  "evidence_class": "BoundedModelSafety",
+  "parent": {
+    "commit": "057dd03043b8863d8f8280abf333331cc9ddf317"
+  },
+  "subjects": {
+    "production_kernel": {
+      "path": "src/replay_kernel.rs",
+      "blob": "d1bc8a1f8fc0883856d5073fa37b1658a7ea63ad"
+    },
+    "production_router": {
+      "path": "src/replay_window.rs",
+      "blob": "9c0760698520ed4213d14240f0077c35f3e4159a"
+    },
+    "existing_fuzz_subject": {
+      "path": "fuzz/fuzz_targets/fuzz_replay_window.rs",
+      "blob": "a27128c0c503780ad9e12fda23ee907c8cd6aa1e"
+    },
+    "proof_harness_source": {
+      "path": "src/replay_kernel_kani.rs",
+      "blob": "e119c18571de9691d6085dd0d91b131494b515f0"
+    }
+  },
+  "kernel_boundary": {
+    "state": "highest + fixed [u64;16] bitmap + initialized",
+    "inputs": "window_bits + sequence",
+    "excludes": [
+      "HashMap routing",
+      "hashing",
+      "allocator-backed bitmap storage",
+      "AEAD",
+      "session lifecycle"
+    ],
+    "supported_window_bits": [
+      64,
+      128,
+      256,
+      512,
+      1024
+    ]
+  },
+  "harnesses": [
+    "kernel_duplicate_rejected",
+    "kernel_first_sequence_initializes_exactly",
+    "kernel_stale_boundary_is_rejected",
+    "kernel_higher_sequence_is_monotonic",
+    "kernel_cross_word_shift_preserves_in_window_history",
+    "kernel_symbolic_shift_preserves_or_discards_history_exactly",
+    "kernel_exact_window_jump_resets_history",
+    "kernel_max_width_near_window_shift_preserves_history_boundary",
+    "kernel_exact_word_shift_preserves_in_window_history",
+    "kernel_max_width_multiword_shift_preserves_history",
+    "kernel_supported_widths_do_not_panic",
+    "kernel_supported_width_boundary_is_exact",
+    "kernel_bitmap_tail_is_zero_for_supported_widths",
+    "kernel_u64_max_advance_preserves_previous_sequence"
+  ],
+  "hostile_control": {
+    "harness": "kernel_stale_boundary_is_rejected",
+    "mutation": "offset >= window_bits becomes offset > window_bits",
+    "required_structured_status": "Failure"
+  },
+  "kani": {
+    "version": "0.68.0",
+    "release_commit": null,
+    "release_commit_verified": false,
+    "expected_rust_toolchain": "nightly-2026-08-21",
+    "expected_rust_commit_hash": "8925ea358a0f265ca61026aadc7ecc506c545cbe",
+    "default_unwind": 20,
+    "structured_export_required": true
+  },
+  "qualification_result_vocabulary": [
+    "Pass",
+    "Fail",
+    "Blocked",
+    "EnvironmentFailure",
+    "BuildFailure"
+  ],
+  "trusted_admission": {
+    "status": "proposed",
+    "pull_request": 93,
+    "workflow": ".github/workflows/xen-kani-fv-002-trusted-admission.yml",
+    "authority_transfers_only_after_main_merge": true
+  },
+  "claim_ceiling": "ReplayWindowTransitionKernelBoundedModelSafetyWithinRecordedHarnessDomain",
+  "nonclaims": [
+    "unbounded replay-security theorem",
+    "AEAD cryptographic security",
+    "nonce uniqueness",
+    "session or key-management correctness",
+    "compiler or native-binary correctness",
+    "runtime authorization"
+  ],
+  "bootstrap": {
+    "default_branch_commit": "af7f82085cb56e2ec55a9832a1f09ebb6aa21705",
+    "purpose": "formal workflow installed on default branch before trusted admission activation"
+  },
+  "scope": {
+    "changed_files": [
+      ".github/workflows/xen-kani-fv-002-replay-kernel-v2.yml",
+      "Cargo.toml",
+      "docs/formal/xen-kani-fv-002-replay-kernel-v1.json",
+      "src/lib.rs",
+      "src/replay_kernel.rs",
+      "src/replay_kernel_kani.rs",
+      "src/replay_window.rs"
+    ]
+  },
+  "reachability_policy": {
+    "clean_harness_requirement": "each harness must expose at least one reachable structured property",
+    "admission_requirement": "property_reachable > 0 and property_counts_sum == property_total",
+    "vacuity_control": "UNREACHABLE is recorded but does not invalidate a harness when reachable structured properties exist; UNDETERMINED is non-qualifying"
+  }
+}
