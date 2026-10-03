@@ -17,7 +17,6 @@ pub(crate) struct ReplayState {
     pub(crate) bitmap: [u64; MAX_BITMAP_WORDS],
     pub(crate) initialized: bool,
 }
-
 impl ReplayState {
     pub(crate) fn new() -> Self {
         Self {
