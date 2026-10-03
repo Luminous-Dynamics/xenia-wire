@@ -143,11 +143,7 @@ fn kernel_symbolic_shift_preserves_or_discards_history_exactly() {
     assert!(transition(&mut state, 1024, 1000 + delta));
     assert!(state.highest == 1000 + delta);
 
-    if delta <= 1023 {
-        assert!(!transition(&mut state, 1024, 999));
-    } else {
-        assert!(transition(&mut state, 1024, 999));
-    }
+    assert!(!transition(&mut state, 1024, 999));
 }
 
 #[kani::proof]
