@@ -115,4 +115,3 @@ fn shift_bitmap_left(bitmap: &mut [u64; MAX_BITMAP_WORDS], words: usize, shift: 
         }
     }
 }
-
