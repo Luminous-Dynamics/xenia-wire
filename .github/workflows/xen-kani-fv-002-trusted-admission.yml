@@ -334,6 +334,8 @@ jobs:
       - name: Run all trusted clean proofs
         shell: bash
         working-directory: /tmp/xen-kani-trusted
+        env:
+          CARGO_NET_OFFLINE: "true"
         run: |
           set -euo pipefail
           cat > /tmp/harnesses.txt <<'EOF'
@@ -517,6 +519,8 @@ jobs:
       - name: Run trusted hostile control
         working-directory: /tmp/xen-kani-trusted
         shell: bash
+        env:
+          CARGO_NET_OFFLINE: "true"
         run: |
           set -euo pipefail
           cp src/replay_kernel.rs /tmp/replay_kernel.clean.rs
