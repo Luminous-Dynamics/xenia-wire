@@ -22,7 +22,7 @@
     },
     "proof_harness_source": {
       "path": "src/replay_kernel_kani.rs",
-      "blob": "fc21ec60cae9641d97b18b6683bceb95317e8ce8"
+      "blob": "7567daed28e0e82a4d7b7a90918b21bde5c3907e"
     }
   },
   "kernel_boundary": {

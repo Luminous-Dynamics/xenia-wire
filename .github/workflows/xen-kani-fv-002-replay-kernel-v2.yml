@@ -1,6 +1,6 @@
 name: XEN-KANI-FV-002 Replay Kernel
 
-# Fresh-run sentinel: default-branch bootstrap installed; current PR requalification pass.
+# Fresh-run sentinel: proof harness blob refreshed after module-boundary compile fix.
 
 on:
   pull_request:
@@ -28,7 +28,7 @@ env:
   EXACT_PARENT: 057dd03043b8863d8f8280abf333331cc9ddf317
   EXPECTED_KERNEL_BLOB: 6fef5ab48d4eda0f46a93663dd3ded6f6abb4c9a
   EXPECTED_ROUTER_BLOB: 31de631b5c62448525f834e199e68a212cd4a7f3
-  EXPECTED_PROOF_BLOB: fc21ec60cae9641d97b18b6683bceb95317e8ce8
+  EXPECTED_PROOF_BLOB: 7567daed28e0e82a4d7b7a90918b21bde5c3907e
   EXPECTED_FUZZ_BLOB: a27128c0c503780ad9e12fda23ee907c8cd6aa1e
   KANI_VERSION: 0.68.0
   EXPECTED_KANI_RUST_TOOLCHAIN: nightly-2026-08-21
