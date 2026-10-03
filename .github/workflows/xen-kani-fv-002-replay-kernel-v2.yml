@@ -29,6 +29,7 @@ env:
   EXPECTED_KERNEL_BLOB: d1bc8a1f8fc0883856d5073fa37b1658a7ea63ad
   EXPECTED_ROUTER_BLOB: 9c0760698520ed4213d14240f0077c35f3e4159a
   EXPECTED_PROOF_BLOB: cb17daae02f72d01aacacf904450c77f5bdd524a
+  EXPECTED_EVIDENCE_CONTRACT_BLOB: b7bf62283e39141c78cb00bcdaf7e2a68885b252
   EXPECTED_FUZZ_BLOB: a27128c0c503780ad9e12fda23ee907c8cd6aa1e
   KANI_VERSION: 0.68.0
   EXPECTED_KANI_RUST_TOOLCHAIN: nightly-2026-08-21
@@ -149,18 +150,26 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
+          import hashlib
           import json
+          import os
+          import subprocess
           from pathlib import Path
-          c=json.loads(Path("docs/formal/xen-kani-fv-002-replay-kernel-v1.json").read_text())
+          evidence_path=Path("docs/formal/xen-kani-fv-002-replay-kernel-v1.json")
+          c=json.loads(evidence_path.read_text())
+          actual_evidence_blob=subprocess.check_output(
+              ["git","hash-object",str(evidence_path)], text=True
+          ).strip()
+          assert actual_evidence_blob==os.environ["EXPECTED_EVIDENCE_CONTRACT_BLOB"]
           assert c["schema"]=="xenia.formal.kani-replay-kernel.v1"
           assert c["tracking_issue"]==84
           assert c["authority"]=="EvidenceOnly"
           assert c["evidence_class"]=="BoundedModelSafety"
           assert c["parent"]["commit"]=="057dd03043b8863d8f8280abf333331cc9ddf317"
-          assert c["subjects"]["production_kernel"]["blob"]=="d1bc8a1f8fc0883856d5073fa37b1658a7ea63ad"
-          assert c["subjects"]["production_router"]["blob"]=="9c0760698520ed4213d14240f0077c35f3e4159a"
-          assert c["subjects"]["proof_harness_source"]["blob"]=="cb17daae02f72d01aacacf904450c77f5bdd524a"
-          assert c["subjects"]["existing_fuzz_subject"]["blob"]=="a27128c0c503780ad9e12fda23ee907c8cd6aa1e"
+          assert c["subjects"]["production_kernel"]["blob"]==__import__("os").environ["EXPECTED_KERNEL_BLOB"]
+          assert c["subjects"]["production_router"]["blob"]==__import__("os").environ["EXPECTED_ROUTER_BLOB"]
+          assert c["subjects"]["proof_harness_source"]["blob"]==__import__("os").environ["EXPECTED_PROOF_BLOB"]
+          assert c["subjects"]["existing_fuzz_subject"]["blob"]==__import__("os").environ["EXPECTED_FUZZ_BLOB"]
           expected_harnesses={
               "kernel_duplicate_rejected",
               "kernel_first_sequence_initializes_exactly",
