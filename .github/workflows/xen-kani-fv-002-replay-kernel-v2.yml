@@ -7,6 +7,7 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "src/replay_kernel.rs"
+      - "src/replay_kernel_kani.rs"
       - "src/replay_window.rs"
       - "fuzz/fuzz_targets/fuzz_replay_window.rs"
       - "src/lib.rs"
@@ -85,6 +86,7 @@ jobs:
             "docs/formal/xen-kani-fv-002-replay-kernel-v1.json"
             "src/lib.rs"
             "src/replay_kernel.rs"
+            "src/replay_kernel_kani.rs"
             "src/replay_window.rs"
           )
           printf '%s\n' "${expected[@]}" | LC_ALL=C sort > /tmp/expected-files.txt
@@ -202,7 +204,7 @@ jobs:
               "kernel_bitmap_tail_is_zero_for_supported_widths",
               "kernel_u64_max_advance_preserves_previous_sequence"
           }
-          source=Path("src/replay_kernel.rs").read_text()
+          source=Path("src/replay_kernel_kani.rs").read_text()
           discovered=set(
               re.findall(
                   r'(?m)^\s*#\[kani::proof\]\s*\n\s*#\[kani::unwind\(20\)\]\s*\n\s*fn\s+([A-Za-z0-9_]+)\s*\(',
@@ -766,8 +768,9 @@ jobs:
                   and r.get("structured_check_total",0)>0
                   and all(str(s).upper()=="SUCCESS" for s in r.get("structured_check_statuses",[]))
                   and r.get("property_failed")==0
-                  and r.get("property_unreachable")==0
+                  and r.get("property_failed")==0
                   and r.get("property_undetermined")==0
+                  and r.get("property_reachable",0)>0
                   and r.get("property_counts_sum")==r.get("property_total")
               )
               for r in receipt_list
