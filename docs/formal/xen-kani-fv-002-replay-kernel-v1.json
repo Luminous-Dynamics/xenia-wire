@@ -10,11 +10,11 @@
   "subjects": {
     "production_kernel": {
       "path": "src/replay_kernel.rs",
-      "blob": "13f1bae39b8f91132e6f58091f8de908efded4af"
+      "blob": "f89937d99dc49c8d7efb7bfab6e6c09307bc6e99"
     },
     "production_router": {
       "path": "src/replay_window.rs",
-      "blob": "31de631b5c62448525f834e199e68a212cd4a7f3"
+      "blob": "9c0760698520ed4213d14240f0077c35f3e4159a"
     },
     "existing_fuzz_subject": {
       "path": "fuzz/fuzz_targets/fuzz_replay_window.rs",
@@ -22,7 +22,7 @@
     },
     "proof_harness_source": {
       "path": "src/replay_kernel_kani.rs",
-      "blob": "4565f8b0616d4f7d0c009f6ac2273136668e5fff"
+      "blob": "e119c18571de9691d6085dd0d91b131494b515f0"
     }
   },
   "kernel_boundary": {
