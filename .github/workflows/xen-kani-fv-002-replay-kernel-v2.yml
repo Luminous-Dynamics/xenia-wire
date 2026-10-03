@@ -28,6 +28,7 @@ env:
   EXACT_PARENT: 057dd03043b8863d8f8280abf333331cc9ddf317
   EXPECTED_KERNEL_BLOB: b6b1a9dc12f3824b5e52cd694222f6fefefd3558
   EXPECTED_ROUTER_BLOB: 31de631b5c62448525f834e199e68a212cd4a7f3
+  EXPECTED_PROOF_BLOB: fc21ec60cae9641d97b18b6683bceb95317e8ce8
   EXPECTED_FUZZ_BLOB: a27128c0c503780ad9e12fda23ee907c8cd6aa1e
   KANI_VERSION: 0.68.0
   EXPECTED_KANI_RUST_TOOLCHAIN: nightly-2026-08-21
@@ -64,16 +65,19 @@ jobs:
           }
           actual_kernel="$(git rev-parse "$REQUESTED_HEAD:src/replay_kernel.rs")"
           actual_router="$(git rev-parse "$REQUESTED_HEAD:src/replay_window.rs")"
+          actual_proof="$(git rev-parse "$REQUESTED_HEAD:src/replay_kernel_kani.rs")"
           actual_fuzz="$(git rev-parse "$REQUESTED_HEAD:fuzz/fuzz_targets/fuzz_replay_window.rs")"
           {
             printf 'kernel actual=%s expected=%s\\n' "$actual_kernel" "$EXPECTED_KERNEL_BLOB"
             printf 'router actual=%s expected=%s\\n' "$actual_router" "$EXPECTED_ROUTER_BLOB"
+            printf 'proof actual=%s expected=%s\\n' "$actual_proof" "$EXPECTED_PROOF_BLOB"
             printf 'fuzz actual=%s expected=%s\\n' "$actual_fuzz" "$EXPECTED_FUZZ_BLOB"
           } | tee -a /tmp/scope-assertions.txt
           check "head" test "$(git rev-parse HEAD)" = "$REQUESTED_HEAD"
           check "lineage" test "$(git merge-base "$EXACT_PARENT" HEAD)" = "$EXACT_PARENT"
           check "kernel-blob" test "$actual_kernel" = "$EXPECTED_KERNEL_BLOB"
           check "router-blob" test "$actual_router" = "$EXPECTED_ROUTER_BLOB"
+          check "proof-blob" test "$actual_proof" = "$EXPECTED_PROOF_BLOB"
           check "fuzz-blob" test "$actual_fuzz" = "$EXPECTED_FUZZ_BLOB"
           if [ "$status" -ne 0 ]; then
             echo "scope identity preconditions failed" >&2
@@ -155,6 +159,7 @@ jobs:
           assert c["parent"]["commit"]=="057dd03043b8863d8f8280abf333331cc9ddf317"
           assert c["subjects"]["production_kernel"]["blob"]=="b6b1a9dc12f3824b5e52cd694222f6fefefd3558"
           assert c["subjects"]["production_router"]["blob"]=="31de631b5c62448525f834e199e68a212cd4a7f3"
+          assert c["subjects"]["proof_harness_source"]["blob"]=="fc21ec60cae9641d97b18b6683bceb95317e8ce8"
           assert c["subjects"]["existing_fuzz_subject"]["blob"]=="a27128c0c503780ad9e12fda23ee907c8cd6aa1e"
           expected_harnesses={
               "kernel_duplicate_rejected",
@@ -270,6 +275,7 @@ jobs:
           test "$(git rev-parse HEAD)" = "$REQUESTED_HEAD"
           test "$(git rev-parse HEAD:src/replay_kernel.rs)" = "$EXPECTED_KERNEL_BLOB"
           test "$(git rev-parse HEAD:src/replay_window.rs)" = "$EXPECTED_ROUTER_BLOB"
+          test "$(git rev-parse HEAD:src/replay_kernel_kani.rs)" = "$EXPECTED_PROOF_BLOB"
 
       - name: Install pinned Kani
         shell: bash
