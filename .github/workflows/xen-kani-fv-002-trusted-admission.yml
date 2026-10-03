@@ -145,6 +145,9 @@ jobs:
           observed={x["filename"] for x in d.get("files",[])}
           assert d["status"]=="ahead"
           assert d["base_commit"]["sha"]=="057dd03043b8863d8f8280abf333331cc9ddf317"
+          assert d["merge_base_commit"]["sha"]==os.environ["BASE_SHA"], (
+              f"trusted lineage mismatch: {d.get('merge_base_commit',{}).get('sha')}"
+          )
           assert observed==expected, f"trusted scope mismatch: {sorted(observed)}"
           PY
 
