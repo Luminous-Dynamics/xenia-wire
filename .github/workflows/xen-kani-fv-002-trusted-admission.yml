@@ -22,6 +22,8 @@ env:
   EXPECTED_EVIDENCE_CONTRACT_BLOB: ce3e1447cc6b9bd1f0fc361b4fb81c5fe1450b0b
   EXPECTED_TRIGGER_WORKFLOW_ID: 373424313
   EXPECTED_TRIGGER_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-replay-kernel-v2.yml
+  EXPECTED_TRIGGER_WORKFLOW_BLOB: 44ee053e9d60779b081986769e6ff69b0c262517
+  VERIFIER_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-trusted-admission.yml
   EXPECTED_TRIGGER_BRANCH: formal/xen-kani-fv-002-replay-kernel
   KANI_VERSION: 0.68.0
   EXPECTED_KANI_RUST_TOOLCHAIN: nightly-2026-08-21
@@ -53,6 +55,23 @@ jobs:
           edition = "2021"
           EOF
 
+      - name: Verify trusted verifier workflow identity
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/main"
+          curl --fail-with-body --silent --show-error \\
+            -H "Authorization: Bearer $GITHUB_TOKEN" \\
+            -H "Accept: application/vnd.github.raw+json" \\
+            "https://api.github.com/repos/$EXPECTED_HEAD_REPO/contents/$VERIFIER_WORKFLOW_PATH?ref=$GITHUB_SHA" \\
+            -o /tmp/trusted-verifier-workflow.yml
+          verifier_blob="$(git hash-object /tmp/trusted-verifier-workflow.yml)"
+          printf '%s\\n' "$verifier_blob" > /tmp/verifier-workflow.blob
+          printf 'verifier_commit=%s\\nverifier_workflow_blob=%s\\n' "$GITHUB_SHA" "$verifier_blob" | tee /tmp/verifier-workflow.txt
+          test -s /tmp/trusted-verifier-workflow.yml
+
       - name: Verify triggering workflow identity and provenance
         shell: bash
         env:
@@ -77,6 +96,22 @@ jobs:
           assert d["pull_requests"] and d["pull_requests"][0]["number"]==int(os.environ["PR_NUMBER"])
           assert d["conclusion"]==os.environ["TRIGGER_CONCLUSION"]
           PY
+
+      - name: Verify triggering workflow source identity
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error \\
+            -H "Authorization: Bearer $GITHUB_TOKEN" \\
+            -H "Accept: application/vnd.github.raw+json" \\
+            "https://api.github.com/repos/$HEAD_REPO/contents/$EXPECTED_TRIGGER_WORKFLOW_PATH?ref=$HEAD_SHA" \\
+            -o /tmp/trigger-workflow.yml
+          trigger_blob="$(git hash-object /tmp/trigger-workflow.yml)"
+          printf '%s\\n' "$trigger_blob" > /tmp/trigger-workflow.blob
+          test "$trigger_blob" = "$EXPECTED_TRIGGER_WORKFLOW_BLOB"
+          printf 'trigger_workflow_blob=%s\\n' "$trigger_blob" | tee /tmp/trigger-workflow.txt
 
       - name: Verify triggering PR identity
         shell: bash
@@ -110,11 +145,14 @@ jobs:
           curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github.raw+json"             "https://api.github.com/repos/$HEAD_REPO/contents/docs/formal/xen-kani-fv-002-replay-kernel-v1.json?ref=$HEAD_SHA"             -o /tmp/xen-kani-trusted/evidence.json
 
           cat > /tmp/xen-kani-trusted/src/lib.rs <<'EOF'
+          #![forbid(unsafe_code)]
           mod replay_kernel;
           #[cfg(kani)]
           #[path = "replay_kernel_kani.rs"]
           mod replay_kernel_kani;
           EOF
+          cargo generate-lockfile --offline
+          test -s /tmp/xen-kani-trusted/Cargo.lock
           printf '%s\n' "$HEAD_SHA" > /tmp/xen-kani-trusted/head.sha
           printf '%s\n' "$PR_NUMBER" > /tmp/xen-kani-trusted/pr.number
 
@@ -141,7 +179,7 @@ jobs:
           curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/compare/$BASE_SHA...$HEAD_SHA"             -o /tmp/compare.json
 
           python3 - <<'PY'
-          import json
+          import json, os
           from pathlib import Path
 
           d=json.loads(Path("/tmp/compare.json").read_text())
@@ -361,6 +399,24 @@ jobs:
               assert forbidden not in source, f"forbidden escape hatch present: {forbidden}"
           assert source.count("#[kani::proof]")==14
           assert not source.rstrip().endswith("#[kani::proof]")
+          PY
+
+      - name: Verify minimal trusted crate is locked and dependency-free
+        shell: bash
+        working-directory: /tmp/xen-kani-trusted
+        env:
+          CARGO_NET_OFFLINE: "true"
+        run: |
+          set -euo pipefail
+          cargo metadata --locked --offline --no-deps --format-version 1 > /tmp/trusted-metadata.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("/tmp/trusted-metadata.json").read_text())
+          packages=d.get("packages",[])
+          assert len(packages)==1
+          assert packages[0]["name"]=="xen_kani_trusted_subject"
+          assert packages[0].get("dependencies",[]) == []
           PY
 
       - name: Install pinned Kani
@@ -636,6 +692,10 @@ jobs:
 
           receipt={
               "schema":"xenia.formal.kani-replay-kernel.trusted-admission.v1",
+              "verifier_workflow_path":os.environ["VERIFIER_WORKFLOW_PATH"],
+              "verifier_workflow_commit":os.environ["GITHUB_SHA"],
+              "verifier_workflow_blob":read_optional("/tmp/verifier-workflow.blob"),
+              "trigger_workflow_blob":read_optional("/tmp/trigger-workflow.blob"),
               "github_run_id":int(os.environ["GITHUB_RUN_ID"]),
               "github_run_attempt":int(os.environ["GITHUB_RUN_ATTEMPT"]),
               "triggering_run_id":int(os.environ["TRIGGER_RUN_ID"]),
@@ -694,6 +754,10 @@ jobs:
           name: trusted-xen-kani-fv-002-${{ github.event.workflow_run.pull_requests[0].number }}-${{ github.event.workflow_run.head_sha }}
           path: |
             /tmp/trusted-subject.txt
+            /tmp/verifier-workflow.txt
+            /tmp/verifier-workflow.blob
+            /tmp/trigger-workflow.txt
+            /tmp/trigger-workflow.blob
             /tmp/trigger-run.json
             /tmp/base-tree-sha
             /tmp/head-tree-sha
