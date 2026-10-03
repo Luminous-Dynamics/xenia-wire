@@ -273,7 +273,7 @@ jobs:
           for forbidden in (
               "include!(",
               "include_bytes!(",
-              "extern "",
+              'extern "',
               "std::process",
               "std::fs",
               "proc_macro",
