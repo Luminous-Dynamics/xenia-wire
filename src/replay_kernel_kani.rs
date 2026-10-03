@@ -163,15 +163,28 @@ fn kernel_symbolic_shift_preserves_or_discards_history_exactly() {
     assert!(transition(&mut state, 1024, 5000 + delta));
     assert!(state.highest == 5000 + delta);
 
-    // The old highest and old offset-1 entries remain replay-protected
-    // after every in-window symbolic shift.
-    assert!(!transition(&mut state, 1024, 5000));
-    assert!(!transition(&mut state, 1024, 4999));
+    // After an in-window shift, the bitmap must contain exactly the new
+    // highest plus the two surviving prior entries:
+    //   old highest     -> offset delta
+    //   old offset 1    -> offset 1 + delta, while still in-window
+    // The old offset-1023 entry is always beyond offset 1023 and therefore
+    // must disappear from the fixed window.
+    let mut expected = [0u64; 16];
+    let new_word = (delta / WORD_BITS as u64) as usize;
+    let new_bit = (delta % WORD_BITS as u64) as u32;
+    expected[new_word] |= 1u64 << new_bit;
 
-    // The old offset-1023 entry always falls outside the 1024-bit window and
-    // is therefore admitted again as fresh state.
-    assert!(transition(&mut state, 1024, 3977));
-    assert!(!transition(&mut state, 1024, 3977));
+    let moved_offset = delta + 1;
+    if moved_offset < 1024 {
+        let word_idx = (moved_offset / WORD_BITS as u64) as usize;
+        let bit_idx = (moved_offset % WORD_BITS as u64) as u32;
+        expected[word_idx] |= 1u64 << bit_idx;
+    }
+
+    expected[0] |= 1;
+    for i in 0..state.bitmap.len() {
+        assert!(state.bitmap[i] == expected[i]);
+    }
 }
 
 #[kani::proof]
