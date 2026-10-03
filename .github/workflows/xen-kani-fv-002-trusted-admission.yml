@@ -288,8 +288,17 @@ jobs:
           kernel=Path("/tmp/xen-kani-trusted/src/replay_kernel.rs").read_text()
           proof=Path("/tmp/xen-kani-trusted/src/replay_kernel_kani.rs").read_text()
 
-          forbidden=("include!(", "include_bytes!(", "std::process", "std::fs", "proc_macro")
-          lexical_escape=re.compile(r"\\b(?:unsafe|extern)\\b|(?:asm|global_asm)!\\s*\\(")
+          forbidden=(
+              "include!(",
+              "include_bytes!(",
+              "std::process",
+              "std::fs",
+              "std::env",
+              "std::net",
+              "std::thread",
+              "proc_macro",
+          )
+          lexical_escape=re.compile(r"\\b(?:unsafe|extern)\\b|(?:asm|global_asm|env|option_env)!\\s*\\(")
 
           for name, source in (("replay_kernel.rs", kernel), ("replay_kernel_kani.rs", proof)):
               for token in forbidden:
@@ -343,6 +352,9 @@ jobs:
               'extern "',
               "std::process",
               "std::fs",
+              "std::env",
+              "std::net",
+              "std::thread",
               "proc_macro",
               "unsafe",
           ):
