@@ -501,6 +501,8 @@ jobs:
           printf '%s\n' "$status" > /tmp/hostile.exit
           cat /tmp/hostile.log
           test "$status" -ne 0
+          git hash-object src/replay_kernel.rs > /tmp/hostile-mutant-kernel.blob
+          test "$(cat /tmp/hostile-mutant-kernel.blob)" != "$(cat /tmp/xen-kani-trusted/kernel.blob)"
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -521,8 +523,17 @@ jobs:
           failed=[x for x in t.get("checks",[]) if isinstance(x,dict) and str(x.get("status","")).upper()=="FAILURE"]
           assert failed
           PY
-          mv /tmp/replay_kernel.clean.rs src/replay_kernel.rs
-          test "$(git hash-object src/replay_kernel.rs)" = "$(cat /tmp/xen-kani-trusted/kernel.blob)"
+
+      - name: Restore trusted clean source identity
+        if: always()
+        working-directory: /tmp/xen-kani-trusted
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f /tmp/replay_kernel.clean.rs
+          cp /tmp/replay_kernel.clean.rs src/replay_kernel.rs
+          git hash-object src/replay_kernel.rs > /tmp/hostile-restored-kernel.blob
+          test "$(cat /tmp/hostile-restored-kernel.blob)" = "$(cat /tmp/xen-kani-trusted/kernel.blob)"
 
       - name: Retain trusted receipt
         if: always()
@@ -578,6 +589,13 @@ jobs:
               "clean_harness_count":14,
               "hostile_control_exit_status":int(read_optional("/tmp/hostile.exit", "125")),
               "hostile_control_structured_failure":Path("/tmp/hostile.json").exists(),
+              "hostile_mutant_kernel_blob":read_optional("/tmp/hostile-mutant-kernel.blob"),
+              "hostile_restored_kernel_blob":read_optional("/tmp/hostile-restored-kernel.blob"),
+              "hostile_restored_binding":(
+                  read_optional("/tmp/hostile-restored-kernel.blob")==read_optional("/tmp/xen-kani-trusted/kernel.blob")
+                  if Path("/tmp/hostile-restored-kernel.blob").exists() and Path("/tmp/xen-kani-trusted/kernel.blob").exists()
+                  else False
+              ),
           }
           Path("/tmp/trusted-admission.json").write_text(json.dumps(receipt,indent=2,sort_keys=True)+"\n")
           print(Path("/tmp/trusted-admission.json").read_text())
@@ -604,5 +622,7 @@ jobs:
             /tmp/hostile.json
             /tmp/hostile.log
             /tmp/hostile.exit
+            /tmp/hostile-mutant-kernel.blob
+            /tmp/hostile-restored-kernel.blob
           if-no-files-found: warn
           retention-days: 30
