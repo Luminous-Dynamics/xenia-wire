@@ -26,7 +26,7 @@ concurrency:
 
 env:
   EXACT_PARENT: 057dd03043b8863d8f8280abf333331cc9ddf317
-  EXPECTED_KERNEL_BLOB: f89937d99dc49c8d7efb7bfab6e6c09307bc6e99
+  EXPECTED_KERNEL_BLOB: d1bc8a1f8fc0883856d5073fa37b1658a7ea63ad
   EXPECTED_ROUTER_BLOB: 9c0760698520ed4213d14240f0077c35f3e4159a
   EXPECTED_PROOF_BLOB: e119c18571de9691d6085dd0d91b131494b515f0
   EXPECTED_FUZZ_BLOB: a27128c0c503780ad9e12fda23ee907c8cd6aa1e
@@ -157,7 +157,7 @@ jobs:
           assert c["authority"]=="EvidenceOnly"
           assert c["evidence_class"]=="BoundedModelSafety"
           assert c["parent"]["commit"]=="057dd03043b8863d8f8280abf333331cc9ddf317"
-          assert c["subjects"]["production_kernel"]["blob"]=="f89937d99dc49c8d7efb7bfab6e6c09307bc6e99"
+          assert c["subjects"]["production_kernel"]["blob"]=="d1bc8a1f8fc0883856d5073fa37b1658a7ea63ad"
           assert c["subjects"]["production_router"]["blob"]=="9c0760698520ed4213d14240f0077c35f3e4159a"
           assert c["subjects"]["proof_harness_source"]["blob"]=="e119c18571de9691d6085dd0d91b131494b515f0"
           assert c["subjects"]["existing_fuzz_subject"]["blob"]=="a27128c0c503780ad9e12fda23ee907c8cd6aa1e"
