@@ -36,8 +36,7 @@ impl ReplayState {
 ///
 /// This is the production transition function used by ReplayWindow::accept.
 pub(crate) fn transition(state: &mut ReplayState, window_bits: u32, seq: u64) -> bool {
-    #[allow(clippy::manual_is_multiple_of)]
-    debug_assert!((64..=1024).contains(&window_bits) && window_bits % WORD_BITS == 0);
+    debug_assert!((64..=1024).contains(&window_bits) && window_bits.is_multiple_of(WORD_BITS));
     let words = (window_bits / WORD_BITS) as usize;
 
     if !state.initialized {
