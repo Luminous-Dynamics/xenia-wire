@@ -375,6 +375,109 @@ jobs:
           PY
           done < /tmp/harnesses.txt
 
+      - name: Build trusted clean proof manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, sys
+          from pathlib import Path
+
+          expected=[
+              "kernel_duplicate_rejected",
+              "kernel_first_sequence_initializes_exactly",
+              "kernel_stale_boundary_is_rejected",
+              "kernel_higher_sequence_is_monotonic",
+              "kernel_cross_word_shift_preserves_in_window_history",
+              "kernel_exact_word_shift_preserves_in_window_history",
+              "kernel_max_width_multiword_shift_preserves_history",
+              "kernel_exact_window_jump_resets_history",
+              "kernel_max_width_near_window_shift_preserves_history_boundary",
+              "kernel_symbolic_shift_preserves_or_discards_history_exactly",
+              "kernel_supported_widths_do_not_panic",
+              "kernel_supported_width_boundary_is_exact",
+              "kernel_bitmap_tail_is_zero_for_supported_widths",
+              "kernel_u64_max_advance_preserves_previous_sequence",
+          ]
+
+          def digest(path):
+              return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+          manifest=[]
+          for harness in expected:
+              json_path=Path(f"/tmp/{harness}.json")
+              log_path=Path(f"/tmp/{harness}.log")
+              exit_path=Path(f"/tmp/{harness}.exit")
+              assert json_path.is_file() and json_path.stat().st_size > 0, harness
+              assert log_path.is_file() and log_path.stat().st_size > 0, harness
+              assert exit_path.is_file(), harness
+              assert exit_path.read_text().strip()=="0", harness
+
+              d=json.loads(json_path.read_text())
+              vr=d.get("verification_results",{})
+              results=vr.get("results",[]) if isinstance(vr,dict) else []
+              candidates=[
+                  x for x in results
+                  if isinstance(x,dict)
+                  and (
+                      x.get("harness_id")==harness
+                      or str(x.get("harness_id","")).endswith("::"+harness)
+                  )
+              ]
+              assert len(candidates)==1, f"candidate count for {harness}: {len(candidates)}"
+              target=candidates[0]
+              assert str(target.get("status","")).upper()=="SUCCESS", harness
+              checks=target.get("checks",[])
+              assert checks, harness
+              assert all(
+                  str(x.get("status","")).upper()=="SUCCESS"
+                  for x in checks if isinstance(x,dict)
+              ), harness
+
+              pd=[
+                  x.get("property_details",{})
+                  for x in d.get("property_details",[])
+                  if isinstance(x,dict)
+                  and (
+                      x.get("harness_id")==harness
+                      or str(x.get("harness_id","")).endswith("::"+harness)
+                  )
+              ]
+              assert len(pd)==1, harness
+              detail=pd[0]
+              assert detail.get("failed")==0, harness
+              assert detail.get("unreachable")==0, harness
+              assert detail.get("undetermined")==0, harness
+              counts=sum(int(detail.get(k) or 0) for k in (
+                  "passed","failed","unreachable","undetermined",
+                  "solver_error","satisfied","unsatisfiable","covered","uncovered"
+              ))
+              assert counts==detail.get("total_properties"), harness
+
+              manifest.append({
+                  "harness":harness,
+                  "exit_status":0,
+                  "structured_status":"SUCCESS",
+                  "checks":len(checks),
+                  "property_total":detail.get("total_properties"),
+                  "property_failed":detail.get("failed"),
+                  "property_unreachable":detail.get("unreachable"),
+                  "property_undetermined":detail.get("undetermined"),
+                  "json_sha256":digest(json_path),
+                  "log_sha256":digest(log_path),
+              })
+
+          assert [x["harness"] for x in manifest]==expected
+          out=Path("/tmp/trusted-clean-manifest.json")
+          out.write_text(json.dumps({
+              "schema":"xenia.formal.kani-replay-kernel.trusted-clean-manifest.v1",
+              "harness_count":len(manifest),
+              "all_success":True,
+              "results":manifest,
+          },indent=2,sort_keys=True)+"\\n")
+          print(out.read_text())
+          PY
+
       - name: Run trusted hostile control
         working-directory: /tmp/xen-kani-trusted
         shell: bash
@@ -457,6 +560,15 @@ jobs:
               "kernel_blob":read_optional("/tmp/xen-kani-trusted/kernel.blob"),
               "kernel_blob_expected":os.environ["EXPECTED_KERNEL_BLOB"],
               "kernel_frozen_binding":read_optional("/tmp/xen-kani-trusted/kernel.blob")==os.environ["EXPECTED_KERNEL_BLOB"],
+              "proof_blob":read_optional("/tmp/xen-kani-trusted/proof.blob"),
+              "proof_blob_expected":os.environ["EXPECTED_PROOF_BLOB"],
+              "proof_frozen_binding":read_optional("/tmp/xen-kani-trusted/proof.blob")==os.environ["EXPECTED_PROOF_BLOB"],
+              "clean_proof_manifest_sha256":(
+                  __import__("hashlib").sha256(
+                      Path("/tmp/trusted-clean-manifest.json").read_bytes()
+                  ).hexdigest()
+                  if Path("/tmp/trusted-clean-manifest.json").exists() else None
+              ),
               "base_tree_sha":Path("/tmp/base-tree-sha").read_text().strip() if Path("/tmp/base-tree-sha").exists() else None,
               "head_tree_sha":Path("/tmp/head-tree-sha").read_text().strip() if Path("/tmp/head-tree-sha").exists() else None,
               "complete_tree_delta_verified":Path("/tmp/trusted-tree-delta.txt").exists(),
@@ -482,6 +594,8 @@ jobs:
             /tmp/base-tree-sha
             /tmp/head-tree-sha
             /tmp/trusted-tree-delta.txt
+            /tmp/trusted-clean-manifest.json
+            /tmp/kernel_*.json
             /tmp/xen-kani-trusted/kernel.blob
             /tmp/xen-kani-trusted/proof.blob
             /tmp/kani-version.txt
