@@ -18,8 +18,8 @@ env:
   BASE_SHA: 057dd03043b8863d8f8280abf333331cc9ddf317
   EXPECTED_HEAD_REPO: Luminous-Dynamics/xenia-wire
   EXPECTED_KERNEL_BLOB: d1bc8a1f8fc0883856d5073fa37b1658a7ea63ad
-  EXPECTED_PROOF_BLOB: 56a67235f493ab75df9ad3508dbd560ac2992bc2
-  EXPECTED_EVIDENCE_CONTRACT_BLOB: 0d0d1413e91c7fa872c39eb0ea237c89659f373e
+  EXPECTED_PROOF_BLOB: 4e3f0f584ca189baafe230da66b4bdeac87a7515
+  EXPECTED_EVIDENCE_CONTRACT_BLOB: ce3e1447cc6b9bd1f0fc361b4fb81c5fe1450b0b
   EXPECTED_TRIGGER_WORKFLOW_ID: 373424313
   EXPECTED_TRIGGER_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-replay-kernel-v2.yml
   EXPECTED_TRIGGER_BRANCH: formal/xen-kani-fv-002-replay-kernel
@@ -264,7 +264,7 @@ jobs:
           assert c["parent"]["commit"]=="057dd03043b8863d8f8280abf333331cc9ddf317"
           assert c["subjects"]["production_kernel"]["blob"]=="d1bc8a1f8fc0883856d5073fa37b1658a7ea63ad"
           assert c["subjects"]["production_router"]["blob"]=="9c0760698520ed4213d14240f0077c35f3e4159a"
-          assert c["subjects"]["proof_harness_source"]["blob"]=="56a67235f493ab75df9ad3508dbd560ac2992bc2"
+          assert c["subjects"]["proof_harness_source"]["blob"]=="4e3f0f584ca189baafe230da66b4bdeac87a7515"
           assert c["subjects"]["existing_fuzz_subject"]["blob"]=="a27128c0c503780ad9e12fda23ee907c8cd6aa1e"
           assert c["claim_ceiling"]=="ReplayWindowTransitionKernelBoundedModelSafetyWithinRecordedHarnessDomain"
           assert "unbounded replay-security theorem" in c["nonclaims"]
