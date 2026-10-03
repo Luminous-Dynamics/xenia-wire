@@ -100,8 +100,14 @@ jobs:
           set -euo pipefail
 
           curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github.raw+json"             "https://api.github.com/repos/$HEAD_REPO/contents/src/replay_kernel.rs?ref=$HEAD_SHA"             -o /tmp/xen-kani-trusted/src/replay_kernel.rs
+          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github.raw+json"             "https://api.github.com/repos/$HEAD_REPO/contents/src/replay_kernel_kani.rs?ref=$HEAD_SHA"             -o /tmp/xen-kani-trusted/src/replay_kernel_kani.rs
 
-          cp /tmp/xen-kani-trusted/src/replay_kernel.rs /tmp/xen-kani-trusted/src/lib.rs
+          cat > /tmp/xen-kani-trusted/src/lib.rs <<'EOF'
+          mod replay_kernel;
+          #[cfg(kani)]
+          #[path = "replay_kernel_kani.rs"]
+          mod replay_kernel_kani;
+          EOF
           printf '%s\n' "$HEAD_SHA" > /tmp/xen-kani-trusted/head.sha
           printf '%s\n' "$PR_NUMBER" > /tmp/xen-kani-trusted/pr.number
 
