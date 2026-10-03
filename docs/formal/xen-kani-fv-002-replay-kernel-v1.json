@@ -109,5 +109,10 @@
       "src/replay_kernel_kani.rs",
       "src/replay_window.rs"
     ]
+  },
+  "reachability_policy": {
+    "clean_harness_requirement": "each harness must expose at least one reachable structured property",
+    "admission_requirement": "property_reachable > 0 and property_counts_sum == property_total",
+    "vacuity_control": "UNREACHABLE and UNDETERMINED are non-qualifying"
   }
 }
