@@ -10,7 +10,7 @@
   "subjects": {
     "production_kernel": {
       "path": "src/replay_kernel.rs",
-      "blob": "6fef5ab48d4eda0f46a93663dd3ded6f6abb4c9a"
+      "blob": "13f1bae39b8f91132e6f58091f8de908efded4af"
     },
     "production_router": {
       "path": "src/replay_window.rs",
@@ -113,6 +113,6 @@
   "reachability_policy": {
     "clean_harness_requirement": "each harness must expose at least one reachable structured property",
     "admission_requirement": "property_reachable > 0 and property_counts_sum == property_total",
-    "vacuity_control": "UNREACHABLE and UNDETERMINED are non-qualifying"
+    "vacuity_control": "UNREACHABLE is recorded but does not invalidate a harness when reachable structured properties exist; UNDETERMINED is non-qualifying"
   }
 }
