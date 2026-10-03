@@ -159,7 +159,7 @@ jobs:
           assert c["parent"]["commit"]=="057dd03043b8863d8f8280abf333331cc9ddf317"
           assert c["subjects"]["production_kernel"]["blob"]=="d1bc8a1f8fc0883856d5073fa37b1658a7ea63ad"
           assert c["subjects"]["production_router"]["blob"]=="9c0760698520ed4213d14240f0077c35f3e4159a"
-          assert c["subjects"]["proof_harness_source"]["blob"]=="e119c18571de9691d6085dd0d91b131494b515f0"
+          assert c["subjects"]["proof_harness_source"]["blob"]=="cb17daae02f72d01aacacf904450c77f5bdd524a"
           assert c["subjects"]["existing_fuzz_subject"]["blob"]=="a27128c0c503780ad9e12fda23ee907c8cd6aa1e"
           expected_harnesses={
               "kernel_duplicate_rejected",
