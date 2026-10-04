@@ -134,6 +134,8 @@ jobs:
               'assert run["conclusion"]=="success"',
               'assert run["head_sha"]==os.environ["HEAD_SHA"]',
               'assert run["head_commit"]["id"]==os.environ["HEAD_SHA"]',
+              'assert verification["verified"] is True',
+              'Kani release commit signature verified by GitHub',
               'assert pull_requests[0]["base"]["ref"]=="main"',
               'assert pull_requests[0]["base"]["repo"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]',
           ):
@@ -1199,6 +1201,23 @@ jobs:
           git ls-remote https://github.com/model-checking/kani.git "refs/tags/$EXPECTED_KANI_RELEASE_TAG^{}" > /tmp/kani-release-ref.txt
           release_commit="$(cut -f1 /tmp/kani-release-ref.txt)"
           test "$release_commit" = "$EXPECTED_KANI_RELEASE_COMMIT_SHA"
+          curl --fail-with-body --silent --show-error \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/model-checking/kani/commits/$EXPECTED_KANI_RELEASE_COMMIT_SHA" \
+            -o /tmp/kani-release-commit.json
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          d=json.loads(Path("/tmp/kani-release-commit.json").read_text())
+          assert d["sha"]==os.environ["EXPECTED_KANI_RELEASE_COMMIT_SHA"]
+          verification=d["commit"]["verification"]
+          assert verification["verified"] is True
+          assert verification["reason"]=="valid"
+          assert verification.get("signature")
+          assert verification.get("payload")
+          print("Kani release commit signature verified by GitHub")
+          PY
           cargo install --locked kani-verifier --version "$KANI_VERSION"
           crate_path="$(find "${CARGO_HOME:-$HOME/.cargo}/registry/cache" -type f -name "kani-verifier-0.68.0.crate" -print -quit)"
           test -n "$crate_path"
@@ -1842,6 +1861,10 @@ jobs:
               and ("CBMC "+os.environ["EXPECTED_KANI_CBMC_VERSION"]) in read_optional("/tmp/kani-version.txt","")
               and Path("/tmp/kani-release-ref.txt").exists()
               and read_optional("/tmp/kani-release-ref.txt").split()[0]==os.environ["EXPECTED_KANI_RELEASE_COMMIT_SHA"]
+              and Path("/tmp/kani-release-commit.json").exists()
+              and json.loads(Path("/tmp/kani-release-commit.json").read_text())["sha"]==os.environ["EXPECTED_KANI_RELEASE_COMMIT_SHA"]
+              and json.loads(Path("/tmp/kani-release-commit.json").read_text())["commit"]["verification"]["verified"] is True
+              and json.loads(Path("/tmp/kani-release-commit.json").read_text())["commit"]["verification"]["reason"]=="valid"
               and Path("/tmp/kani-crate-sha256.txt").exists()
               and Path("/tmp/kani-registry-checksum.txt").exists()
               and read_optional("/tmp/kani-crate-sha256.txt")==read_optional("/tmp/kani-registry-checksum.txt")
@@ -1946,6 +1969,18 @@ jobs:
               "cbmc_version_verified":("CBMC "+os.environ["EXPECTED_KANI_CBMC_VERSION"]) in read_optional("/tmp/kani-version.txt",""),
               "expected_kani_release_tag":os.environ["EXPECTED_KANI_RELEASE_TAG"],
               "expected_kani_release_commit_sha":os.environ["EXPECTED_KANI_RELEASE_COMMIT_SHA"],
+              "kani_release_commit_verification_sha256":(
+                  __import__("hashlib").sha256(Path("/tmp/kani-release-commit.json").read_bytes()).hexdigest()
+                  if Path("/tmp/kani-release-commit.json").exists() else None
+              ),
+              "kani_release_commit_signature_verified":(
+                  json.loads(Path("/tmp/kani-release-commit.json").read_text())["commit"]["verification"]["verified"] is True
+                  if Path("/tmp/kani-release-commit.json").exists() else False
+              ),
+              "kani_release_commit_signature_reason":(
+                  json.loads(Path("/tmp/kani-release-commit.json").read_text())["commit"]["verification"]["reason"]
+                  if Path("/tmp/kani-release-commit.json").exists() else None
+              ),
               "kani_release_tag_commit_verified":Path("/tmp/kani-release-ref.txt").exists() and read_optional("/tmp/kani-release-ref.txt").split()[0]==os.environ["EXPECTED_KANI_RELEASE_COMMIT_SHA"],
               "kani_crate_sha256":read_optional("/tmp/kani-crate-sha256.txt"),
               "kani_registry_checksum":read_optional("/tmp/kani-registry-checksum.txt"),
@@ -2005,6 +2040,7 @@ jobs:
             /tmp/kani-version.txt
             /tmp/kani-rustc.txt
             /tmp/kani-release-ref.txt
+            /tmp/kani-release-commit.json
             /tmp/kani-crates-io.json
             /tmp/kani-crate-sha256.txt
             /tmp/kani-registry-checksum.txt
