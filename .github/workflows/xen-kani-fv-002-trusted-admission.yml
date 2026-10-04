@@ -50,6 +50,84 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
+      - name: Verify trusted workflow structure and Python syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import ast
+          import re
+          from pathlib import Path
+
+          workflow=Path(".github/workflows/xen-kani-fv-002-trusted-admission.yml").read_text()
+          required_steps=[
+              "Checkout exact PR subject",
+              "Extract verifier-generated reachability source",
+              "Verify self-test reachability source policy",
+              "Fetch frozen replay kernel for self-test",
+              "Build minimal self-test crate",
+              "Install pinned Kani for self-test",
+              "Execute all trusted cover witnesses as non-authoritative self-test",
+              "Verify trusted verifier workflow identity",
+              "Verify triggering workflow identity and provenance",
+              "Verify triggering workflow source identity",
+              "Verify triggering PR identity",
+              "Fetch PR replay kernel as data",
+              "Verify PR scope independently",
+              "Verify complete tree delta independently",
+              "Verify formal evidence contract independently",
+              "Verify independent fetched source policy",
+              "Verify independent harness manifest",
+              "Verify minimal trusted crate is locked and dependency-free",
+              "Install pinned Kani",
+              "Run all trusted clean proofs",
+              "Build trusted clean proof manifest",
+              "Verify trusted reachability source shape",
+              "Run trusted reachability covers",
+              "Build trusted reachability manifest",
+              "Run trusted hostile control",
+              "Restore trusted clean source identity",
+              "Run hostile reachability control",
+              "Restore trusted clean source identity after reachability control",
+              "Re-verify triggering PR freshness before receipt",
+              "Retain trusted receipt",
+              "Upload trusted evidence",
+          ]
+          for name in required_steps:
+              needle="      - name: "+name
+              assert workflow.count(needle)==1, name
+
+          assert workflow.count("  trusted-admission:\n")==1
+          assert workflow.count("  non-authoritative-selftest:\n")==1
+          assert workflow.count("  workflow_run:\n")==1
+          assert workflow.count("  pull_request:\n")==1
+          assert "permissions:\n  actions: read\n  contents: read\n  pull-requests: read" in workflow
+          assert "cancel-in-progress: true" in workflow
+
+          lines=workflow.splitlines()
+          blocks=[]
+          i=0
+          while i < len(lines):
+              if re.match(r"^\s*python3\b.*<<'PY'\s*$", lines[i]):
+                  start=i+1
+                  body=[]
+                  i=start
+                  while i < len(lines) and lines[i] != "          PY":
+                      line=lines[i]
+                      assert not line or line.startswith("          "), (
+                          f"unexpected heredoc indentation at line {i+1}"
+                      )
+                      body.append(line[10:] if line else "")
+                      i+=1
+                  assert i < len(lines), f"unterminated Python heredoc at line {start}"
+                  blocks.append("\n".join(body)+"\n")
+              i+=1
+
+          assert len(blocks) >= 10, f"unexpected Python heredoc count: {len(blocks)}"
+          for index, block in enumerate(blocks, start=1):
+              ast.parse(block, filename=f"workflow-python-heredoc-{index}.py")
+          PY
+
       - name: Extract verifier-generated reachability source
         shell: bash
         run: |
