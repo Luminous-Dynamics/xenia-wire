@@ -327,7 +327,8 @@ jobs:
           }
 
           concurrency=workflow.fetch("concurrency")
-          abort "concurrency contract mismatch" unless concurrency["cancel-in-progress"] == true && concurrency["group"].is_a?(String)
+          expected_group="$"+"{{ github.workflow }}"+"-"+"{{ github.event_name }}"+"-"+"{{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.run_id }}"
+          abort "concurrency contract mismatch" unless concurrency["cancel-in-progress"] == true && concurrency["group"] == expected_group
           puts "YAML semantic workflow guard passed"
           RUBY
 
