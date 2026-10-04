@@ -1236,6 +1236,13 @@ jobs:
               "head_sha":os.environ["HEAD_SHA"],
               "head_repo":os.environ["HEAD_REPO"],
               "head_repo_expected":os.environ["EXPECTED_HEAD_REPO"],
+              "final_pr_freshness_sha256":(
+                  __import__("hashlib").sha256(
+                      Path("/tmp/final-pr-freshness.txt").read_bytes()
+                  ).hexdigest()
+                  if Path("/tmp/final-pr-freshness.txt").exists() else None
+              ),
+              "final_pr_freshness_verified":Path("/tmp/final-pr-freshness.txt").exists(),
               "base_sha_anchor":os.environ["BASE_SHA"],
               "pr_base_ref":"main",
               "kernel_blob":read_optional("/tmp/xen-kani-trusted/kernel.blob"),
@@ -1348,6 +1355,8 @@ jobs:
             /tmp/kani-version.txt
             /tmp/kani-rustc.txt
             /tmp/trusted-admission.json
+            /tmp/final-pr.json
+            /tmp/final-pr-freshness.txt
             /tmp/hostile.json
             /tmp/hostile.log
             /tmp/hostile.exit
