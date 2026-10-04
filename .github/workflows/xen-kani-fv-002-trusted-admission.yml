@@ -459,7 +459,7 @@ jobs:
           cargo install --locked kani-verifier --version "0.68.0"
           cargo kani setup
           cargo kani --version --verbose | tee /tmp/selftest-kani-version.txt
-          grep -q "Kani Rust Verifier 0.68.0 (kani-0.68.0) (cargo plugin)" /tmp/selftest-kani-version.txt
+          grep -q "Kani Rust Verifier 0.68.0" /tmp/selftest-kani-version.txt
           grep -q "CBMC 6.11.0" /tmp/selftest-kani-version.txt
           rustup run "$EXPECTED_KANI_RUST_TOOLCHAIN" rustc -Vv | tee /tmp/selftest-kani-rustc.txt
           grep -q "commit-hash: $EXPECTED_KANI_RUST_COMMIT_HASH" /tmp/selftest-kani-rustc.txt
