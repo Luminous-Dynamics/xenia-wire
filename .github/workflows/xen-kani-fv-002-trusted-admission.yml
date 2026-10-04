@@ -629,7 +629,10 @@ jobs:
           import json, os
           from pathlib import Path
 
-          event=json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
+          import shutil
+          event_path=Path(os.environ["GITHUB_EVENT_PATH"])
+          shutil.copyfile(event_path, "/tmp/trusted-workflow-run-event.json")
+          event=json.loads(event_path.read_text())
           assert event["action"]=="completed"
           assert event["repository"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]
           run=event["workflow_run"]
@@ -1739,8 +1742,20 @@ jobs:
           )
           tree_delta_ok=Path("/tmp/trusted-tree-delta.txt").exists()
 
+          envelope_evidence_ok=all(
+              Path(path).exists() and Path(path).stat().st_size > 0
+              for path in (
+                  "/tmp/trusted-workflow-run-event.json",
+                  "/tmp/verifier-run.json",
+                  "/tmp/trigger-run.json",
+                  "/tmp/pr.json",
+                  "/tmp/final-pr.json",
+              )
+          )
+
           authority_eligible=(
-              read_optional("/tmp/final-pr-freshness.txt") is not None
+              envelope_evidence_ok
+              and read_optional("/tmp/final-pr-freshness.txt") is not None
               and workflow_identity_ok
               and tree_delta_ok
               and kernel_binding
@@ -1765,6 +1780,26 @@ jobs:
               "verifier_workflow_commit":os.environ["GITHUB_SHA"],
               "verifier_workflow_id":int(os.environ["EXPECTED_VERIFIER_WORKFLOW_ID"]),
               "verifier_workflow_blob":read_optional("/tmp/verifier-workflow.blob"),
+              "workflow_run_event_sha256":(
+                  __import__("hashlib").sha256(Path("/tmp/trusted-workflow-run-event.json").read_bytes()).hexdigest()
+                  if Path("/tmp/trusted-workflow-run-event.json").exists() else None
+              ),
+              "verifier_run_payload_sha256":(
+                  __import__("hashlib").sha256(Path("/tmp/verifier-run.json").read_bytes()).hexdigest()
+                  if Path("/tmp/verifier-run.json").exists() else None
+              ),
+              "trigger_run_payload_sha256":(
+                  __import__("hashlib").sha256(Path("/tmp/trigger-run.json").read_bytes()).hexdigest()
+                  if Path("/tmp/trigger-run.json").exists() else None
+              ),
+              "initial_pr_payload_sha256":(
+                  __import__("hashlib").sha256(Path("/tmp/pr.json").read_bytes()).hexdigest()
+                  if Path("/tmp/pr.json").exists() else None
+              ),
+              "final_pr_payload_sha256":(
+                  __import__("hashlib").sha256(Path("/tmp/final-pr.json").read_bytes()).hexdigest()
+                  if Path("/tmp/final-pr.json").exists() else None
+              ),
               "trigger_workflow_blob":read_optional("/tmp/trigger-workflow.blob"),
               "github_run_id":int(os.environ["GITHUB_RUN_ID"]),
               "github_run_attempt":int(os.environ["GITHUB_RUN_ATTEMPT"]),
@@ -1875,7 +1910,10 @@ jobs:
             /tmp/verifier-workflow.blob
             /tmp/trigger-workflow.txt
             /tmp/trigger-workflow.blob
+            /tmp/trusted-workflow-run-event.json
+            /tmp/verifier-run.json
             /tmp/trigger-run.json
+            /tmp/pr.json
             /tmp/base-tree-sha
             /tmp/head-tree-sha
             /tmp/trusted-tree-delta.txt
