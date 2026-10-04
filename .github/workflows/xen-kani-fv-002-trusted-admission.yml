@@ -4,6 +4,7 @@ on:
   workflow_run:
     workflows: ["XEN-KANI-FV-002 Replay Kernel"]
     types: [completed]
+    branches: ["formal/xen-kani-fv-002-replay-kernel"]
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
@@ -120,6 +121,17 @@ jobs:
           assert workflow.count("  pull_request:\n")==1
           assert "permissions:\n  actions: read\n  contents: read\n  pull-requests: read" in workflow
           assert "cancel-in-progress: true" in workflow
+          for required_literal in (
+              'test "$GITHUB_EVENT_NAME" = "workflow_run"',
+              'test -f "$GITHUB_EVENT_PATH"',
+              'assert event["action"]=="completed"',
+              'assert event["repository"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]',
+              'assert run["id"]==int(os.environ["TRIGGER_RUN_ID"])',
+              'assert run["event"]=="pull_request"',
+              'assert run["conclusion"]=="success"',
+              'assert run["head_sha"]==os.environ["HEAD_SHA"]',
+          ):
+              assert required_literal in workflow, f"missing event envelope guard: {required_literal}"
           forbidden_surfaces = (
               "pull_"+"request_target",
               "issue_"+"comment:",
@@ -230,6 +242,7 @@ jobs:
           abort "workflow_run trigger mismatch" unless workflow_run == {
             "workflows"=>["XEN-KANI-FV-002 Replay Kernel"],
             "types"=>["completed"],
+            "branches"=>["formal/xen-kani-fv-002-replay-kernel"],
           }
           pull_request=triggers.fetch("pull_request")
           abort "pull_request trigger mismatch" unless pull_request["types"] == ["opened","synchronize","reopened","ready_for_review"] &&
@@ -587,6 +600,30 @@ jobs:
           test "$HEAD_REPO" = "$EXPECTED_HEAD_REPO"
           test "$HEAD_BRANCH" = "$EXPECTED_TRIGGER_BRANCH"
           test "$TRIGGER_CONCLUSION" = "success"
+          test -f "$GITHUB_EVENT_PATH"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          event=json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
+          assert event["action"]=="completed"
+          assert event["repository"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]
+          run=event["workflow_run"]
+          assert run["id"]==int(os.environ["TRIGGER_RUN_ID"])
+          assert run["run_attempt"]==int(os.environ["TRIGGER_RUN_ATTEMPT"])
+          assert run["event"]=="pull_request"
+          assert run["conclusion"]=="success"
+          assert run["head_branch"]==os.environ["EXPECTED_TRIGGER_BRANCH"]
+          assert run["head_sha"]==os.environ["HEAD_SHA"]
+          assert run["head_repository"]["full_name"]==os.environ["HEAD_REPO"]
+          pull_requests=run.get("pull_requests",[])
+          assert len(pull_requests)==1
+          assert pull_requests[0]["number"]==int(os.environ["PR_NUMBER"])
+          assert pull_requests[0]["head"]["sha"]==os.environ["HEAD_SHA"]
+          assert pull_requests[0]["head"]["ref"]==os.environ["HEAD_BRANCH"]
+          assert pull_requests[0]["head"]["repo"]["full_name"]==os.environ["HEAD_REPO"]
+          print("raw workflow_run event payload binding passed")
+          PY
 
       - name: Verify trusted verifier workflow identity
         shell: bash
