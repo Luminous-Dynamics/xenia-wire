@@ -1318,7 +1318,56 @@ jobs:
           Path("/tmp/kani-registry-checksum.txt").write_text(registry_checksum+"\n")
           PY
           test "$(cat /tmp/kani-registry-checksum.txt)" = "$(cat /tmp/kani-crate-sha256.txt)"
-          cargo kani setup
+          curl --fail-with-body --silent --show-error \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/model-checking/kani/releases/tags/$EXPECTED_KANI_RELEASE_TAG" \
+            -o /tmp/kani-release.json
+          python3 - <<'PY'
+          import hashlib, json, os, urllib.request
+          from pathlib import Path
+          from urllib.parse import urlparse
+
+          release=json.loads(Path("/tmp/kani-release.json").read_text())
+          assert release["tag_name"]==os.environ["EXPECTED_KANI_RELEASE_TAG"]
+          candidates=[
+              asset for asset in release.get("assets",[])
+              if asset.get("name","").startswith("kani-"+os.environ["KANI_VERSION"]+"-")
+              and asset.get("name","").endswith("-x86_64-unknown-linux-gnu.tar.gz")
+              and asset.get("state")=="uploaded"
+          ]
+          assert len(candidates)==1
+          asset=candidates[0]
+          digest=asset.get("digest")
+          assert isinstance(digest,str) and digest.startswith("sha256:") and len(digest)==71
+          url=asset["browser_download_url"]
+          parsed=urlparse(url)
+          assert parsed.scheme=="https"
+          assert parsed.netloc=="github.com"
+          assert parsed.query=="" and parsed.fragment==""
+          expected_path="/model-checking/kani/releases/download/"+release["tag_name"]+"/"+asset["name"]
+          assert parsed.path==expected_path
+          request=urllib.request.Request(url,headers={"Accept":"application/octet-stream","User-Agent":"xenia-wire-trusted-admission"})
+          with urllib.request.urlopen(request) as response, open("/tmp/kani-release-bundle.tar.gz","wb") as out:
+              while True:
+                  chunk=response.read(1024*1024)
+                  if not chunk:
+                      break
+                  out.write(chunk)
+          actual="sha256:"+hashlib.sha256(Path("/tmp/kani-release-bundle.tar.gz").read_bytes()).hexdigest()
+          assert actual==digest
+          Path("/tmp/kani-release-asset.txt").write_text(
+              "release_tag="+release["tag_name"]+"\n"
+              "asset_id="+str(asset["id"])+"\n"
+              "asset_name="+asset["name"]+"\n"
+              "asset_digest="+digest+"\n"
+              "asset_url="+url+"\n"
+          )
+          Path("/tmp/kani-release-bundle-sha256.txt").write_text(actual+"\n")
+          print(Path("/tmp/kani-release-asset.txt").read_text())
+          print("Kani release bundle digest verified: "+actual)
+          PY
+          test -s /tmp/kani-release-bundle.tar.gz
+          cargo kani setup --use-local-bundle /tmp/kani-release-bundle.tar.gz
           cargo kani --version --verbose | tee /tmp/kani-version.txt
           grep -q "Kani Rust Verifier 0.68.0" /tmp/kani-version.txt
           grep -q "CBMC 6.11.0" /tmp/kani-version.txt
@@ -2135,6 +2184,9 @@ jobs:
             /tmp/kani-crates-io.json
             /tmp/kani-crate-sha256.txt
             /tmp/kani-registry-checksum.txt
+            /tmp/kani-release.json
+            /tmp/kani-release-asset.txt
+            /tmp/kani-release-bundle-sha256.txt
             /tmp/kani-release.json
             /tmp/kani-release-asset.txt
             /tmp/kani-release-bundle-sha256.txt
