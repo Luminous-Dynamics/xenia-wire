@@ -111,10 +111,10 @@ jobs:
 
       - name: Install pinned Kani for self-test
         shell: bash
-        env:
-          CARGO_NET_OFFLINE: "true"
         run: |
           set -euo pipefail
+          # Tool acquisition intentionally uses the runner's network; all subject
+          # generation, metadata, and subsequent verification runs remain offline.
           cargo install --locked kani-verifier --version "0.68.0"
           cargo kani setup
           cargo kani --version --verbose | tee /tmp/selftest-kani-version.txt
@@ -1051,7 +1051,8 @@ jobs:
           p=Path("src/replay_kernel.rs")
           s=p.read_text()
           old="state.bitmap[0] = 1;"
-          assert s.count(old) >= 1
+          assert s.count(old) == 1
+          assert s.count("state.bitmap[0] = 0;") == 0
           p.write_text(s.replace(old,"state.bitmap[0] = 0;",1))
           PY
           test "$(git hash-object src/replay_kernel.rs)" != "$(cat /tmp/xen-kani-trusted/kernel.blob)"
