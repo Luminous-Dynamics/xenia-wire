@@ -126,6 +126,12 @@ jobs:
           assert all(re.fullmatch(r"[^@]+@[0-9a-f]{40}",x) for x in uses)
 
           lines=workflow.splitlines()
+          run_lines=[line for line in lines if re.fullmatch(r" {8}run:.*",line)]
+          assert len(run_lines)==31, f"expected 31 run steps, got {len(run_lines)}"
+          assert all(line=="        run: |" for line in run_lines), "all executable blocks must use literal run: |"
+          shell_lines=[line for line in lines if re.fullmatch(r" {8}shell:.*",line)]
+          assert len(shell_lines)==31, f"expected 31 shell declarations, got {len(shell_lines)}"
+          assert all(line=="        shell: bash" for line in shell_lines), "all executable steps must use shell: bash"
           run_blocks=[]
           for idx,line in enumerate(lines):
               if not re.fullmatch(r" {8}run: \|",line):
@@ -139,7 +145,7 @@ jobs:
                   body.append(candidate)
                   j+=1
               run_blocks.append("\n".join(body))
-          assert run_blocks
+          assert len(run_blocks)==31
           for block in run_blocks:
               event_expr="$"+"{{ github.event."
               assert event_expr not in block, (
