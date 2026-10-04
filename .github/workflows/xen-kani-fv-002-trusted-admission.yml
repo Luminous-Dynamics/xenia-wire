@@ -28,6 +28,7 @@ env:
   EXPECTED_TRIGGER_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-replay-kernel-v2.yml
   EXPECTED_TRIGGER_WORKFLOW_BLOB: 44ee053e9d60779b081986769e6ff69b0c262517
   VERIFIER_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-trusted-admission.yml
+  EXPECTED_VERIFIER_WORKFLOW_ID: 373418900
   EXPECTED_TRIGGER_BRANCH: formal/xen-kani-fv-002-replay-kernel
   EXPECTED_QUALIFIED_HEAD_SHA: 1fbea431db9e7e20ae3b31e925219a90de2b36bd
   KANI_VERSION: 0.68.0
@@ -563,6 +564,24 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = "refs/heads/main"
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$EXPECTED_HEAD_REPO/actions/runs/$GITHUB_RUN_ID" \
+            -o /tmp/verifier-run.json
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          d=json.loads(Path("/tmp/verifier-run.json").read_text())
+          assert d["id"]==int(os.environ["GITHUB_RUN_ID"])
+          assert d["workflow_id"]==int(os.environ["EXPECTED_VERIFIER_WORKFLOW_ID"])
+          assert d["name"]=="Trusted XEN-KANI-FV-002 Admission"
+          assert d["path"]==os.environ["VERIFIER_WORKFLOW_PATH"]
+          assert d["event"]=="workflow_run"
+          assert d["head_branch"]=="main"
+          assert d["head_sha"]==os.environ["GITHUB_SHA"]
+          PY
           curl --fail-with-body --silent --show-error \\
             -H "Authorization: Bearer $GITHUB_TOKEN" \\
             -H "Accept: application/vnd.github.raw+json" \\
