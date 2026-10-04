@@ -72,9 +72,9 @@ jobs:
               raise SystemExit("reachability source generator is empty")
           lines=[]
           for line in block:
-              if not line.startswith("          "):
+              if line and not line.startswith("          "):
                   raise SystemExit("unexpected generator indentation")
-              lines.append(line[10:])
+              lines.append(line[10:] if line else "")
           out=Path("/tmp/replay_kernel_cover.rs")
           out.write_text("\n".join(lines)+"\n")
           PY
