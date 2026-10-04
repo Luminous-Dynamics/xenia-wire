@@ -143,6 +143,11 @@ jobs:
               'expected_path="/model-checking/kani/releases/download/"',
               'assert pull_requests[0]["base"]["ref"]=="main"',
               'assert pull_requests[0]["base"]["repo"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]',
+              '"pre_transport_authority_eligible":pre_transport_authority_eligible',
+              '"authority_eligible":False',
+              'assert receipt["pre_transport_authority_eligible"] is True',
+              'assert receipt["authority_eligible"] is False',
+              'terminal["authority_eligible"]=True',
           ):
               assert required_literal in workflow, f"missing event envelope guard: {required_literal}"
           forbidden_surfaces = (
@@ -2077,7 +2082,7 @@ jobs:
               )
           )
 
-          authority_eligible=(
+          pre_transport_authority_eligible=(
               envelope_evidence_ok
               and read_optional("/tmp/final-pr-freshness.txt") is not None
               and workflow_identity_ok
@@ -2198,7 +2203,8 @@ jobs:
                   if Path("/tmp/trusted-clean-manifest.json").exists() else None
               ),
               "clean_proof_all_success":clean_proofs_ok,
-              "authority_eligible":authority_eligible,
+              "pre_transport_authority_eligible":pre_transport_authority_eligible,
+              "authority_eligible":False,
               "base_tree_sha":Path("/tmp/base-tree-sha").read_text().strip() if Path("/tmp/base-tree-sha").exists() else None,
               "head_tree_sha":Path("/tmp/head-tree-sha").read_text().strip() if Path("/tmp/head-tree-sha").exists() else None,
               "complete_tree_delta_verified":Path("/tmp/trusted-tree-delta.txt").exists(),
@@ -2246,7 +2252,7 @@ jobs:
           }
           Path("/tmp/trusted-admission.json").write_text(json.dumps(receipt,indent=2,sort_keys=True)+"\n")
           print(Path("/tmp/trusted-admission.json").read_text())
-          if not authority_eligible:
+          if not pre_transport_authority_eligible:
               raise SystemExit("authority eligibility predicate is false")
           PY
 
