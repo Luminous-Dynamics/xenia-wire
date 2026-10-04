@@ -39,6 +39,7 @@ env:
   EXPECTED_KANI_RELEASE_ASSET_ID: 566906903
   EXPECTED_KANI_RELEASE_ASSET_NAME: kani-0.68.0-x86_64-unknown-linux-gnu.tar.gz
   EXPECTED_KANI_RELEASE_ASSET_DIGEST: sha256:32e2b484d73ede0bbf64a2cf0879c4259422497d8aec4ee67d448de9ae7843d3
+  EXPECTED_KANI_CRATE_SHA256: 842fabd2ba8b13babab862e21fef2946b581d493f23062d5ce86266630f1d1ae
   EXPECTED_KANI_RUST_TOOLCHAIN: nightly-2026-08-21
   EXPECTED_KANI_RUST_COMMIT_HASH: 8925ea358a0f265ca61026aadc7ecc506c545cbe
 
@@ -143,6 +144,8 @@ jobs:
               'EXPECTED_KANI_RELEASE_ASSET_NAME',
               'EXPECTED_KANI_RELEASE_ASSET_DIGEST',
               'assert digest==os.environ["EXPECTED_KANI_RELEASE_ASSET_DIGEST"]',
+              'EXPECTED_KANI_CRATE_SHA256',
+              'assert checksum==os.environ["EXPECTED_KANI_CRATE_SHA256"]',
               'https://api.github.com/repos/model-checking/kani/releases/tags/$EXPECTED_KANI_RELEASE_TAG',
               'cargo kani setup --use-local-bundle ' + '/tmp/kani-release-bundle.tar.gz',
               'x86_64-unknown-linux-gnu.tar.gz',
@@ -329,6 +332,7 @@ jobs:
             "EXPECTED_KANI_RELEASE_ASSET_ID"=>566906903,
             "EXPECTED_KANI_RELEASE_ASSET_NAME"=>"kani-0.68.0-x86_64-unknown-linux-gnu.tar.gz",
             "EXPECTED_KANI_RELEASE_ASSET_DIGEST"=>"sha256:32e2b484d73ede0bbf64a2cf0879c4259422497d8aec4ee67d448de9ae7843d3",
+            "EXPECTED_KANI_CRATE_SHA256"=>"842fabd2ba8b13babab862e21fef2946b581d493f23062d5ce86266630f1d1ae",
             "EXPECTED_KANI_RUST_TOOLCHAIN"=>"nightly-2026-08-21",
             "EXPECTED_KANI_RUST_COMMIT_HASH"=>"8925ea358a0f265ca61026aadc7ecc506c545cbe",
           }
@@ -663,6 +667,7 @@ jobs:
           assert len(matches)==1
           checksum=matches[0].get("checksum")
           assert isinstance(checksum,str) and len(checksum)==64
+          assert checksum==os.environ["EXPECTED_KANI_CRATE_SHA256"]
           Path("/tmp/kani-registry-checksum.txt").write_text(checksum+"\n")
           PY
           curl --fail-with-body --silent --show-error --location \\
@@ -671,6 +676,7 @@ jobs:
             -o /tmp/kani-verifier-0.68.0.crate
           sha256sum /tmp/kani-verifier-0.68.0.crate | cut -d" " -f1 > /tmp/kani-crate-sha256.txt
           test "$(cat /tmp/kani-crate-sha256.txt)" = "$(cat /tmp/kani-registry-checksum.txt)"
+          test "$(cat /tmp/kani-crate-sha256.txt)" = "$EXPECTED_KANI_CRATE_SHA256"
           python3 - <<'PY'
           import tarfile
           from pathlib import Path, PurePosixPath
@@ -1398,6 +1404,7 @@ jobs:
           assert len(matches)==1
           checksum=matches[0].get("checksum")
           assert isinstance(checksum,str) and len(checksum)==64
+          assert checksum==os.environ["EXPECTED_KANI_CRATE_SHA256"]
           Path("/tmp/kani-registry-checksum.txt").write_text(checksum+"\n")
           PY
           curl --fail-with-body --silent --show-error --location \\
@@ -1406,6 +1413,7 @@ jobs:
             -o /tmp/kani-verifier-0.68.0.crate
           sha256sum /tmp/kani-verifier-0.68.0.crate | cut -d" " -f1 > /tmp/kani-crate-sha256.txt
           test "$(cat /tmp/kani-crate-sha256.txt)" = "$(cat /tmp/kani-registry-checksum.txt)"
+          test "$(cat /tmp/kani-crate-sha256.txt)" = "$EXPECTED_KANI_CRATE_SHA256"
           python3 - <<'PY'
           import tarfile
           from pathlib import Path, PurePosixPath
@@ -2121,6 +2129,7 @@ jobs:
               and Path("/tmp/kani-crate-sha256.txt").exists()
               and Path("/tmp/kani-registry-checksum.txt").exists()
               and read_optional("/tmp/kani-crate-sha256.txt")==read_optional("/tmp/kani-registry-checksum.txt")
+              and read_optional("/tmp/kani-registry-checksum.txt")==os.environ["EXPECTED_KANI_CRATE_SHA256"]
               and ("commit-hash: "+os.environ["EXPECTED_KANI_RUST_COMMIT_HASH"]) in read_optional("/tmp/kani-rustc.txt","")
           )
 
