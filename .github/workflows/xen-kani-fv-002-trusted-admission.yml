@@ -98,7 +98,8 @@ jobs:
               "Retain trusted receipt",
               "Verify trusted evidence inventory",
               "Upload trusted evidence",
-              "Verify trusted evidence upload identity",              "Build authority terminal receipt",
+              "Verify trusted evidence upload identity",
+              "Build authority terminal receipt",
               "Upload authority terminal",
               "Verify authority terminal upload identity",
           ]
