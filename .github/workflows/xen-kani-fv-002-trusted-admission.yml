@@ -127,7 +127,7 @@ jobs:
           for surface in forbidden_surfaces:
               assert surface not in workflow, f"forbidden workflow surface: {surface}"
 
-          uses=re.findall(r"^\\s+uses:\\s+([^\\s#]+)",workflow,re.MULTILINE)
+          uses=re.findall(r"^\s+uses:\s+([^\s#]+)",workflow,re.MULTILINE)
           expected_uses=[
               "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
               "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f",
@@ -921,7 +921,7 @@ jobs:
               "std::thread",
               "proc_macro",
           )
-          lexical_escape=re.compile(r"\\b(?:unsafe|extern)\\b|(?:asm|global_asm|env|option_env)!\\s*\\(")
+          lexical_escape=re.compile(r"\b(?:unsafe|extern)\b|(?:asm|global_asm|env|option_env)!\s*\(")
 
           for name, source in (("replay_kernel.rs", kernel), ("replay_kernel_kani.rs", proof)):
               for token in forbidden:
