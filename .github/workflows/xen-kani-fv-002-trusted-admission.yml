@@ -137,7 +137,7 @@ jobs:
               'assert verification["verified"] is True',
               'Kani release commit signature verified by GitHub',
               'https://api.github.com/repos/model-checking/kani/releases/tags/$EXPECTED_KANI_RELEASE_TAG',
-              'cargo kani setup --use-local-bundle /tmp/kani-release-bundle.tar.gz',
+              'cargo kani setup --use-local-bundle ' + '/tmp/kani-release-bundle.tar.gz',
               'x86_64-unknown-linux-gnu.tar.gz',
               'asset.get("digest")',
               'expected_path="/model-checking/kani/releases/download/"',
