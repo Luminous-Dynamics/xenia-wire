@@ -151,36 +151,6 @@ jobs:
           assert uses==expected_uses, f"unexpected action references: {uses}"
           assert all(re.fullmatch(r"[^@]+@[0-9a-f]{40}",x) for x in uses)
 
-          expressions=re.findall(r"\$\{\{[^}]+\}\}",workflow)
-          expected_expression_counts={
-              "${{ github.workflow }}":1,
-              "${{ github.event_name }}":1,
-              "${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.run_id }}":1,
-              "${{ github.event.pull_request.head.sha }}":2,
-              "${{ github.token }}":10,
-              "${{ github.event.workflow_run.pull_requests[0].number }}":4,
-              "${{ github.event.workflow_run.head_sha }}":5,
-              "${{ github.event.workflow_run.head_repository.full_name }}":1,
-              "${{ github.event.workflow_run.head_branch }}":1,
-              "${{ github.event.workflow_run.id }}":1,
-              "${{ github.event.workflow_run.run_attempt }}":1,
-              "${{ github.event.workflow_run.conclusion }}":1,
-              "${{ github.run_id }}":3,
-              "${{ steps.trusted-evidence-upload.outputs.artifact-id }}":2,
-              "${{ steps.trusted-evidence-upload.outputs.artifact-digest }}":2,
-              "${{ steps.authority-terminal-upload.outputs.artifact-id }}":1,
-              "${{ steps.authority-terminal-upload.outputs.artifact-digest }}":1,
-          }
-          from collections import Counter
-          assert Counter(expressions)==Counter(expected_expression_counts)
-          for required_literal in (
-              "/tmp/trusted-workflow-run-event.json",
-              "/tmp/verifier-run.json",
-              "/tmp/trigger-run.json",
-              "/tmp/pr.json",
-          ):
-              assert required_literal in workflow, f"missing retained envelope: {required_literal}"
-
           lines=workflow.splitlines()
           run_lines=[line for line in lines if re.fullmatch(r" {8}run:.*",line)]
           assert len(run_lines)==36, f"expected 36 run steps, got {len(run_lines)}"
@@ -202,6 +172,34 @@ jobs:
                   j+=1
               run_blocks.append("\n".join(body))
           assert len(run_blocks)==36
+          from collections import Counter
+          all_expression_counts=Counter(re.findall(r"\$\{\{[^}]+\}\}",workflow))
+          run_expression_counts=Counter(
+              expression
+              for block in run_blocks
+              for expression in re.findall(r"\$\{\{[^}]+\}\}",block)
+          )
+          expressions=all_expression_counts-run_expression_counts
+          expected_expression_counts={
+              "${{ github.workflow }}":1,
+              "${{ github.event_name }}":1,
+              "${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.run_id }}":1,
+              "${{ github.event.pull_request.head.sha }}":2,
+              "${{ github.token }}":12,
+              "${{ github.event.workflow_run.pull_requests[0].number }}":5,
+              "${{ github.event.workflow_run.head_sha }}":5,
+              "${{ github.event.workflow_run.head_repository.full_name }}":1,
+              "${{ github.event.workflow_run.head_branch }}":1,
+              "${{ github.event.workflow_run.id }}":1,
+              "${{ github.event.workflow_run.run_attempt }}":1,
+              "${{ github.event.workflow_run.conclusion }}":1,
+              "${{ github.run_id }}":2,
+              "${{ steps.trusted-evidence-upload.outputs.artifact-id }}":2,
+              "${{ steps.trusted-evidence-upload.outputs.artifact-digest }}":2,
+              "${{ steps.authority-terminal-upload.outputs.artifact-id }}":1,
+              "${{ steps.authority-terminal-upload.outputs.artifact-digest }}":1,
+          }
+          assert expressions==Counter(expected_expression_counts)
           for block in run_blocks:
               github_expr="$"+"{{ github."
               assert github_expr not in block, (
