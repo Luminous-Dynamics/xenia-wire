@@ -297,6 +297,7 @@ jobs:
             "Verify trusted evidence upload identity",
             "Build authority terminal receipt",
             "Upload authority terminal",
+            "Verify authority terminal upload identity",
           ]
           expected_steps.each_with_index do |name, index|
             step=jobs.fetch("trusted-admission").fetch("steps").fetch(index)
