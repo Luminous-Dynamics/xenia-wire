@@ -32,6 +32,7 @@ env:
   EXPECTED_QUALIFIED_HEAD_SHA: 1fbea431db9e7e20ae3b31e925219a90de2b36bd
   KANI_VERSION: 0.68.0
   EXPECTED_KANI_CBMC_VERSION: 6.11.0
+  EXPECTED_KANI_GIT_REVISION: kani-0.68.0
   EXPECTED_KANI_RUST_TOOLCHAIN: nightly-2026-08-21
   EXPECTED_KANI_RUST_COMMIT_HASH: 8925ea358a0f265ca61026aadc7ecc506c545cbe
 
@@ -417,7 +418,7 @@ jobs:
           cargo install --locked kani-verifier --version "0.68.0"
           cargo kani setup
           cargo kani --version --verbose | tee /tmp/selftest-kani-version.txt
-          grep -q "kani-0.68.0" /tmp/selftest-kani-version.txt
+          grep -q "Kani Rust Verifier 0.68.0 (kani-0.68.0) (cargo plugin)" /tmp/selftest-kani-version.txt
           grep -q "CBMC 6.11.0" /tmp/selftest-kani-version.txt
           rustup run "$EXPECTED_KANI_RUST_TOOLCHAIN" rustc -Vv | tee /tmp/selftest-kani-rustc.txt
           grep -q "commit-hash: $EXPECTED_KANI_RUST_COMMIT_HASH" /tmp/selftest-kani-rustc.txt
@@ -970,7 +971,7 @@ jobs:
           cargo install --locked kani-verifier --version "$KANI_VERSION"
           cargo kani setup
           cargo kani --version --verbose | tee /tmp/kani-version.txt
-          grep -q "kani-0.68.0" /tmp/kani-version.txt
+          grep -q "Kani Rust Verifier 0.68.0 (kani-0.68.0) (cargo plugin)" /tmp/kani-version.txt
           grep -q "CBMC 6.11.0" /tmp/kani-version.txt
           grep -q "$EXPECTED_KANI_RUST_COMMIT_HASH" /tmp/kani-version.txt
           rustup run "$EXPECTED_KANI_RUST_TOOLCHAIN" rustc -Vv | tee /tmp/kani-rustc.txt
@@ -1575,6 +1576,7 @@ jobs:
               and hostile_ok
               and hostile_cover_ok
               and ("CBMC "+os.environ["EXPECTED_KANI_CBMC_VERSION"]) in read_optional("/tmp/kani-version.txt","")
+              and ("Kani Rust Verifier 0.68.0 ("+os.environ["EXPECTED_KANI_GIT_REVISION"]+") (cargo plugin)") in read_optional("/tmp/kani-version.txt","")
               and ("commit-hash: "+os.environ["EXPECTED_KANI_RUST_COMMIT_HASH"]) in read_optional("/tmp/kani-rustc.txt","")
           )
 
@@ -1653,6 +1655,8 @@ jobs:
               "kani_version":read_optional("/tmp/kani-version.txt"),
               "expected_cbmc_version":os.environ["EXPECTED_KANI_CBMC_VERSION"],
               "cbmc_version_verified":("CBMC "+os.environ["EXPECTED_KANI_CBMC_VERSION"]) in read_optional("/tmp/kani-version.txt",""),
+              "expected_kani_git_revision":os.environ["EXPECTED_KANI_GIT_REVISION"],
+              "kani_git_revision_verified":("Kani Rust Verifier 0.68.0 ("+os.environ["EXPECTED_KANI_GIT_REVISION"]+") (cargo plugin)") in read_optional("/tmp/kani-version.txt",""),
               "kani_rust_binding_verified":(
                   ("commit-hash: "+os.environ["EXPECTED_KANI_RUST_COMMIT_HASH"])
                   in read_optional("/tmp/kani-rustc.txt","")
