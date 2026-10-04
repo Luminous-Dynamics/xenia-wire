@@ -100,8 +100,9 @@ jobs:
               "Upload trusted evidence",
               "Verify trusted evidence upload identity",              "Build authority terminal receipt",
               "Upload authority terminal",
+              "Verify authority terminal upload identity",
           ]
-          assert len(required_steps)==38, f"expected 38 required steps, got {len(required_steps)}"
+          assert len(required_steps)==39, f"expected 39 required steps, got {len(required_steps)}"
           required_step_lines=["      - name: "+name for name in required_steps]
           observed_step_lines=[line for line in workflow.splitlines() if line.startswith("      - name: ")]
           for needle in required_step_lines:
@@ -137,10 +138,10 @@ jobs:
 
           lines=workflow.splitlines()
           run_lines=[line for line in lines if re.fullmatch(r" {8}run:.*",line)]
-          assert len(run_lines)==34, f"expected 34 run steps, got {len(run_lines)}"
+          assert len(run_lines)==35, f"expected 35 run steps, got {len(run_lines)}"
           assert all(line=="        run: |" for line in run_lines), "all executable blocks must use literal run: |"
           shell_lines=[line for line in lines if re.fullmatch(r" {8}shell:.*",line)]
-          assert len(shell_lines)==34, f"expected 34 shell declarations, got {len(shell_lines)}"
+          assert len(shell_lines)==35, f"expected 35 shell declarations, got {len(shell_lines)}"
           assert all(line=="        shell: bash" for line in shell_lines), "all executable steps must use shell: bash"
           run_blocks=[]
           for idx,line in enumerate(lines):
@@ -155,7 +156,7 @@ jobs:
                   body.append(candidate)
                   j+=1
               run_blocks.append("\n".join(body))
-          assert len(run_blocks)==34
+          assert len(run_blocks)==35
           for block in run_blocks:
               github_expr="$"+"{{ github."
               assert github_expr not in block, (
@@ -1875,3 +1876,35 @@ jobs:
           path: /tmp/authority-terminal.json
           if-no-files-found: error
           retention-days: 30
+      - name: Verify authority terminal upload identity
+        if: success()
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.authority-terminal-upload.outputs.artifact-id }}
+          ARTIFACT_DIGEST: ${{ steps.authority-terminal-upload.outputs.artifact-digest }}
+          EXPECTED_ARTIFACT_NAME: trusted-xen-kani-fv-002-authority-terminal-${{ github.event.workflow_run.pull_requests[0].number }}-${{ github.event.workflow_run.head_sha }}
+          EXPECTED_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          test -n "$ARTIFACT_ID"
+          test "$ARTIFACT_ID" != "0"
+          [[ "$ARTIFACT_DIGEST" =~ ^[0-9a-f]{64}$ ]]
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/actions/artifacts/$ARTIFACT_ID" \
+            -o /tmp/authority-terminal-artifact.json
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          d=json.loads(Path("/tmp/authority-terminal-artifact.json").read_text())
+          assert d["id"] == int(os.environ["ARTIFACT_ID"])
+          assert d["name"] == os.environ["EXPECTED_ARTIFACT_NAME"]
+          assert d["digest"] == "sha256:"+os.environ["ARTIFACT_DIGEST"]
+          assert d["workflow_run"]["id"] == int(os.environ["EXPECTED_RUN_ID"])
+          assert d["workflow_run"]["head_sha"] == os.environ["HEAD_SHA"]
+          assert d["expired"] is False
+          PY
+          echo "authority terminal artifact verified: $ARTIFACT_ID sha256:$ARTIFACT_DIGEST"
