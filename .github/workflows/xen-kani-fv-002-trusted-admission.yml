@@ -299,6 +299,9 @@ jobs:
           }
           abort "trusted job event env mismatch" unless trusted["env"] == expected_trusted_env
           abort "undefined event environment expression helper" if workflow.include?("exprStart")
+          abort "trusted run step contains GitHub expression interpolation" if trusted.fetch("steps").any? { |step|
+            step["run"].is_a?(String) && step["run"].include?(expr_start)
+          }
           expected_all_steps=[
             "Checkout exact PR subject",
             "Verify trusted workflow structure and Python syntax",
