@@ -191,7 +191,8 @@ jobs:
 
           workflow=YAML.safe_load(File.read(".github/workflows/xen-kani-fv-002-trusted-admission.yml"), aliases: false)
           abort "workflow root must be a mapping" unless workflow.is_a?(Hash)
-          abort "unexpected top-level workflow keys" unless workflow.keys.map(&:to_s).sort == ["concurrency","env","jobs","name","on","permissions"]
+          top_level_keys=workflow.keys.map { |key| key == true ? "on" : key.to_s }.sort
+          abort "unexpected top-level workflow keys" unless top_level_keys == ["concurrency","env","jobs","name","on","permissions"]
           abort "workflow name mismatch" unless workflow["name"] == "Trusted XEN-KANI-FV-002 Admission"
 
           on_key=workflow.key?("on") ? "on" : true
