@@ -128,6 +128,8 @@ jobs:
           for required_literal in (
               'test "$GITHUB_EVENT_NAME" = "workflow_run"',
               'test -f "$GITHUB_EVENT_PATH"',
+              'test "$GITHUB_WORKFLOW_REF" = "$GITHUB_REPOSITORY/$VERIFIER_WORKFLOW_PATH@refs/heads/main"',
+              'test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"',
               'assert event["action"]=="completed"',
               'assert event["repository"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]',
               'assert run["id"]==int(os.environ["TRIGGER_RUN_ID"])',
@@ -885,6 +887,8 @@ jobs:
           test "$GITHUB_EVENT_NAME" = "workflow_run"
           test "$GITHUB_REF" = "refs/heads/main"
           test "$GITHUB_REPOSITORY" = "$EXPECTED_HEAD_REPO"
+          test "$GITHUB_WORKFLOW_REF" = "$GITHUB_REPOSITORY/$VERIFIER_WORKFLOW_PATH@refs/heads/main"
+          test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
           [[ "$GITHUB_RUN_ID" =~ ^[1-9][0-9]*$ ]]
           [[ "$GITHUB_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
           [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
@@ -951,6 +955,10 @@ jobs:
           assert d["name"]=="Trusted XEN-KANI-FV-002 Admission"
           assert d["path"]==os.environ["VERIFIER_WORKFLOW_PATH"]
           assert d["event"]=="workflow_run"
+          assert d["head_branch"]=="main"
+          assert d["head_sha"]==os.environ["GITHUB_SHA"]
+          assert os.environ["GITHUB_WORKFLOW_SHA"]==os.environ["GITHUB_SHA"]
+          assert os.environ["GITHUB_WORKFLOW_REF"]==os.environ["GITHUB_REPOSITORY"]+"/"+os.environ["VERIFIER_WORKFLOW_PATH"]+"@refs/heads/main"
           assert d["head_branch"]=="main"
           assert d["head_sha"]==os.environ["GITHUB_SHA"]
           PY
