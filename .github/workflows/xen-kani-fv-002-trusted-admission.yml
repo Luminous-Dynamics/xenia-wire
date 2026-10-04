@@ -589,7 +589,48 @@ jobs:
           # Tool acquisition intentionally uses the runner's network; all subject
           # generation, metadata, and subsequent verification runs remain offline.
           cargo install --locked kani-verifier --version "0.68.0"
-          cargo kani setup
+          curl --fail-with-body --silent --show-error \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/model-checking/kani/releases/tags/$EXPECTED_KANI_RELEASE_TAG" \
+            -o /tmp/kani-release.json
+          python3 - <<'PY'
+          import hashlib, json, os, urllib.request
+          from pathlib import Path
+
+          release=json.loads(Path("/tmp/kani-release.json").read_text())
+          assert release["tag_name"]==os.environ["EXPECTED_KANI_RELEASE_TAG"]
+          candidates=[
+              asset for asset in release.get("assets",[])
+              if asset.get("name","").startswith("kani-"+os.environ["KANI_VERSION"]+"-")
+              and asset.get("name","").endswith("-x86_64-unknown-linux-gnu.tar.gz")
+              and asset.get("state")=="uploaded"
+          ]
+          assert len(candidates)==1, f"expected exactly one Linux x86_64 Kani asset, got {len(candidates)}"
+          asset=candidates[0]
+          digest=asset.get("digest")
+          assert isinstance(digest,str) and digest.startswith("sha256:") and len(digest)==71
+          request=urllib.request.Request(asset["browser_download_url"],headers={"Accept":"application/octet-stream","User-Agent":"xenia-wire-trusted-admission"})
+          with urllib.request.urlopen(request) as response, open("/tmp/kani-release-bundle.tar.gz","wb") as out:
+              while True:
+                  chunk=response.read(1024*1024)
+                  if not chunk:
+                      break
+                  out.write(chunk)
+          actual="sha256:"+hashlib.sha256(Path("/tmp/kani-release-bundle.tar.gz").read_bytes()).hexdigest()
+          assert actual==digest
+          Path("/tmp/kani-release-asset.txt").write_text(
+              "release_tag="+release["tag_name"]+"\n"
+              "asset_id="+str(asset["id"])+"\n"
+              "asset_name="+asset["name"]+"\n"
+              "asset_digest="+digest+"\n"
+              "asset_url="+asset["browser_download_url"]+"\n"
+          )
+          Path("/tmp/kani-release-bundle-sha256.txt").write_text(actual+"\n")
+          print(Path("/tmp/kani-release-asset.txt").read_text())
+          print("Kani release bundle digest verified: "+actual)
+          PY
+          test -s /tmp/kani-release-bundle.tar.gz
+          cargo kani setup --use-local-bundle /tmp/kani-release-bundle.tar.gz
           cargo kani --version --verbose | tee /tmp/selftest-kani-version.txt
           grep -q "Kani Rust Verifier 0.68.0" /tmp/selftest-kani-version.txt
           grep -q "CBMC 6.11.0" /tmp/selftest-kani-version.txt
@@ -1901,6 +1942,13 @@ jobs:
               and json.loads(Path("/tmp/kani-release-commit.json").read_text())["sha"]==os.environ["EXPECTED_KANI_RELEASE_COMMIT_SHA"]
               and json.loads(Path("/tmp/kani-release-commit.json").read_text())["commit"]["verification"]["verified"] is True
               and json.loads(Path("/tmp/kani-release-commit.json").read_text())["commit"]["verification"]["reason"]=="valid"
+              and Path("/tmp/kani-release.json").exists()
+              and json.loads(Path("/tmp/kani-release.json").read_text())["tag_name"]==os.environ["EXPECTED_KANI_RELEASE_TAG"]
+              and Path("/tmp/kani-release-asset.txt").exists()
+              and Path("/tmp/kani-release-bundle-sha256.txt").exists()
+              and Path("/tmp/kani-release-bundle.tar.gz").exists()
+              and read_optional("/tmp/kani-release-bundle-sha256.txt").startswith("sha256:")
+              and read_optional("/tmp/kani-release-bundle-sha256.txt")==read_optional("/tmp/kani-release-asset.txt").split("asset_digest=",1)[1].splitlines()[0]
               and Path("/tmp/kani-crate-sha256.txt").exists()
               and Path("/tmp/kani-registry-checksum.txt").exists()
               and read_optional("/tmp/kani-crate-sha256.txt")==read_optional("/tmp/kani-registry-checksum.txt")
@@ -2017,6 +2065,9 @@ jobs:
                   json.loads(Path("/tmp/kani-release-commit.json").read_text())["commit"]["verification"]["reason"]
                   if Path("/tmp/kani-release-commit.json").exists() else None
               ),
+              "kani_release_asset_sha256":read_optional("/tmp/kani-release-bundle-sha256.txt"),
+              "kani_release_asset_attestation":read_optional("/tmp/kani-release-asset.txt"),
+              "kani_release_local_bundle_verified":Path("/tmp/kani-release-bundle-sha256.txt").exists(),
               "kani_release_tag_commit_verified":Path("/tmp/kani-release-ref.txt").exists() and read_optional("/tmp/kani-release-ref.txt").split()[0]==os.environ["EXPECTED_KANI_RELEASE_COMMIT_SHA"],
               "kani_crate_sha256":read_optional("/tmp/kani-crate-sha256.txt"),
               "kani_registry_checksum":read_optional("/tmp/kani-registry-checksum.txt"),
@@ -2077,9 +2128,16 @@ jobs:
             /tmp/kani-rustc.txt
             /tmp/kani-release-ref.txt
             /tmp/kani-release-commit.json
+            /tmp/kani-release.json
+            /tmp/kani-release-asset.txt
+            /tmp/kani-release-bundle-sha256.txt
+            /tmp/kani-release-bundle.tar.gz
             /tmp/kani-crates-io.json
             /tmp/kani-crate-sha256.txt
             /tmp/kani-registry-checksum.txt
+            /tmp/kani-release.json
+            /tmp/kani-release-asset.txt
+            /tmp/kani-release-bundle-sha256.txt
             /tmp/trusted-admission.json
             /tmp/final-pr.json
             /tmp/final-pr-freshness.txt
