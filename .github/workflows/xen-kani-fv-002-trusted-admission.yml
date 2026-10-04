@@ -82,12 +82,24 @@ jobs:
           grep -q 'kani::cover!(' /tmp/replay_kernel_cover.rs
           test "$(grep -c 'kani::cover!(' /tmp/replay_kernel_cover.rs)" -eq 6
 
+      - name: Fetch frozen replay kernel for self-test
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github.raw+json"             "https://api.github.com/repos/$EXPECTED_HEAD_REPO/contents/src/replay_kernel.rs?ref=$EXPECTED_TRIGGER_BRANCH"             -o /tmp/selftest-replay_kernel.rs
+          blob="$(git hash-object /tmp/selftest-replay_kernel.rs)"
+          printf '%s
+' "$blob" > /tmp/selftest-replay-kernel.blob
+          test "$blob" = "$EXPECTED_KERNEL_BLOB"
+
       - name: Build minimal self-test crate
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p /tmp/xen-kani-selftest/src
-          cp src/replay_kernel.rs /tmp/xen-kani-selftest/src/replay_kernel.rs
+          cp /tmp/selftest-replay_kernel.rs /tmp/xen-kani-selftest/src/replay_kernel.rs
           cp /tmp/replay_kernel_cover.rs /tmp/xen-kani-selftest/src/replay_kernel_cover.rs
           cat > /tmp/xen-kani-selftest/src/lib.rs <<'EOF'
           #![forbid(unsafe_code)]
@@ -182,6 +194,8 @@ jobs:
           name: xen-kani-fv-002-reachability-selftest-${{ github.event.pull_request.head.sha }}
           path: |
             /tmp/replay_kernel_cover.rs
+            /tmp/selftest-replay_kernel.rs
+            /tmp/selftest-replay-kernel.blob
             /tmp/selftest-covers.txt
             /tmp/selftest-kani-version.txt
             /tmp/selftest-*.json
