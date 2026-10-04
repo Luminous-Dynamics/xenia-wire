@@ -113,6 +113,16 @@ jobs:
           )
           assert source.count("#[kani::proof]")==6
           assert source.count("kani::cover!(")==6
+          expected_functions={
+              "cover_initialization_reachable",
+              "cover_advance_shift_reachable",
+              "cover_in_window_replay_mark_reachable",
+              "cover_exact_window_boundary_reachable",
+              "cover_stale_boundary_rejection_reachable",
+              "cover_exact_window_jump_reset_reachable",
+          }
+          discovered=set(re.findall(r"^\s*fn\s+([A-Za-z0-9_]+)\s*\(",source,re.MULTILINE))
+          assert discovered==expected_functions, f"unexpected self-test function set: {sorted(discovered)}"
           PY
 
       - name: Fetch frozen replay kernel for self-test
