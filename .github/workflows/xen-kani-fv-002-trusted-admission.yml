@@ -146,6 +146,8 @@ jobs:
               'assert digest==os.environ["EXPECTED_KANI_RELEASE_ASSET_DIGEST"]',
               'EXPECTED_KANI_CRATE_SHA256',
               'self-test checkout credential persistence enabled',
+              'artifact overwrite must remain disabled',
+              'artifact hidden-file inclusion must remain disabled',
               'self-test checkout fetch-depth mismatch',
               'self-test checkout ref mismatch',
               'assert checksum==os.environ["EXPECTED_KANI_CRATE_SHA256"]',
@@ -385,6 +387,10 @@ jobs:
           abort "self-test checkout ref mismatch" unless checkout_with["ref"] == expected_checkout_ref
           abort "self-test checkout fetch-depth mismatch" unless checkout_with["fetch-depth"] == 1
           abort "self-test checkout credential persistence enabled" unless checkout_with["persist-credentials"] == false
+          upload_steps=selftest.fetch("steps").select { |step| step["uses"] == "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f" } + trusted.fetch("steps").select { |step| step["uses"] == "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f" }
+          abort "artifact upload cardinality mismatch" unless upload_steps.length == 3
+          abort "artifact overwrite must remain disabled" unless upload_steps.all? { |step| step.fetch("with").fetch("overwrite") == false }
+          abort "artifact hidden-file inclusion must remain disabled" unless upload_steps.all? { |step| step.fetch("with").fetch("include-hidden-files") == false }
           abort "self-test runner mismatch" unless selftest["runs-on"] == "ubuntu-24.04" && selftest["timeout-minutes"] == 30
           abort "self-test permissions mismatch" unless selftest["permissions"] == {"contents"=>"read"}
 
@@ -844,6 +850,8 @@ jobs:
             /tmp/selftest-*.log
           if-no-files-found: error
           retention-days: 30
+          overwrite: false
+          include-hidden-files: false
 
   trusted-admission:
     if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.pull_requests[0].number != null && github.event.workflow_run.head_branch == 'formal/xen-kani-fv-002-replay-kernel' && github.event.workflow_run.conclusion == 'success'
@@ -2420,6 +2428,8 @@ jobs:
             /tmp/hostile-restored-kernel.blob
           if-no-files-found: error
           retention-days: 30
+          overwrite: false
+          include-hidden-files: false
       - name: Verify trusted evidence upload identity
         if: always()
         shell: bash
@@ -2542,6 +2552,8 @@ jobs:
           path: /tmp/authority-terminal.json
           if-no-files-found: error
           retention-days: 30
+          overwrite: false
+          include-hidden-files: false
       - name: Verify authority terminal upload identity
         if: success()
         shell: bash
