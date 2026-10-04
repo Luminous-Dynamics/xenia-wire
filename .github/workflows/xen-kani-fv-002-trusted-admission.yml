@@ -167,6 +167,9 @@ jobs:
               '"terminal_pr_freshness_verified":True',
               'assert terminal["terminal_pr_freshness_verified"] is True',
               'terminal["authority_eligible"]=True',
+              'assert main_branch["name"] == "main"',
+              'assert main_branch["protected"] is True',
+              'main_branch_protection_verified',
               'assert concurrency["group"] == expected_group',
           ):
               assert required_literal in workflow, f"missing event envelope guard: {required_literal}"
@@ -962,6 +965,20 @@ jobs:
           assert os.environ["GITHUB_WORKFLOW_REF"]==os.environ["GITHUB_REPOSITORY"]+"/"+os.environ["VERIFIER_WORKFLOW_PATH"]+"@refs/heads/main"
           assert d["head_branch"]=="main"
           assert d["head_sha"]==os.environ["GITHUB_SHA"]
+          PY
+          curl --fail-with-body --silent --show-error \\
+            -H "Authorization: Bearer $GITHUB_TOKEN" \\
+            -H "Accept: application/vnd.github+json" \\
+            "https://api.github.com/repos/$EXPECTED_HEAD_REPO/branches/main" \\
+            -o /tmp/main-branch.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          main_branch=json.loads(Path("/tmp/main-branch.json").read_text())
+          assert main_branch["name"]=="main"
+          assert main_branch["protected"] is True
+          print("default branch protection verified")
           PY
           curl --fail-with-body --silent --show-error \\
             -H "Authorization: Bearer $GITHUB_TOKEN" \\
@@ -2129,6 +2146,11 @@ jobs:
               read_optional("/tmp/verifier-workflow.blob") is not None
               and read_optional("/tmp/trigger-workflow.blob")==os.environ["EXPECTED_TRIGGER_WORKFLOW_BLOB"]
           )
+          main_branch_protection_verified=(
+              Path("/tmp/main-branch.json").exists()
+              and json.loads(Path("/tmp/main-branch.json").read_text()).get("name")=="main"
+              and json.loads(Path("/tmp/main-branch.json").read_text()).get("protected") is True
+          )
           tree_delta_ok=Path("/tmp/trusted-tree-delta.txt").exists()
 
           envelope_evidence_ok=all(
@@ -2146,6 +2168,7 @@ jobs:
               envelope_evidence_ok
               and read_optional("/tmp/final-pr-freshness.txt") is not None
               and workflow_identity_ok
+              and main_branch_protection_verified
               and tree_delta_ok
               and kernel_binding
               and proof_binding
@@ -2181,6 +2204,11 @@ jobs:
               "verifier_workflow_commit":os.environ["GITHUB_SHA"],
               "verifier_workflow_id":int(os.environ["EXPECTED_VERIFIER_WORKFLOW_ID"]),
               "verifier_workflow_blob":read_optional("/tmp/verifier-workflow.blob"),
+              "main_branch_protection_sha256":(
+                  __import__("hashlib").sha256(Path("/tmp/main-branch.json").read_bytes()).hexdigest()
+                  if Path("/tmp/main-branch.json").exists() else None
+              ),
+              "main_branch_protection_verified":main_branch_protection_verified,
               "workflow_run_event_sha256":(
                   __import__("hashlib").sha256(Path("/tmp/trusted-workflow-run-event.json").read_bytes()).hexdigest()
                   if Path("/tmp/trusted-workflow-run-event.json").exists() else None
@@ -2331,6 +2359,7 @@ jobs:
             /tmp/trusted-subject.txt
             /tmp/verifier-workflow.txt
             /tmp/verifier-workflow.blob
+            /tmp/main-branch.json
             /tmp/trigger-workflow.txt
             /tmp/trigger-workflow.blob
             /tmp/trusted-workflow-run-event.json
