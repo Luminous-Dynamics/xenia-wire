@@ -696,6 +696,31 @@ jobs:
           print(out.read_text())
           PY
 
+      - name: Verify trusted reachability source shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          source=Path("/tmp/xen-kani-trusted/src/replay_kernel_cover.rs").read_text()
+          assert source.count("#[kani::proof]")==6
+          assert source.count("kani::cover!(")==6
+          assert "kani::assume" not in source
+          assert "assert!(" not in source
+          assert "assert_eq!(" not in source
+          assert "assert_ne!(" not in source
+          names=[
+              "cover_initialization_reachable",
+              "cover_advance_shift_reachable",
+              "cover_in_window_replay_mark_reachable",
+              "cover_exact_window_boundary_reachable",
+              "cover_stale_boundary_rejection_reachable",
+              "cover_exact_window_jump_reset_reachable",
+          ]
+          for name in names:
+              assert source.count("fn "+name+"(")==1, name
+          PY
+
       - name: Run trusted reachability covers
         shell: bash
         working-directory: /tmp/xen-kani-trusted
