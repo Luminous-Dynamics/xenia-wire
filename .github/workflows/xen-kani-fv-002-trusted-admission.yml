@@ -2461,6 +2461,8 @@ jobs:
             /tmp/trusted-subject.txt
             /tmp/verifier-workflow.txt
             /tmp/verifier-workflow.blob
+            /tmp/main-branch.json
+            /tmp/final-main-branch.json
             /tmp/trigger-workflow.txt
             /tmp/trigger-workflow.blob
             /tmp/trusted-workflow-run-event.json
