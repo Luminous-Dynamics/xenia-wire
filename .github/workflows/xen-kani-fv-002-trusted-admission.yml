@@ -182,6 +182,115 @@ jobs:
               ast.parse(block, filename=f"workflow-python-heredoc-{index}.py")
           PY
 
+          ruby <<'RUBY'
+          require "yaml"
+
+          workflow=YAML.safe_load(File.read(".github/workflows/xen-kani-fv-002-trusted-admission.yml"), aliases: false)
+          abort "workflow root must be a mapping" unless workflow.is_a?(Hash)
+
+          on_key=workflow.key?("on") ? "on" : true
+          abort "missing workflow trigger map" unless workflow.key?(on_key)
+          triggers=workflow.fetch(on_key)
+          abort "unexpected trigger keys" unless triggers.is_a?(Hash) && triggers.keys.map(&:to_s).sort == ["pull_request","workflow_run"]
+
+          workflow_run=triggers.fetch("workflow_run")
+          abort "workflow_run trigger mismatch" unless workflow_run == {
+            "workflows"=>["XEN-KANI-FV-002 Replay Kernel"],
+            "types"=>["completed"],
+          }
+          pull_request=triggers.fetch("pull_request")
+          abort "pull_request trigger mismatch" unless pull_request["types"] == ["opened","synchronize","reopened","ready_for_review"] &&
+            pull_request["paths"] == [".github/workflows/xen-kani-fv-002-trusted-admission.yml"]
+
+          jobs=workflow.fetch("jobs")
+          abort "unexpected job set" unless jobs.is_a?(Hash) && jobs.keys.map(&:to_s).sort == ["non-authoritative-selftest","trusted-admission"]
+          expected_steps=[
+            "Checkout exact PR subject",
+            "Verify trusted workflow structure and Python syntax",
+            "Extract verifier-generated reachability source",
+            "Verify self-test reachability source policy",
+            "Fetch frozen replay kernel for self-test",
+            "Build minimal self-test crate",
+            "Install pinned Kani for self-test",
+            "Execute all trusted cover witnesses as non-authoritative self-test",
+            "Retain non-authoritative self-test evidence",
+            "Prepare trusted verifier workspace",
+            "Verify trusted verifier workflow identity",
+            "Verify triggering workflow identity and provenance",
+            "Verify triggering workflow source identity",
+            "Verify triggering PR identity",
+            "Fetch PR replay kernel as data",
+            "Verify PR scope independently",
+            "Verify complete tree delta independently",
+            "Verify formal evidence contract independently",
+            "Verify independent fetched source policy",
+            "Verify independent harness manifest",
+            "Verify minimal trusted crate is locked and dependency-free",
+            "Install pinned Kani",
+            "Run all trusted clean proofs",
+            "Build trusted clean proof manifest",
+            "Verify trusted reachability source shape",
+            "Run trusted reachability covers",
+            "Build trusted reachability manifest",
+            "Run trusted hostile control",
+            "Restore trusted clean source identity",
+            "Run hostile reachability control",
+            "Restore trusted clean source identity after reachability control",
+            "Re-verify triggering PR freshness before receipt",
+            "Retain trusted receipt",
+            "Verify trusted evidence inventory",
+            "Upload trusted evidence",
+            "Verify trusted evidence upload identity",
+            "Build authority terminal receipt",
+            "Upload authority terminal",
+          ]
+          expected_steps.each_with_index do |name, index|
+            step=jobs.fetch("trusted-admission").fetch("steps").fetch(index)
+            abort "missing or reordered trusted step #{index+1}: #{name}" unless step["name"] == name
+          end
+          abort "trusted step count mismatch" unless jobs.fetch("trusted-admission").fetch("steps").length == 38
+
+          expected_uses=[
+            "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f",
+            "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f",
+            "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f",
+          ]
+          observed_uses=workflow.values.flat_map { |v|
+            v.is_a?(Hash) ? v.values.flat_map { |j|
+              j.is_a?(Hash) && j["steps"].is_a?(Array) ? j["steps"].filter_map { |s| s["uses"] } : []
+            } : []
+          }
+          abort "action inventory mismatch" unless observed_uses == expected_uses
+
+          jobs.each do |job_id, job|
+            abort "job #{job_id} must use ubuntu-24.04" unless job["runs-on"] == "ubuntu-24.04"
+            job.fetch("steps").each do |step|
+              keys=step.keys.map(&:to_s)
+              abort "step has both run and uses: #{step["name"]}" if step.key?("run") && step.key?("uses")
+              if step.key?("run")
+                abort "run step must use bash: #{step["name"]}" unless step["shell"] == "bash"
+              elsif step.key?("uses")
+                abort "unsupported action step: #{step["uses"]}" unless expected_uses.include?(step["uses"])
+              else
+                abort "step has neither run nor uses: #{step["name"]}"
+              end
+              abort "unexpected step key in #{step["name"]}: #{(keys - ["name","run","shell","uses","with","if","id","env","working-directory"]).inspect}"
+            end
+          end
+
+          permissions=workflow.fetch("permissions")
+          abort "workflow permissions are not read-only" unless permissions == {
+            "actions"=>"read",
+            "contents"=>"read",
+            "pull-requests"=>"read",
+          }
+
+          concurrency=workflow.fetch("concurrency")
+          abort "concurrency contract mismatch" unless concurrency["cancel-in-progress"] == true && concurrency["group"].is_a?(String)
+          puts "YAML semantic workflow guard passed"
+          RUBY
+
       - name: Extract verifier-generated reachability source
         shell: bash
         run: |
