@@ -175,11 +175,12 @@ jobs:
           from collections import Counter
           expr_start="$"+"{{"
           expr_end="}}"
-          all_expression_counts=Counter(re.findall(expr_start+r"[^}]+\\}\}",workflow))
+          expression_pattern=re.escape(expr_start)+r"[^}]+\}\}"
+          all_expression_counts=Counter(re.findall(expression_pattern,workflow))
           run_expression_counts=Counter(
               expression
               for block in run_blocks
-              for expression in re.findall(expr_start+r"[^}]+\\}\}",block)
+              for expression in re.findall(expression_pattern,block)
           )
           expressions=all_expression_counts-run_expression_counts
           def expr(value):
