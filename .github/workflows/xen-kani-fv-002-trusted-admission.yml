@@ -61,6 +61,7 @@ jobs:
 
           workflow=Path(".github/workflows/xen-kani-fv-002-trusted-admission.yml").read_text()
           required_steps=[
+              "Verify trusted workflow structure and Python syntax",
               "Checkout exact PR subject",
               "Extract verifier-generated reachability source",
               "Verify self-test reachability source policy",
@@ -93,9 +94,13 @@ jobs:
               "Retain trusted receipt",
               "Upload trusted evidence",
           ]
-          for name in required_steps:
-              needle="      - name: "+name
-              assert workflow.count(needle)==1, name
+          required_step_lines=["      - name: "+name for name in required_steps]
+          observed_step_lines=[line for line in workflow.splitlines() if line.startswith("      - name: ")]
+          for needle in required_step_lines:
+              assert observed_step_lines.count(needle)==1, needle
+          assert observed_step_lines == required_step_lines, (
+              "trusted workflow step inventory/order mismatch"
+          )
 
           assert workflow.count("  trusted-admission:\n")==1
           assert workflow.count("  non-authoritative-selftest:\n")==1
