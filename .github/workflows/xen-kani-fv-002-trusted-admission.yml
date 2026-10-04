@@ -203,12 +203,14 @@ jobs:
               run_blocks.append("\n".join(body))
           assert len(run_blocks)==36
           set_plus_blocks=[]
+          set_fail_open="set "+"+e"
+          set_fail_closed="set "+"-e"
           for index, block in enumerate(run_blocks, start=1):
               nonempty=[line.strip() for line in block.splitlines() if line.strip()]
               assert nonempty and nonempty[0]=="set -euo pipefail", f"run block {index} must start fail-closed"
-              set_events=[line.strip() for line in block.splitlines() if line.strip() in {"set +e","set -e"}]
-              if "set +e" in block:
-                  assert set_events==["set +e","set -e"], f"unbalanced temporary fail-open mode in run block {index}"
+              set_events=[line.strip() for line in block.splitlines() if line.strip() in {set_fail_open,set_fail_closed}]
+              if set_fail_open in block:
+                  assert set_events==[set_fail_open,set_fail_closed], f"unbalanced temporary fail-open mode in run block {index}"
                   set_plus_blocks.append(index)
               else:
                   assert set_events==[], f"unexpected shell mode change in run block {index}"
