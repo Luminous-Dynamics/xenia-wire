@@ -270,7 +270,9 @@ jobs:
           assert d["head_sha"]==os.environ["HEAD_SHA"]
           assert d["head_repository"]["full_name"]==os.environ["HEAD_REPO"]
           assert os.environ["HEAD_REPO"]==os.environ["EXPECTED_HEAD_REPO"]
-          assert d["pull_requests"] and d["pull_requests"][0]["number"]==int(os.environ["PR_NUMBER"])
+          pull_requests=d.get("pull_requests",[])
+          assert len(pull_requests)==1, f"unexpected triggering PR cardinality: {len(pull_requests)}"
+          assert pull_requests[0]["number"]==int(os.environ["PR_NUMBER"])
           assert d["conclusion"]==os.environ["TRIGGER_CONCLUSION"]
           PY
 
