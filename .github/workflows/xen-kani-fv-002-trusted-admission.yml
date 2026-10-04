@@ -505,6 +505,18 @@ jobs:
               "std::net",
               "std::thread",
               "proc_macro",
+              "macro_rules!",
+              "cfg_attr",
+              "#[link",
+              "#[no_mangle",
+              "#[link_section",
+              "#[used",
+              "#[panic_handler",
+              "#[alloc_error_handler",
+              "#[global_allocator",
+              "#[start",
+              "#[feature(",
+              "rustc_private",
           )
           lexical_escape=re.compile(
               r"\b(?:unsafe|extern)\b|(?:asm|global_asm|env|option_env)!\s*\("
@@ -1110,8 +1122,20 @@ jobs:
               "std::net",
               "std::thread",
               "proc_macro",
+              "macro_rules!",
+              "cfg_attr",
+              "#[link",
+              "#[no_mangle",
+              "#[link_section",
+              "#[used",
+              "#[panic_handler",
+              "#[alloc_error_handler",
+              "#[global_allocator",
+              "#[start",
+              "#[feature(",
+              "rustc_private",
           )
-          lexical_escape=re.compile(r"\b(?:unsafe|extern)\b|(?:asm|global_asm|env|option_env)!\s*\(")
+          lexical_escape=re.compile(r"\b(?:unsafe|extern)\b|(?:asm|global_asm|env|option_env)!\s*\(|\bmacro_rules\b|\bcfg_attr\b")
 
           for name, source in (("replay_kernel.rs", kernel), ("replay_kernel_kani.rs", proof)):
               for token in forbidden:
@@ -1169,6 +1193,18 @@ jobs:
               "std::net",
               "std::thread",
               "proc_macro",
+              "macro_rules!",
+              "cfg_attr",
+              "#[link",
+              "#[no_mangle",
+              "#[link_section",
+              "#[used",
+              "#[panic_handler",
+              "#[alloc_error_handler",
+              "#[global_allocator",
+              "#[start",
+              "#[feature(",
+              "rustc_private",
               "unsafe",
           ):
               assert forbidden not in source, f"forbidden escape hatch present: {forbidden}"
