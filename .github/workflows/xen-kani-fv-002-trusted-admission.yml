@@ -990,6 +990,7 @@ jobs:
                   "property_failed":detail.get("failed"),
                   "property_unreachable":detail.get("unreachable"),
                   "property_undetermined":detail.get("undetermined"),
+                  "property_solver_error":detail.get("solver_error"),
                   "json_sha256":digest(json_path),
                   "log_sha256":digest(log_path),
               })
@@ -1337,6 +1338,7 @@ jobs:
                   and int(x.get("property_failed") or 0)==0
                   and int(x.get("property_unreachable") or 0)==0
                   and int(x.get("property_undetermined") or 0)==0
+                  and int(x.get("property_solver_error") or 0)==0
                   for x in clean_manifest.get("results",[])
               )
           )
