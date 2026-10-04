@@ -71,7 +71,7 @@ jobs:
               "Execute all trusted cover witnesses as non-authoritative self-test",
               "Retain non-authoritative self-test evidence",
               "Prepare trusted verifier workspace",
-              "Verify trusted verifier workflow identity"
+              "Verify trusted verifier workflow identity",
               "Verify triggering workflow identity and provenance",
               "Verify triggering workflow source identity",
               "Verify triggering PR identity",
@@ -96,6 +96,7 @@ jobs:
               "Retain trusted receipt",
               "Upload trusted evidence",
           ]
+          assert len(required_steps)==34, f"expected 34 required steps, got {len(required_steps)}"
           required_step_lines=["      - name: "+name for name in required_steps]
           observed_step_lines=[line for line in workflow.splitlines() if line.startswith("      - name: ")]
           for needle in required_step_lines:
