@@ -94,9 +94,10 @@ jobs:
               "Restore trusted clean source identity after reachability control",
               "Re-verify triggering PR freshness before receipt",
               "Retain trusted receipt",
+              "Verify trusted evidence inventory",
               "Upload trusted evidence",
           ]
-          assert len(required_steps)==34, f"expected 34 required steps, got {len(required_steps)}"
+          assert len(required_steps)==35, f"expected 35 required steps, got {len(required_steps)}"
           required_step_lines=["      - name: "+name for name in required_steps]
           observed_step_lines=[line for line in workflow.splitlines() if line.startswith("      - name: ")]
           for needle in required_step_lines:
@@ -127,10 +128,10 @@ jobs:
 
           lines=workflow.splitlines()
           run_lines=[line for line in lines if re.fullmatch(r" {8}run:.*",line)]
-          assert len(run_lines)==31, f"expected 31 run steps, got {len(run_lines)}"
+          assert len(run_lines)==32, f"expected 32 run steps, got {len(run_lines)}"
           assert all(line=="        run: |" for line in run_lines), "all executable blocks must use literal run: |"
           shell_lines=[line for line in lines if re.fullmatch(r" {8}shell:.*",line)]
-          assert len(shell_lines)==31, f"expected 31 shell declarations, got {len(shell_lines)}"
+          assert len(shell_lines)==32, f"expected 32 shell declarations, got {len(shell_lines)}"
           assert all(line=="        shell: bash" for line in shell_lines), "all executable steps must use shell: bash"
           run_blocks=[]
           for idx,line in enumerate(lines):
@@ -145,7 +146,7 @@ jobs:
                   body.append(candidate)
                   j+=1
               run_blocks.append("\n".join(body))
-          assert len(run_blocks)==31
+          assert len(run_blocks)==32
           for block in run_blocks:
               event_expr="$"+"{{ github.event."
               assert event_expr not in block, (
@@ -370,7 +371,7 @@ jobs:
             /tmp/selftest-kani-rustc.txt
             /tmp/selftest-*.json
             /tmp/selftest-*.log
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 30
 
   trusted-admission:
@@ -1559,6 +1560,51 @@ jobs:
               raise SystemExit("authority eligibility predicate is false")
           PY
 
+      - name: Verify trusted evidence inventory
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          required_files=(
+            /tmp/trusted-subject.txt
+            /tmp/verifier-workflow.txt
+            /tmp/verifier-workflow.blob
+            /tmp/trigger-workflow.txt
+            /tmp/trigger-workflow.blob
+            /tmp/trigger-run.json
+            /tmp/base-tree-sha
+            /tmp/head-tree-sha
+            /tmp/trusted-tree-delta.txt
+            /tmp/trusted-reachability-manifest.json
+            /tmp/cover-hostile.json
+            /tmp/hostile-cover-mutant-kernel.blob
+            /tmp/hostile-cover-restored-kernel.blob
+            /tmp/xen-kani-trusted/src/replay_kernel_cover.rs
+            /tmp/cover-harnesses.txt
+            /tmp/trusted-clean-manifest.json
+            /tmp/xen-kani-trusted/kernel.blob
+            /tmp/xen-kani-trusted/proof.blob
+            /tmp/xen-kani-trusted/evidence.blob
+            /tmp/xen-kani-trusted/evidence.json
+            /tmp/kani-version.txt
+            /tmp/kani-rustc.txt
+            /tmp/trusted-admission.json
+            /tmp/final-pr.json
+            /tmp/final-pr-freshness.txt
+            /tmp/hostile.json
+            /tmp/hostile.log
+            /tmp/hostile.exit
+            /tmp/hostile-mutant-kernel.blob
+            /tmp/hostile-restored-kernel.blob
+          )
+          for path in "${required_files[@]}"; do
+            test -s "$path"
+          done
+          test "$(find /tmp -maxdepth 1 -type f -name 'kernel_*.json' | wc -l)" -eq 14
+          test "$(find /tmp -maxdepth 1 -type f -name 'cover_*.json' | wc -l)" -eq 7
+          test "$(find /tmp -maxdepth 1 -type f -name 'cover_*.log' | wc -l)" -eq 7
+          test "$(find /tmp -maxdepth 1 -type f -name 'cover_*.exit' | wc -l)" -eq 7
+
       - name: Upload trusted evidence
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -1601,5 +1647,5 @@ jobs:
             /tmp/hostile.exit
             /tmp/hostile-mutant-kernel.blob
             /tmp/hostile-restored-kernel.blob
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 30
