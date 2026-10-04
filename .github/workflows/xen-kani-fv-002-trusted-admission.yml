@@ -1672,6 +1672,7 @@ jobs:
               "schema":"xenia.formal.kani-replay-kernel.trusted-admission.v1",
               "verifier_workflow_path":os.environ["VERIFIER_WORKFLOW_PATH"],
               "verifier_workflow_commit":os.environ["GITHUB_SHA"],
+              "verifier_workflow_id":int(os.environ["EXPECTED_VERIFIER_WORKFLOW_ID"]),
               "verifier_workflow_blob":read_optional("/tmp/verifier-workflow.blob"),
               "trigger_workflow_blob":read_optional("/tmp/trigger-workflow.blob"),
               "github_run_id":int(os.environ["GITHUB_RUN_ID"]),
