@@ -317,7 +317,7 @@ jobs:
             step=jobs.fetch("trusted-admission").fetch("steps").fetch(index)
             abort "missing or reordered trusted step #{index+1}: #{name}" unless step["name"] == name
           end
-          abort "trusted step count mismatch" unless jobs.fetch("trusted-admission").fetch("steps").length == 39
+          abort "trusted step count mismatch" unless jobs.fetch("trusted-admission").fetch("steps").length == 40
 
           expected_uses=[
             "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
