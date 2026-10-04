@@ -185,9 +185,12 @@ jobs:
                   j+=1
               run_blocks.append("\n".join(body))
           assert len(run_blocks)==36
-          assert sum("cargo install --locked --path /tmp/kani-verifier-0.68.0" in block for block in run_blocks)==2
-          assert sum("cargo install --locked kani-verifier --version" in block for block in run_blocks)==0
-          assert sum("cargo kani setup --use-local-bundle /tmp/kani-release-bundle.tar.gz" in block for block in run_blocks)==2
+          verifier_install="cargo install --locked --path "+" /tmp/kani-verifier-0.68.0".lstrip()
+          assert sum(verifier_install in block for block in run_blocks)==2
+          forbidden_verifier_install="cargo install --locked "+"kani-verifier --version"
+          assert sum(forbidden_verifier_install in block for block in run_blocks)==0
+          kani_setup="cargo kani setup --use-local-bundle "+" /tmp/kani-release-bundle.tar.gz".lstrip()
+          assert sum(kani_setup in block for block in run_blocks)==2
           from collections import Counter
           expr_start="$"+"{{"
           expr_end="}}"
