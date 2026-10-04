@@ -247,6 +247,43 @@ jobs:
           assert len(blocks) >= 10, f"unexpected Python heredoc count: {len(blocks)}"
           for index, block in enumerate(blocks, start=1):
               ast.parse(block, filename=f"workflow-python-heredoc-{index}.py")
+
+          for index, block in enumerate(run_blocks, start=1):
+              Path(f"/tmp/trusted-workflow-run-{index}.sh").write_text(block + "\n")
+          for index in range(1, len(run_blocks) + 1):
+              assert __import__("subprocess").run(
+                  ["bash", "-n", f"/tmp/trusted-workflow-run-{index}.sh"],
+                  capture_output=True,
+                  text=True,
+              ).returncode == 0, f"Bash syntax failure in run block {index}"
+
+          ruby_blocks=[]
+          i=0
+          while i < len(lines):
+              if re.match(r"^\s*ruby\b.*<<\x27RUBY\x27\s*$", lines[i]):
+                  start=i+1
+                  body=[]
+                  i=start
+                  while i < len(lines) and lines[i] != "          RUBY":
+                      line=lines[i]
+                      assert not line or line.startswith("          "), (
+                          f"unexpected Ruby heredoc indentation at line {i+1}"
+                      )
+                      body.append(line[10:] if line else "")
+                      i+=1
+                  assert i < len(lines), f"unterminated Ruby heredoc at line {start}"
+                  ruby_blocks.append("\n".join(body)+"\n")
+              i+=1
+          assert len(ruby_blocks)==1, f"unexpected Ruby heredoc count: {len(ruby_blocks)}"
+          for index, block in enumerate(ruby_blocks, start=1):
+              path=Path(f"/tmp/trusted-workflow-ruby-{index}.rb")
+              path.write_text(block)
+              result=__import__("subprocess").run(
+                  ["ruby", "-c", str(path)],
+                  capture_output=True,
+                  text=True,
+              )
+              assert result.returncode==0, f"Ruby syntax failure in heredoc {index}: {result.stderr}"
           PY
 
           ruby <<'RUBY'
