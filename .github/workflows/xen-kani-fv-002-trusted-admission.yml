@@ -140,7 +140,8 @@ jobs:
               run_blocks.append("\n".join(body))
           assert run_blocks
           for block in run_blocks:
-              assert "${{ github.event." not in block, (
+              event_expr="$"+"{{ github.event."
+              assert event_expr not in block, (
                   "event context interpolated directly into shell run block"
               )
           blocks=[]
