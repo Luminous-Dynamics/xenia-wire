@@ -61,8 +61,8 @@ jobs:
 
           workflow=Path(".github/workflows/xen-kani-fv-002-trusted-admission.yml").read_text()
           required_steps=[
-              "Verify trusted workflow structure and Python syntax",
               "Checkout exact PR subject",
+              "Verify trusted workflow structure and Python syntax",
               "Extract verifier-generated reachability source",
               "Verify self-test reachability source policy",
               "Fetch frozen replay kernel for self-test",
