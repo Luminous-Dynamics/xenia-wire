@@ -15,7 +15,7 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: trusted-xen-kani-fv-002-${{ github.event.workflow_run.pull_requests[0].number }}
+  group: trusted-xen-kani-fv-002-${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number }}
   cancel-in-progress: true
 
 env:
@@ -120,6 +120,7 @@ jobs:
           cargo kani --version --verbose | tee /tmp/selftest-kani-version.txt
           grep -q "kani-0.68.0" /tmp/selftest-kani-version.txt
           grep -q "CBMC 6.11.0" /tmp/selftest-kani-version.txt
+          grep -q "$EXPECTED_KANI_RUST_COMMIT_HASH" /tmp/selftest-kani-version.txt
 
       - name: Execute all trusted cover witnesses as non-authoritative self-test
         working-directory: /tmp/xen-kani-selftest
@@ -652,6 +653,7 @@ jobs:
           cargo kani --version --verbose | tee /tmp/kani-version.txt
           grep -q "kani-0.68.0" /tmp/kani-version.txt
           grep -q "CBMC 6.11.0" /tmp/kani-version.txt
+          grep -q "$EXPECTED_KANI_RUST_COMMIT_HASH" /tmp/kani-version.txt
           rustup run "$EXPECTED_KANI_RUST_TOOLCHAIN" rustc -Vv | tee /tmp/kani-rustc.txt
           grep -q "commit-hash: $EXPECTED_KANI_RUST_COMMIT_HASH" /tmp/kani-rustc.txt
 
@@ -1161,6 +1163,7 @@ jobs:
               "kani_version":read_optional("/tmp/kani-version.txt"),
               "expected_cbmc_version":os.environ["EXPECTED_KANI_CBMC_VERSION"],
               "cbmc_version_verified":("CBMC "+os.environ["EXPECTED_KANI_CBMC_VERSION"]) in read_optional("/tmp/kani-version.txt",""),
+              "kani_rust_binding_verified":os.environ["EXPECTED_KANI_RUST_COMMIT_HASH"] in read_optional("/tmp/kani-version.txt",""),
               "kani_rust_toolchain":os.environ["EXPECTED_KANI_RUST_TOOLCHAIN"],
               "kani_rust_commit_hash":os.environ["EXPECTED_KANI_RUST_COMMIT_HASH"],
               "clean_harness_count":14,
