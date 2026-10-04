@@ -26,6 +26,7 @@ env:
   VERIFIER_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-trusted-admission.yml
   EXPECTED_TRIGGER_BRANCH: formal/xen-kani-fv-002-replay-kernel
   KANI_VERSION: 0.68.0
+  EXPECTED_KANI_CBMC_VERSION: 6.11.0
   EXPECTED_KANI_RUST_TOOLCHAIN: nightly-2026-08-21
   EXPECTED_KANI_RUST_COMMIT_HASH: 8925ea358a0f265ca61026aadc7ecc506c545cbe
 
@@ -506,6 +507,7 @@ jobs:
           cargo kani setup
           cargo kani --version --verbose | tee /tmp/kani-version.txt
           grep -q "kani-0.68.0" /tmp/kani-version.txt
+          grep -q "CBMC 6.11.0" /tmp/kani-version.txt
           rustup run "$EXPECTED_KANI_RUST_TOOLCHAIN" rustc -Vv | tee /tmp/kani-rustc.txt
           grep -q "commit-hash: $EXPECTED_KANI_RUST_COMMIT_HASH" /tmp/kani-rustc.txt
 
@@ -988,6 +990,8 @@ jobs:
               "head_tree_sha":Path("/tmp/head-tree-sha").read_text().strip() if Path("/tmp/head-tree-sha").exists() else None,
               "complete_tree_delta_verified":Path("/tmp/trusted-tree-delta.txt").exists(),
               "kani_version":read_optional("/tmp/kani-version.txt"),
+              "expected_cbmc_version":os.environ["EXPECTED_KANI_CBMC_VERSION"],
+              "cbmc_version_verified":("CBMC "+os.environ["EXPECTED_KANI_CBMC_VERSION"]) in read_optional("/tmp/kani-version.txt",""),
               "kani_rust_toolchain":os.environ["EXPECTED_KANI_RUST_TOOLCHAIN"],
               "kani_rust_commit_hash":os.environ["EXPECTED_KANI_RUST_COMMIT_HASH"],
               "clean_harness_count":14,
