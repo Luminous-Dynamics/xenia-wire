@@ -674,6 +674,11 @@ jobs:
           mkdir -p /tmp/kani-verifier-0.68.0
           tar -xzf /tmp/kani-verifier-0.68.0.crate -C /tmp --no-same-owner --no-same-permissions
           test -f /tmp/kani-verifier-0.68.0/Cargo.toml
+          extracted_manifest_sha256="$(sha256sum /tmp/kani-verifier-0.68.0/Cargo.toml | cut -d" " -f1)"
+          archive_sha256="$(cat /tmp/kani-crate-sha256.txt)"
+          printf "crate_archive_sha256=%s\nmanifest_sha256=%s\n" "$archive_sha256" "$extracted_manifest_sha256" > /tmp/kani-extraction-binding.txt
+          test -n "$archive_sha256"
+          test -n "$extracted_manifest_sha256"
           cargo install --locked --path /tmp/kani-verifier-0.68.0
           curl --fail-with-body --silent --show-error \
             -H "Accept: application/vnd.github+json" \
@@ -2216,6 +2221,7 @@ jobs:
               "kani_release_local_bundle_verified":Path("/tmp/kani-release-bundle-sha256.txt").exists(),
               "kani_release_tag_commit_verified":Path("/tmp/kani-release-ref.txt").exists() and read_optional("/tmp/kani-release-ref.txt").split()[0]==os.environ["EXPECTED_KANI_RELEASE_COMMIT_SHA"],
               "kani_crate_sha256":read_optional("/tmp/kani-crate-sha256.txt"),
+              "kani_extraction_binding":read_optional("/tmp/kani-extraction-binding.txt"),
               "kani_registry_checksum":read_optional("/tmp/kani-registry-checksum.txt"),
               "kani_registry_checksum_verified":Path("/tmp/kani-crate-sha256.txt").exists() and Path("/tmp/kani-registry-checksum.txt").exists() and read_optional("/tmp/kani-crate-sha256.txt")==read_optional("/tmp/kani-registry-checksum.txt"),
               "kani_rust_binding_verified":(
@@ -2281,6 +2287,7 @@ jobs:
             /tmp/kani-release-bundle.tar.gz
             /tmp/kani-crates-io.json
             /tmp/kani-crate-sha256.txt
+            /tmp/kani-extraction-binding.txt
             /tmp/kani-registry-checksum.txt
             /tmp/kani-release.json
             /tmp/kani-release-asset.txt
