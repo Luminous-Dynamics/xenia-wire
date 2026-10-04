@@ -125,6 +125,24 @@ jobs:
           assert all(re.fullmatch(r"[^@]+@[0-9a-f]{40}",x) for x in uses)
 
           lines=workflow.splitlines()
+          run_blocks=[]
+          for idx,line in enumerate(lines):
+              if not re.fullmatch(r" {8}run: \|",line):
+                  continue
+              body=[]
+              j=idx+1
+              while j < len(lines):
+                  candidate=lines[j]
+                  if candidate and len(candidate)-len(candidate.lstrip(" ")) <= 8:
+                      break
+                  body.append(candidate)
+                  j+=1
+              run_blocks.append("\n".join(body))
+          assert run_blocks
+          for block in run_blocks:
+              assert "${{ github.event." not in block, (
+                  "event context interpolated directly into shell run block"
+              )
           blocks=[]
           i=0
           while i < len(lines):
