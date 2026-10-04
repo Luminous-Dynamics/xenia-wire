@@ -215,7 +215,8 @@ jobs:
           }
           parsed_env=workflow.fetch("env")
           abort "top-level env mismatch" unless parsed_env == expected_env
-          abort "top-level env must contain no expressions" if parsed_env.values.any? { |value| value.is_a?(String) && value.include?("${{") }
+          expr_start="$"+"{{"
+          abort "top-level env must contain no expressions" if parsed_env.values.any? { |value| value.is_a?(String) && value.include?(expr_start) }
 
           on_key=workflow.key?("on") ? "on" : true
           abort "missing workflow trigger map" unless workflow.key?(on_key)
