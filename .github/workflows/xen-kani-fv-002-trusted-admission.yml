@@ -74,6 +74,7 @@ jobs:
               "Execute all trusted cover witnesses as non-authoritative self-test",
               "Retain non-authoritative self-test evidence",
               "Prepare trusted verifier workspace",
+              "Verify trusted event envelope",
               "Verify trusted verifier workflow identity",
               "Verify triggering workflow identity and provenance",
               "Verify triggering workflow source identity",
@@ -557,6 +558,23 @@ jobs:
           version = "0.1.0"
           edition = "2021"
           EOF
+
+      - name: Verify trusted event envelope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = "workflow_run"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$GITHUB_REPOSITORY" = "$EXPECTED_HEAD_REPO"
+          [[ "$GITHUB_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$GITHUB_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
+          [[ "$TRIGGER_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$TRIGGER_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$HEAD_REPO" = "$EXPECTED_HEAD_REPO"
+          test "$HEAD_BRANCH" = "$EXPECTED_TRIGGER_BRANCH"
+          test "$TRIGGER_CONCLUSION" = "success"
 
       - name: Verify trusted verifier workflow identity
         shell: bash
