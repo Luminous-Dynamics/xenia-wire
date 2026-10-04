@@ -173,6 +173,13 @@ jobs:
           }
           from collections import Counter
           assert Counter(expressions)==Counter(expected_expression_counts)
+          for required_literal in (
+              "/tmp/trusted-workflow-run-event.json",
+              "/tmp/verifier-run.json",
+              "/tmp/trigger-run.json",
+              "/tmp/pr.json",
+          ):
+              assert required_literal in workflow, f"missing retained envelope: {required_literal}"
 
           lines=workflow.splitlines()
           run_lines=[line for line in lines if re.fullmatch(r" {8}run:.*",line)]
@@ -1963,7 +1970,10 @@ jobs:
             /tmp/verifier-workflow.blob
             /tmp/trigger-workflow.txt
             /tmp/trigger-workflow.blob
+            /tmp/trusted-workflow-run-event.json
+            /tmp/verifier-run.json
             /tmp/trigger-run.json
+            /tmp/pr.json
             /tmp/base-tree-sha
             /tmp/head-tree-sha
             /tmp/trusted-tree-delta.txt
