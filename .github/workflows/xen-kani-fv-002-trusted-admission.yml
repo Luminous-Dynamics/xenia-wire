@@ -1401,8 +1401,16 @@ jobs:
                   and read_optional("/tmp/hostile-cover-restored-kernel.blob")==read_optional("/tmp/xen-kani-trusted/kernel.blob")
               )
 
+          workflow_identity_ok=(
+              read_optional("/tmp/verifier-workflow.blob") is not None
+              and read_optional("/tmp/trigger-workflow.blob")==os.environ["EXPECTED_TRIGGER_WORKFLOW_BLOB"]
+          )
+          tree_delta_ok=Path("/tmp/trusted-tree-delta.txt").exists()
+
           authority_eligible=(
               read_optional("/tmp/final-pr-freshness.txt") is not None
+              and workflow_identity_ok
+              and tree_delta_ok
               and kernel_binding
               and proof_binding
               and evidence_binding
