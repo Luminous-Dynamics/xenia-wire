@@ -302,8 +302,11 @@ jobs:
           from pathlib import Path
           d=json.loads(Path("/tmp/pr.json").read_text())
           assert d["number"]==int(os.environ["PR_NUMBER"])
+          assert d["state"]=="open"
+          assert d["merged"] is False
           assert d["base"]["ref"]=="main"
           assert d["base"]["repo"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]
+          assert d["head"]["ref"]==os.environ["HEAD_BRANCH"]
           assert d["head"]["sha"]==os.environ["HEAD_SHA"]
           assert d["head"]["repo"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]
           assert d["head"]["repo"]["full_name"]==os.environ["HEAD_REPO"]
