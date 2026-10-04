@@ -194,6 +194,28 @@ jobs:
           top_level_keys=workflow.keys.map { |key| key == true ? "on" : key.to_s }.sort
           abort "unexpected top-level workflow keys" unless top_level_keys == ["concurrency","env","jobs","name","on","permissions"]
           abort "workflow name mismatch" unless workflow["name"] == "Trusted XEN-KANI-FV-002 Admission"
+          expected_env={
+            "BASE_SHA"=>"057dd03043b8863d8f8280abf333331cc9ddf317",
+            "EXPECTED_HEAD_REPO"=>"Luminous-Dynamics/xenia-wire",
+            "EXPECTED_KERNEL_BLOB"=>"d1bc8a1f8fc0883856d5073fa37b1658a7ea63ad",
+            "EXPECTED_PROOF_BLOB"=>"4e3f0f584ca189baafe230da66b4bdeac87a7515",
+            "EXPECTED_EVIDENCE_CONTRACT_BLOB"=>"ce3e1447cc6b9bd1f0fc361b4fb81c5fe1450b0b",
+            "EXPECTED_TRIGGER_WORKFLOW_ID"=>373424313,
+            "EXPECTED_TRIGGER_WORKFLOW_PATH"=>".github/workflows/xen-kani-fv-002-replay-kernel-v2.yml",
+            "EXPECTED_TRIGGER_WORKFLOW_BLOB"=>"44ee053e9d60779b081986769e6ff69b0c262517",
+            "VERIFIER_WORKFLOW_PATH"=>".github/workflows/xen-kani-fv-002-trusted-admission.yml",
+            "EXPECTED_TRIGGER_BRANCH"=>"formal/xen-kani-fv-002-replay-kernel",
+            "EXPECTED_QUALIFIED_HEAD_SHA"=>"1fbea431db9e7e20ae3b31e925219a90de2b36bd",
+            "KANI_VERSION"=>"0.68.0",
+            "EXPECTED_KANI_CBMC_VERSION"=>"6.11.0",
+            "EXPECTED_KANI_RELEASE_TAG"=>"kani-0.68.0",
+            "EXPECTED_KANI_RELEASE_COMMIT_SHA"=>"0d2328a93f0e0ff66132d6bfa1a7d884877cf862",
+            "EXPECTED_KANI_RUST_TOOLCHAIN"=>"nightly-2026-08-21",
+            "EXPECTED_KANI_RUST_COMMIT_HASH"=>"8925ea358a0f265ca61026aadc7ecc506c545cbe",
+          }
+          parsed_env=workflow.fetch("env")
+          abort "top-level env mismatch" unless parsed_env == expected_env
+          abort "top-level env must contain no expressions" if parsed_env.values.any? { |value| value.is_a?(String) && value.include?("${{") }
 
           on_key=workflow.key?("on") ? "on" : true
           abort "missing workflow trigger map" unless workflow.key?(on_key)
