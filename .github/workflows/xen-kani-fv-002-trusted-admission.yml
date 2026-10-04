@@ -90,8 +90,7 @@ jobs:
           set -euo pipefail
           curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github.raw+json"             "https://api.github.com/repos/$EXPECTED_HEAD_REPO/contents/src/replay_kernel.rs?ref=$EXPECTED_TRIGGER_BRANCH"             -o /tmp/selftest-replay_kernel.rs
           blob="$(git hash-object /tmp/selftest-replay_kernel.rs)"
-          printf '%s
-' "$blob" > /tmp/selftest-replay-kernel.blob
+          echo "$blob" > /tmp/selftest-replay-kernel.blob
           test "$blob" = "$EXPECTED_KERNEL_BLOB"
 
       - name: Build minimal self-test crate
