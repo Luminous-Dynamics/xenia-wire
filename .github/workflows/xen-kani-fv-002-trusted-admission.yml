@@ -56,18 +56,22 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           workflow=Path(".github/workflows/xen-kani-fv-002-trusted-admission.yml").read_text()
-          start = "          cat > /tmp/xen-kani-trusted/src/replay_kernel_cover.rs <<'EOF'\\n"
-          marker='          EOF\n'
-          a=workflow.find(start)
-          if a < 0:
+          workflow_lines=workflow.splitlines()
+          start="          cat > /tmp/xen-kani-trusted/src/replay_kernel_cover.rs <<'EOF'"
+          marker="          EOF"
+          try:
+              start_line=workflow_lines.index(start)
+          except ValueError:
               raise SystemExit("reachability source generator missing")
-          body_start=a+len(start)
-          b=workflow.find(marker,body_start)
-          if b < 0:
+          try:
+              end_line=workflow_lines.index(marker,start_line+1)
+          except ValueError:
               raise SystemExit("reachability source generator terminator missing")
-          block=workflow[body_start:b]
+          block=workflow_lines[start_line+1:end_line]
+          if not block:
+              raise SystemExit("reachability source generator is empty")
           lines=[]
-          for line in block.splitlines():
+          for line in block:
               if not line.startswith("          "):
                   raise SystemExit("unexpected generator indentation")
               lines.append(line[10:])
