@@ -56,7 +56,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           workflow=Path(".github/workflows/xen-kani-fv-002-trusted-admission.yml").read_text()
-          start='          cat > /tmp/xen-kani-trusted/src/replay_kernel_cover.rs <<'EOF'\n'
+          start = "          cat > /tmp/xen-kani-trusted/src/replay_kernel_cover.rs <<'EOF'\\n"
           marker='          EOF\n'
           a=workflow.find(start)
           if a < 0:
