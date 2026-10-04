@@ -1175,8 +1175,18 @@ jobs:
                   ).hexdigest()
                   if Path("/tmp/trusted-reachability-manifest.json").exists() else None
               ),
+              "qualified_kernel_commit_sha":os.environ["EXPECTED_QUALIFIED_HEAD_SHA"],
               "reachability_harness_count":6,
-              "reachability_all_satisfied":Path("/tmp/trusted-reachability-manifest.json").exists(),
+              "reachability_all_satisfied":(
+                  json.loads(Path("/tmp/trusted-reachability-manifest.json").read_text()).get("all_satisfied") is True
+                  and json.loads(Path("/tmp/trusted-reachability-manifest.json").read_text()).get("harness_count")==6
+                  and all(
+                      x.get("cover_status")=="SATISFIED"
+                      for x in json.loads(Path("/tmp/trusted-reachability-manifest.json").read_text()).get("results",[])
+                      if isinstance(x,dict)
+                  )
+                  and len(json.loads(Path("/tmp/trusted-reachability-manifest.json").read_text()).get("results",[]))==6
+              ) if Path("/tmp/trusted-reachability-manifest.json").exists() else False,
               "hostile_cover_control_exit_status":int(read_optional("/tmp/cover-hostile.exit", "125")),
               "hostile_cover_control_structured_result":Path("/tmp/cover-hostile.json").exists(),
               "hostile_cover_mutant_kernel_blob":read_optional("/tmp/hostile-cover-mutant-kernel.blob"),
@@ -1198,7 +1208,10 @@ jobs:
               "kani_version":read_optional("/tmp/kani-version.txt"),
               "expected_cbmc_version":os.environ["EXPECTED_KANI_CBMC_VERSION"],
               "cbmc_version_verified":("CBMC "+os.environ["EXPECTED_KANI_CBMC_VERSION"]) in read_optional("/tmp/kani-version.txt",""),
-              "kani_rust_binding_verified":os.environ["EXPECTED_KANI_RUST_COMMIT_HASH"] in read_optional("/tmp/kani-version.txt",""),
+              "kani_rust_binding_verified":(
+                  ("commit-hash: "+os.environ["EXPECTED_KANI_RUST_COMMIT_HASH"])
+                  in read_optional("/tmp/kani-rustc.txt","")
+              ),
               "kani_rust_toolchain":os.environ["EXPECTED_KANI_RUST_TOOLCHAIN"],
               "kani_rust_commit_hash":os.environ["EXPECTED_KANI_RUST_COMMIT_HASH"],
               "clean_harness_count":14,
