@@ -4,6 +4,10 @@ on:
   workflow_run:
     workflows: ["XEN-KANI-FV-002 Replay Kernel"]
     types: [completed]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - ".github/workflows/xen-kani-fv-002-trusted-admission.yml"
 
 permissions:
   actions: read
@@ -31,6 +35,146 @@ env:
   EXPECTED_KANI_RUST_COMMIT_HASH: 8925ea358a0f265ca61026aadc7ecc506c545cbe
 
 jobs:
+  non-authoritative-selftest:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact PR subject
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Extract verifier-generated reachability source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          workflow=Path(".github/workflows/xen-kani-fv-002-trusted-admission.yml").read_text()
+          start='          cat > /tmp/xen-kani-trusted/src/replay_kernel_cover.rs <<'EOF'\n'
+          marker='          EOF\n'
+          a=workflow.find(start)
+          if a < 0:
+              raise SystemExit("reachability source generator missing")
+          body_start=a+len(start)
+          b=workflow.find(marker,body_start)
+          if b < 0:
+              raise SystemExit("reachability source generator terminator missing")
+          block=workflow[body_start:b]
+          lines=[]
+          for line in block.splitlines():
+              if not line.startswith("          "):
+                  raise SystemExit("unexpected generator indentation")
+              lines.append(line[10:])
+          out=Path("/tmp/replay_kernel_cover.rs")
+          out.write_text("\n".join(lines)+"\n")
+          PY
+          test -s /tmp/replay_kernel_cover.rs
+          grep -q 'kani::cover!(' /tmp/replay_kernel_cover.rs
+          test "$(grep -c 'kani::cover!(' /tmp/replay_kernel_cover.rs)" -eq 6
+
+      - name: Build minimal self-test crate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/xen-kani-selftest/src
+          cp src/replay_kernel.rs /tmp/xen-kani-selftest/src/replay_kernel.rs
+          cp /tmp/replay_kernel_cover.rs /tmp/xen-kani-selftest/src/replay_kernel_cover.rs
+          cat > /tmp/xen-kani-selftest/src/lib.rs <<'EOF'
+          #![forbid(unsafe_code)]
+          mod replay_kernel;
+          #[cfg(kani)]
+          mod replay_kernel_cover;
+          EOF
+          cat > /tmp/xen-kani-selftest/Cargo.toml <<'EOF'
+          [package]
+          name = "xen_kani_reachability_selftest"
+          version = "0.1.0"
+          edition = "2021"
+          EOF
+          cd /tmp/xen-kani-selftest
+          cargo generate-lockfile --offline
+          cargo metadata --locked --offline --no-deps --format-version 1 > /tmp/selftest-metadata.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("/tmp/selftest-metadata.json").read_text())
+          assert len(d["packages"])==1
+          assert d["packages"][0]["name"]=="xen_kani_reachability_selftest"
+          assert d["packages"][0].get("dependencies",[]) == []
+          PY
+
+      - name: Install pinned Kani for self-test
+        shell: bash
+        env:
+          CARGO_NET_OFFLINE: "true"
+        run: |
+          set -euo pipefail
+          cargo install --locked kani-verifier --version "0.68.0"
+          cargo kani setup
+          cargo kani --version --verbose | tee /tmp/selftest-kani-version.txt
+          grep -q "kani-0.68.0" /tmp/selftest-kani-version.txt
+          grep -q "CBMC 6.11.0" /tmp/selftest-kani-version.txt
+
+      - name: Execute all trusted cover witnesses as non-authoritative self-test
+        working-directory: /tmp/xen-kani-selftest
+        shell: bash
+        env:
+          CARGO_NET_OFFLINE: "true"
+        run: |
+          set -euo pipefail
+          cat > /tmp/selftest-covers.txt <<'EOF'
+          cover_initialization_reachable
+          cover_advance_shift_reachable
+          cover_in_window_replay_mark_reachable
+          cover_exact_window_boundary_reachable
+          cover_stale_boundary_rejection_reachable
+          cover_exact_window_jump_reset_reachable
+          EOF
+          while IFS= read -r harness; do
+            set +e
+            cargo kani -Z unstable-options --tests --default-unwind 20 \
+              --harness "$harness" \
+              --export-json "/tmp/selftest-$harness.json" \
+              > "/tmp/selftest-$harness.log" 2>&1
+            status=$?
+            set -e
+            cat "/tmp/selftest-$harness.log"
+            test "$status" -eq 0
+            python3 - "$harness" "/tmp/selftest-$harness.json" <<'PY'
+          import json,sys
+          from pathlib import Path
+          harness=sys.argv[1]
+          d=json.loads(Path(sys.argv[2]).read_text())
+          vr=d.get("verification_results",{})
+          rs=vr.get("results",[]) if isinstance(vr,dict) else []
+          c=[x for x in rs if isinstance(x,dict) and (x.get("harness_id")==harness or str(x.get("harness_id","")).endswith("::"+harness))]
+          assert len(c)==1
+          checks=[x for x in c[0].get("checks",[]) if isinstance(x,dict) and (".cover." in str(x.get("name","")) or str(x.get("description","")).startswith("cover condition:"))]
+          assert len(checks)==1
+          assert str(checks[0].get("status","")).upper()=="SATISFIED"
+          PY
+          done < /tmp/selftest-covers.txt
+
+      - name: Retain non-authoritative self-test evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: xen-kani-fv-002-reachability-selftest-${{ github.event.pull_request.head.sha }}
+          path: |
+            /tmp/replay_kernel_cover.rs
+            /tmp/selftest-covers.txt
+            /tmp/selftest-kani-version.txt
+            /tmp/selftest-*.json
+            /tmp/selftest-*.log
+          if-no-files-found: warn
+          retention-days: 30
+
   trusted-admission:
     if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.pull_requests[0].number != null && github.event.workflow_run.head_branch == 'formal/xen-kani-fv-002-replay-kernel' && github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
