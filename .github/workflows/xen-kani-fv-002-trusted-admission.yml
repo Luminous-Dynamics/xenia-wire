@@ -33,6 +33,7 @@ env:
   KANI_VERSION: 0.68.0
   EXPECTED_KANI_CBMC_VERSION: 6.11.0
   EXPECTED_KANI_GIT_REVISION: kani-0.68.0
+  EXPECTED_KANI_RELEASE_COMMIT_SHA: 0d2328a93f0e0ff66132d6bfa1a7d884877cf862
   EXPECTED_KANI_RUST_TOOLCHAIN: nightly-2026-08-21
   EXPECTED_KANI_RUST_COMMIT_HASH: 8925ea358a0f265ca61026aadc7ecc506c545cbe
 
@@ -968,6 +969,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          git ls-remote https://github.com/model-checking/kani.git "refs/tags/$EXPECTED_KANI_GIT_REVISION^{}" > /tmp/kani-release-ref.txt
+          release_commit="$(cut -f1 /tmp/kani-release-ref.txt)"
+          test "$release_commit" = "$EXPECTED_KANI_RELEASE_COMMIT_SHA"
           cargo install --locked kani-verifier --version "$KANI_VERSION"
           cargo kani setup
           cargo kani --version --verbose | tee /tmp/kani-version.txt
@@ -1577,6 +1581,8 @@ jobs:
               and hostile_cover_ok
               and ("CBMC "+os.environ["EXPECTED_KANI_CBMC_VERSION"]) in read_optional("/tmp/kani-version.txt","")
               and ("Kani Rust Verifier 0.68.0 ("+os.environ["EXPECTED_KANI_GIT_REVISION"]+") (cargo plugin)") in read_optional("/tmp/kani-version.txt","")
+              and Path("/tmp/kani-release-ref.txt").exists()
+              and read_optional("/tmp/kani-release-ref.txt").split()[0]==os.environ["EXPECTED_KANI_RELEASE_COMMIT_SHA"]
               and ("commit-hash: "+os.environ["EXPECTED_KANI_RUST_COMMIT_HASH"]) in read_optional("/tmp/kani-rustc.txt","")
           )
 
@@ -1656,6 +1662,8 @@ jobs:
               "expected_cbmc_version":os.environ["EXPECTED_KANI_CBMC_VERSION"],
               "cbmc_version_verified":("CBMC "+os.environ["EXPECTED_KANI_CBMC_VERSION"]) in read_optional("/tmp/kani-version.txt",""),
               "expected_kani_git_revision":os.environ["EXPECTED_KANI_GIT_REVISION"],
+              "expected_kani_release_commit_sha":os.environ["EXPECTED_KANI_RELEASE_COMMIT_SHA"],
+              "kani_release_tag_commit_verified":Path("/tmp/kani-release-ref.txt").exists() and read_optional("/tmp/kani-release-ref.txt").split()[0]==os.environ["EXPECTED_KANI_RELEASE_COMMIT_SHA"],
               "kani_git_revision_verified":("Kani Rust Verifier 0.68.0 ("+os.environ["EXPECTED_KANI_GIT_REVISION"]+") (cargo plugin)") in read_optional("/tmp/kani-version.txt",""),
               "kani_rust_binding_verified":(
                   ("commit-hash: "+os.environ["EXPECTED_KANI_RUST_COMMIT_HASH"])
