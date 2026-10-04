@@ -169,7 +169,7 @@ jobs:
           from pathlib import Path
           harness=sys.argv[1]
           def normalize_description(value):
-              return re.sub(r"\\s+", " ", str(value)).strip()
+              return re.sub(r"\s+", " ", str(value)).strip()
           d=json.loads(Path(sys.argv[2]).read_text())
           expected_descriptions={
               "cover_initialization_reachable":"cover condition: accepted && state.initialized && state.highest == seq && state.bitmap[0] == 1",
@@ -728,7 +728,7 @@ jobs:
           from pathlib import Path
           harness=sys.argv[1]
           def normalize_description(value):
-              return re.sub(r"\\s+", " ", str(value)).strip()
+              return re.sub(r"\s+", " ", str(value)).strip()
           d=json.loads(Path(sys.argv[2]).read_text())
           vr=d.get("verification_results",{})
           results=vr.get("results",[]) if isinstance(vr,dict) else []
