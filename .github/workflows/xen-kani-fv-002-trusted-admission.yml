@@ -148,9 +148,9 @@ jobs:
               run_blocks.append("\n".join(body))
           assert len(run_blocks)==32
           for block in run_blocks:
-              event_expr="$"+"{{ github.event."
-              assert event_expr not in block, (
-                  "event context interpolated directly into shell run block"
+              github_expr="$"+"{{ github."
+              assert github_expr not in block, (
+                  "GitHub context interpolated directly into shell run block"
               )
           blocks=[]
           i=0
