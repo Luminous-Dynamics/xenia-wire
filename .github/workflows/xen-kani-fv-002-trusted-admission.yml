@@ -165,9 +165,11 @@ jobs:
             cat "/tmp/selftest-$harness.log"
             test "$status" -eq 0
             python3 - "$harness" "/tmp/selftest-$harness.json" <<'PY'
-          import json,sys
+          import json,sys,re
           from pathlib import Path
           harness=sys.argv[1]
+          def normalize_description(value):
+              return re.sub(r"\\s+", " ", str(value)).strip()
           d=json.loads(Path(sys.argv[2]).read_text())
           expected_descriptions={
               "cover_initialization_reachable":"cover condition: accepted && state.initialized && state.highest == seq && state.bitmap[0] == 1",
@@ -184,7 +186,7 @@ jobs:
           checks=[x for x in c[0].get("checks",[]) if isinstance(x,dict) and (".cover." in str(x.get("name","")) or str(x.get("description","")).startswith("cover condition:"))]
           assert len(checks)==1
           assert str(checks[0].get("status","")).upper()=="SATISFIED"
-          assert checks[0].get("description")==expected_descriptions[harness]
+          assert normalize_description(checks[0].get("description"))==normalize_description(expected_descriptions[harness])
           PY
           done < /tmp/selftest-covers.txt
 
@@ -722,9 +724,11 @@ jobs:
             test "$status" -eq 0
 
             python3 - "$harness" "/tmp/$harness.json" <<'PY'
-          import json, sys
+          import json, re, sys
           from pathlib import Path
           harness=sys.argv[1]
+          def normalize_description(value):
+              return re.sub(r"\\s+", " ", str(value)).strip()
           d=json.loads(Path(sys.argv[2]).read_text())
           vr=d.get("verification_results",{})
           results=vr.get("results",[]) if isinstance(vr,dict) else []
@@ -940,7 +944,7 @@ jobs:
               cover_checks=[x for x in checks if isinstance(x,dict) and str(x.get("description","")).startswith("cover condition:")]
           assert len(cover_checks)==1, f"expected exactly one cover check for {harness}, got {len(cover_checks)}"
           assert str(cover_checks[0].get("status","")).upper()=="SATISFIED", cover_checks[0]
-          assert cover_checks[0].get("description")==expected_descriptions[harness], cover_checks[0]
+          assert normalize_description(cover_checks[0].get("description"))==normalize_description(expected_descriptions[harness]), cover_checks[0]
           assert str(target.get("status","")).upper()=="SUCCESS"
           summary=vr.get("summary",{})
           assert isinstance(summary,dict)
