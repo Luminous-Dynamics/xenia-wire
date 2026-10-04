@@ -136,6 +136,11 @@ jobs:
               'assert run["head_commit"]["id"]==os.environ["HEAD_SHA"]',
               'assert verification["verified"] is True',
               'Kani release commit signature verified by GitHub',
+              'https://api.github.com/repos/model-checking/kani/releases/tags/$EXPECTED_KANI_RELEASE_TAG',
+              'cargo kani setup --use-local-bundle /tmp/kani-release-bundle.tar.gz',
+              'x86_64-unknown-linux-gnu.tar.gz',
+              'asset.get("digest")',
+              'expected_path="/model-checking/kani/releases/download/"',
               'assert pull_requests[0]["base"]["ref"]=="main"',
               'assert pull_requests[0]["base"]["repo"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]',
           ):
