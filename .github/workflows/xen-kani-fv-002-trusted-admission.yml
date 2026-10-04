@@ -205,6 +205,7 @@ jobs:
             "EXPECTED_TRIGGER_WORKFLOW_PATH"=>".github/workflows/xen-kani-fv-002-replay-kernel-v2.yml",
             "EXPECTED_TRIGGER_WORKFLOW_BLOB"=>"44ee053e9d60779b081986769e6ff69b0c262517",
             "VERIFIER_WORKFLOW_PATH"=>".github/workflows/xen-kani-fv-002-trusted-admission.yml",
+            "EXPECTED_VERIFIER_WORKFLOW_ID"=>373418900,
             "EXPECTED_TRIGGER_BRANCH"=>"formal/xen-kani-fv-002-replay-kernel",
             "EXPECTED_QUALIFIED_HEAD_SHA"=>"1fbea431db9e7e20ae3b31e925219a90de2b36bd",
             "KANI_VERSION"=>"0.68.0",
