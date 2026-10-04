@@ -247,6 +247,16 @@ jobs:
           abort "trusted trigger predicate mismatch" unless trusted["if"] == expected_trusted_if
           abort "trusted runner mismatch" unless trusted["runs-on"] == "ubuntu-24.04" && trusted["timeout-minutes"] == 60
           abort "trusted job unexpectedly overrides permissions" if trusted.key?("permissions")
+          expected_trusted_env={
+            "PR_NUMBER"=>exprStart+"github.event.workflow_run.pull_requests[0].number }}",
+            "HEAD_SHA"=>exprStart+"github.event.workflow_run.head_sha }}",
+            "HEAD_REPO"=>exprStart+"github.event.workflow_run.head_repository.full_name }}",
+            "HEAD_BRANCH"=>exprStart+"github.event.workflow_run.head_branch }}",
+            "TRIGGER_RUN_ID"=>exprStart+"github.event.workflow_run.id }}",
+            "TRIGGER_RUN_ATTEMPT"=>exprStart+"github.event.workflow_run.run_attempt }}",
+            "TRIGGER_CONCLUSION"=>exprStart+"github.event.workflow_run.conclusion }}",
+          }
+          abort "trusted job event env mismatch" unless trusted["env"] == expected_trusted_env
           expected_steps=[
             "Checkout exact PR subject",
             "Verify trusted workflow structure and Python syntax",
