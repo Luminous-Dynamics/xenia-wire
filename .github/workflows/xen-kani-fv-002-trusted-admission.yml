@@ -1664,7 +1664,7 @@ jobs:
           set -euo pipefail
           test -n "$ARTIFACT_ID"
           test "$ARTIFACT_ID" != "0"
-          test "$ARTIFACT_DIGEST" =~ ^[0-9a-f]{64}$
+          [[ "$ARTIFACT_DIGEST" =~ ^[0-9a-f]{64}$ ]]
           curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/actions/artifacts/$ARTIFACT_ID"             -o /tmp/trusted-artifact.json
           python3 - <<'PY'
           import json, os
