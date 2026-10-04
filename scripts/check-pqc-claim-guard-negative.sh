@@ -17,9 +17,10 @@ mkdir -p "$allowed"
 cat >"$allowed/README.md" <<'EOF'
 # Allowed precise wire wording fixture
 
-xenia-wire provides AEAD framing, replay protection, and consent-state
-encoding. PQ key establishment and PQ authentication claims belong above this
-crate and require separate evidence.
+xenia-wire's core sealing API provides AEAD framing and replay protection, and
+optional pre-alpha modules add consent and specific ML-KEM/ML-DSA handshake
+compositions. Those features do not establish that xenia-wire or any Xenia
+product is a complete or independently audited post-quantum security system.
 EOF
 
 allowed_log="$tmp/allowed.log"
