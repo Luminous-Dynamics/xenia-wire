@@ -80,6 +80,8 @@
 //! |-------------------|---------|------------------------------------------------------|
 //! | `reference-frame` | yes     | Ships [`Frame`] + [`Input`] reference types.         |
 //! | `lz4`             | no      | Adds LZ4-before-AEAD variants for frame sealing.     |
+//! | `consent`         | no      | Signed consent ceremony and session binding.         |
+//! | `attestation`     | no      | Generic exact-evidence Ed25519 attestations.         |
 //!
 //! ## License
 //!
@@ -97,6 +99,9 @@ mod session;
 mod wire;
 
 mod frame;
+
+#[cfg(feature = "attestation")]
+pub mod attestation;
 
 #[cfg(feature = "consent")]
 pub mod consent;
