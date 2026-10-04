@@ -16,7 +16,7 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.run_id }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.run_id }}
   cancel-in-progress: true
 
 env:
@@ -167,6 +167,7 @@ jobs:
               '"terminal_pr_freshness_verified":True',
               'assert terminal["terminal_pr_freshness_verified"] is True',
               'terminal["authority_eligible"]=True',
+              'assert concurrency["group"] == expected_group',
           ):
               assert required_literal in workflow, f"missing event envelope guard: {required_literal}"
           forbidden_surfaces = (
@@ -548,7 +549,7 @@ jobs:
           }
 
           concurrency=workflow.fetch("concurrency")
-          expected_group="$"+"{{ github.workflow }}"+"-"+"{{ github.event_name }}"+"-"+"{{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.run_id }}"
+          expected_group="$"+"{{ github.workflow }}"+"-"+"{{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.run_id }}"
           abort "concurrency contract mismatch" unless concurrency["cancel-in-progress"] == true && concurrency["group"] == expected_group
           puts "YAML semantic workflow guard passed"
           RUBY
