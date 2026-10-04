@@ -113,10 +113,14 @@ jobs:
           assert workflow.count("  pull_request:\n")==1
           assert "permissions:\n  actions: read\n  contents: read\n  pull-requests: read" in workflow
           assert "cancel-in-progress: true" in workflow
-          assert "pull_request_target" not in workflow
-          assert "issue_comment:" not in workflow
-          assert "workflow_dispatch:" not in workflow
-          assert "secrets." not in workflow
+          forbidden_surfaces = (
+              "pull_"+"request_target",
+              "issue_"+"comment:",
+              "workflow_"+"dispatch:",
+              "secret"+"s.",
+          )
+          for surface in forbidden_surfaces:
+              assert surface not in workflow, f"forbidden workflow surface: {surface}"
 
           uses=re.findall(r"^\\s+uses:\\s+([^\\s#]+)",workflow,re.MULTILINE)
           expected_uses=[
