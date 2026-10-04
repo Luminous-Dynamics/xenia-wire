@@ -96,9 +96,10 @@ jobs:
               "Retain trusted receipt",
               "Verify trusted evidence inventory",
               "Upload trusted evidence",
-              "Verify trusted evidence upload identity",
+              "Verify trusted evidence upload identity",              "Build authority terminal receipt",
+              "Upload authority terminal",
           ]
-          assert len(required_steps)==36, f"expected 36 required steps, got {len(required_steps)}"
+          assert len(required_steps)==38, f"expected 38 required steps, got {len(required_steps)}"
           required_step_lines=["      - name: "+name for name in required_steps]
           observed_step_lines=[line for line in workflow.splitlines() if line.startswith("      - name: ")]
           for needle in required_step_lines:
@@ -127,16 +128,17 @@ jobs:
               "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
               "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f",
               "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f",
+              "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f",
           ]
           assert uses==expected_uses, f"unexpected action references: {uses}"
           assert all(re.fullmatch(r"[^@]+@[0-9a-f]{40}",x) for x in uses)
 
           lines=workflow.splitlines()
           run_lines=[line for line in lines if re.fullmatch(r" {8}run:.*",line)]
-          assert len(run_lines)==33, f"expected 33 run steps, got {len(run_lines)}"
+          assert len(run_lines)==34, f"expected 34 run steps, got {len(run_lines)}"
           assert all(line=="        run: |" for line in run_lines), "all executable blocks must use literal run: |"
           shell_lines=[line for line in lines if re.fullmatch(r" {8}shell:.*",line)]
-          assert len(shell_lines)==33, f"expected 33 shell declarations, got {len(shell_lines)}"
+          assert len(shell_lines)==34, f"expected 34 shell declarations, got {len(shell_lines)}"
           assert all(line=="        shell: bash" for line in shell_lines), "all executable steps must use shell: bash"
           run_blocks=[]
           for idx,line in enumerate(lines):
@@ -151,7 +153,7 @@ jobs:
                   body.append(candidate)
                   j+=1
               run_blocks.append("\n".join(body))
-          assert len(run_blocks)==33
+          assert len(run_blocks)==34
           for block in run_blocks:
               github_expr="$"+"{{ github."
               assert github_expr not in block, (
@@ -1692,3 +1694,53 @@ jobs:
           cat /tmp/trusted-artifact-provenance.txt
 
 
+      - name: Build authority terminal receipt
+        if: success()
+        shell: bash
+        env:
+          ARTIFACT_ID: ${{ steps.trusted-evidence-upload.outputs.artifact-id }}
+          ARTIFACT_DIGEST: ${{ steps.trusted-evidence-upload.outputs.artifact-digest }}
+        run: |
+          set -euo pipefail
+          test -n "$ARTIFACT_ID"
+          test "$ARTIFACT_ID" != "0"
+          [[ "$ARTIFACT_DIGEST" =~ ^[0-9a-f]{64}$ ]]
+          test -s /tmp/trusted-artifact.json
+          python3 - <<'PY'
+          import json, os, hashlib
+          from pathlib import Path
+
+          receipt=json.loads(Path("/tmp/trusted-admission.json").read_text())
+          artifact=json.loads(Path("/tmp/trusted-artifact.json").read_text())
+          assert receipt["pre_transport_authority_eligible"] is True
+          assert receipt["authority_eligible"] is False
+          assert artifact["id"] == int(os.environ["ARTIFACT_ID"])
+          assert artifact["digest"] == "sha256:"+os.environ["ARTIFACT_DIGEST"]
+          assert artifact["workflow_run"]["id"] == int(os.environ["GITHUB_RUN_ID"])
+          assert artifact["workflow_run"]["head_sha"] == os.environ["HEAD_SHA"]
+
+          terminal=dict(receipt)
+          terminal["schema"]="xenia.formal.kani-replay-kernel.authority-terminal.v1"
+          terminal["authority_eligible"]=True
+          terminal["evidence_artifact_id"]=artifact["id"]
+          terminal["evidence_artifact_name"]=artifact["name"]
+          terminal["evidence_artifact_digest"]=artifact["digest"]
+          terminal["evidence_artifact_verified"]=True
+          terminal["pre_transport_receipt_sha256"]=hashlib.sha256(
+              Path("/tmp/trusted-admission.json").read_bytes()
+          ).hexdigest()
+          Path("/tmp/authority-terminal.json").write_text(
+              json.dumps(terminal,indent=2,sort_keys=True)+"\n"
+          )
+          PY
+          cat /tmp/authority-terminal.json
+
+      - name: Upload authority terminal
+        if: success()
+        id: authority-terminal-upload
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: trusted-xen-kani-fv-002-authority-terminal-${{ github.event.workflow_run.pull_requests[0].number }}-${{ github.event.workflow_run.head_sha }}
+          path: /tmp/authority-terminal.json
+          if-no-files-found: error
+          retention-days: 30
