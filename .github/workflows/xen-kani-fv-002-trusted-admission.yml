@@ -1164,8 +1164,45 @@ jobs:
           git hash-object src/replay_kernel.rs > /tmp/hostile-cover-restored-kernel.blob
           test "$(cat /tmp/hostile-cover-restored-kernel.blob)" = "$(cat /tmp/xen-kani-trusted/kernel.blob)"
 
+      - name: Re-verify triggering PR freshness before receipt
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$EXPECTED_HEAD_REPO/pulls/$PR_NUMBER" \
+            -o /tmp/final-pr.json
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          d=json.loads(Path("/tmp/final-pr.json").read_text())
+          assert d["number"]==int(os.environ["PR_NUMBER"])
+          assert d["state"]=="open"
+          assert d["merged"] is False
+          assert d["base"]["ref"]=="main"
+          assert d["base"]["repo"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]
+          assert d["head"]["ref"]==os.environ["HEAD_BRANCH"]
+          assert d["head"]["sha"]==os.environ["HEAD_SHA"]
+          assert d["head"]["repo"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]
+          assert d["head"]["repo"]["full_name"]==os.environ["HEAD_REPO"]
+
+          Path("/tmp/final-pr-freshness.txt").write_text(
+              "pr_number="+str(d["number"])+"\n"
+              "state="+d["state"]+"\n"
+              "merged="+str(d["merged"])+"\n"
+              "head_ref="+d["head"]["ref"]+"\n"
+              "head_sha="+d["head"]["sha"]+"\n"
+              "head_repo="+d["head"]["repo"]["full_name"]+"\n"
+          )
+          PY
+
       - name: Retain trusted receipt
         if: always()
+
         shell: bash
         run: |
           set -euo pipefail
