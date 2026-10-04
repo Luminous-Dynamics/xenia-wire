@@ -157,6 +157,8 @@ jobs:
               '"authority_eligible":False',
               'assert receipt["pre_transport_authority_eligible"] is True',
               'assert receipt["authority_eligible"] is False',
+              '"terminal_pr_freshness_verified":True',
+              'assert terminal["terminal_pr_freshness_verified"] is True',
               'terminal["authority_eligible"]=True',
           ):
               assert required_literal in workflow, f"missing event envelope guard: {required_literal}"
@@ -2191,6 +2193,11 @@ jobs:
                   if Path("/tmp/final-pr-freshness.txt").exists() else None
               ),
               "final_pr_freshness_verified":Path("/tmp/final-pr-freshness.txt").exists(),
+              "terminal_pr_payload_sha256":(
+                  __import__("hashlib").sha256(Path("/tmp/terminal-pr.json").read_bytes()).hexdigest()
+                  if Path("/tmp/terminal-pr.json").exists() else None
+              ),
+              "terminal_pr_freshness_verified":Path("/tmp/terminal-pr.json").exists(),
               "base_sha_anchor":os.environ["BASE_SHA"],
               "pr_base_ref":"main",
               "kernel_blob":read_optional("/tmp/xen-kani-trusted/kernel.blob"),
@@ -2337,6 +2344,7 @@ jobs:
             /tmp/trusted-admission.json
             /tmp/final-pr.json
             /tmp/final-pr-freshness.txt
+            /tmp/terminal-pr.json
             /tmp/hostile.json
             /tmp/hostile.log
             /tmp/hostile.exit
@@ -2392,6 +2400,7 @@ jobs:
             /tmp/trusted-admission.json
             /tmp/final-pr.json
             /tmp/final-pr-freshness.txt
+            /tmp/terminal-pr.json
             /tmp/hostile.json
             /tmp/hostile.log
             /tmp/hostile.exit
@@ -2440,10 +2449,31 @@ jobs:
         if: success()
         shell: bash
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           ARTIFACT_ID: ${{ steps.trusted-evidence-upload.outputs.artifact-id }}
           ARTIFACT_DIGEST: ${{ steps.trusted-evidence-upload.outputs.artifact-digest }}
         run: |
           set -euo pipefail
+          curl --fail-with-body --silent --show-error \\
+            -H "Authorization: Bearer $GITHUB_TOKEN" \\
+            -H "Accept: application/vnd.github+json" \\
+            "https://api.github.com/repos/$EXPECTED_HEAD_REPO/pulls/$PR_NUMBER" \\
+            -o /tmp/terminal-pr.json
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          d=json.loads(Path("/tmp/terminal-pr.json").read_text())
+          assert d["number"]==int(os.environ["PR_NUMBER"])
+          assert d["state"]=="open"
+          assert d["merged"] is False
+          assert d["base"]["ref"]=="main"
+          assert d["base"]["repo"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]
+          assert d["head"]["ref"]==os.environ["HEAD_BRANCH"]
+          assert d["head"]["sha"]==os.environ["HEAD_SHA"]
+          assert d["head"]["repo"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]
+          assert d["head"]["repo"]["full_name"]==os.environ["HEAD_REPO"]
+          print("terminal PR freshness verified")
+          PY
           test -n "$ARTIFACT_ID"
           test "$ARTIFACT_ID" != "0"
           [[ "$ARTIFACT_DIGEST" =~ ^[0-9a-f]{64}$ ]]
@@ -2454,6 +2484,16 @@ jobs:
 
           receipt=json.loads(Path("/tmp/trusted-admission.json").read_text())
           artifact=json.loads(Path("/tmp/trusted-artifact.json").read_text())
+          terminal_pr=json.loads(Path("/tmp/terminal-pr.json").read_text())
+          assert terminal_pr["number"] == int(os.environ["PR_NUMBER"])
+          assert terminal_pr["state"] == "open"
+          assert terminal_pr["merged"] is False
+          assert terminal_pr["base"]["ref"] == "main"
+          assert terminal_pr["base"]["repo"]["full_name"] == os.environ["EXPECTED_HEAD_REPO"]
+          assert terminal_pr["head"]["ref"] == os.environ["HEAD_BRANCH"]
+          assert terminal_pr["head"]["sha"] == os.environ["HEAD_SHA"]
+          assert terminal_pr["head"]["repo"]["full_name"] == os.environ["EXPECTED_HEAD_REPO"]
+          assert terminal_pr["head"]["repo"]["full_name"] == os.environ["HEAD_REPO"]
           assert receipt["pre_transport_authority_eligible"] is True
           assert receipt["authority_eligible"] is False
           assert artifact["id"] == int(os.environ["ARTIFACT_ID"])
@@ -2468,6 +2508,10 @@ jobs:
           terminal["evidence_artifact_name"]=artifact["name"]
           terminal["evidence_artifact_digest"]=artifact["digest"]
           terminal["evidence_artifact_verified"]=True
+          terminal["terminal_pr_freshness_verified"]=True
+          terminal["terminal_pr_payload_sha256"]=hashlib.sha256(
+              Path("/tmp/terminal-pr.json").read_bytes()
+          ).hexdigest()
           terminal["pre_transport_receipt_sha256"]=hashlib.sha256(
               Path("/tmp/trusted-admission.json").read_bytes()
           ).hexdigest()
