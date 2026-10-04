@@ -69,7 +69,9 @@ jobs:
               "Build minimal self-test crate",
               "Install pinned Kani for self-test",
               "Execute all trusted cover witnesses as non-authoritative self-test",
-              "Verify trusted verifier workflow identity",
+              "Retain non-authoritative self-test evidence",
+              "Prepare trusted verifier workspace",
+              "Verify trusted verifier workflow identity"
               "Verify triggering workflow identity and provenance",
               "Verify triggering workflow source identity",
               "Verify triggering PR identity",
