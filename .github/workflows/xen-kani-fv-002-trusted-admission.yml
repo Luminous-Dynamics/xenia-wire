@@ -83,6 +83,38 @@ jobs:
           grep -q 'kani::cover!(' /tmp/replay_kernel_cover.rs
           test "$(grep -c 'kani::cover!(' /tmp/replay_kernel_cover.rs)" -eq 6
 
+      - name: Verify self-test reachability source policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          source=Path("/tmp/replay_kernel_cover.rs").read_text()
+          forbidden=(
+              "include!(",
+              "include_bytes!(",
+              "#[path",
+              "std::process",
+              "std::fs",
+              "std::env",
+              "std::net",
+              "std::thread",
+              "proc_macro",
+          )
+          lexical_escape=re.compile(
+              r"\b(?:unsafe|extern)\b|(?:asm|global_asm|env|option_env)!\s*\("
+          )
+          for token in forbidden:
+              assert token not in source, f"forbidden escape hatch in self-test source: {token}"
+          assert lexical_escape.search(source) is None, (
+              "forbidden language or environment escape hatch in self-test source"
+          )
+          assert source.count("#[kani::proof]")==6
+          assert source.count("kani::cover!(")==6
+          PY
+
       - name: Fetch frozen replay kernel for self-test
         shell: bash
         env:
