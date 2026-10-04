@@ -29,6 +29,7 @@ env:
   EXPECTED_TRIGGER_WORKFLOW_BLOB: 44ee053e9d60779b081986769e6ff69b0c262517
   VERIFIER_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-trusted-admission.yml
   EXPECTED_TRIGGER_BRANCH: formal/xen-kani-fv-002-replay-kernel
+  EXPECTED_QUALIFIED_HEAD_SHA: 1fbea431db9e7e20ae3b31e925219a90de2b36bd
   KANI_VERSION: 0.68.0
   EXPECTED_KANI_CBMC_VERSION: 6.11.0
   EXPECTED_KANI_RUST_TOOLCHAIN: nightly-2026-08-21
@@ -88,7 +89,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github.raw+json"             "https://api.github.com/repos/$EXPECTED_HEAD_REPO/contents/src/replay_kernel.rs?ref=$EXPECTED_TRIGGER_BRANCH"             -o /tmp/selftest-replay_kernel.rs
+          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github.raw+json"             "https://api.github.com/repos/$EXPECTED_HEAD_REPO/contents/src/replay_kernel.rs?ref=$EXPECTED_QUALIFIED_HEAD_SHA"             -o /tmp/selftest-replay_kernel.rs
           blob="$(git hash-object /tmp/selftest-replay_kernel.rs)"
           echo "$blob" > /tmp/selftest-replay-kernel.blob
           test "$blob" = "$EXPECTED_KERNEL_BLOB"
