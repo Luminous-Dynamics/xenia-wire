@@ -747,6 +747,7 @@ jobs:
             /tmp/selftest-covers.txt
             /tmp/selftest-kani-version.txt
             /tmp/selftest-kani-rustc.txt
+            /tmp/kani-verifier-0.68.0.crate
             /tmp/selftest-*.json
             /tmp/selftest-*.log
           if-no-files-found: error
@@ -2233,6 +2234,7 @@ jobs:
             /tmp/xen-kani-trusted/evidence.json
             /tmp/kani-version.txt
             /tmp/kani-rustc.txt
+            /tmp/kani-verifier-0.68.0.crate
             /tmp/kani-release-ref.txt
             /tmp/kani-release-commit.json
             /tmp/kani-release.json
