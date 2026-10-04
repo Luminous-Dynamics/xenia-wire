@@ -527,7 +527,7 @@ jobs:
               "rustc_private",
           )
           lexical_escape=re.compile(
-              r"\b(?:unsafe|extern)\b|(?:asm|global_asm|env|option_env)!\s*\("
+              r"\b(?:unsafe|extern)\b|(?:asm|global_asm|env|option_env)!\s*\(|\bmacro_rules\b|\bcfg_attr\b"
           )
           for token in forbidden:
               assert token not in source, f"forbidden escape hatch in self-test source: {token}"
@@ -628,6 +628,7 @@ jobs:
               name=PurePosixPath(member.name)
               assert not name.is_absolute() and ".." not in name.parts
               assert name.parts and name.parts[0]=="kani-verifier-0.68.0"
+              assert member.isdir() or member.isfile() or member.issym() or member.islnk()
               if member.issym() or member.islnk():
                   target=PurePosixPath(member.linkname)
                   assert not target.is_absolute() and ".." not in target.parts
