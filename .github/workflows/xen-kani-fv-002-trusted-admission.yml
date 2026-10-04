@@ -151,7 +151,7 @@ jobs:
           assert uses==expected_uses, f"unexpected action references: {uses}"
           assert all(re.fullmatch(r"[^@]+@[0-9a-f]{40}",x) for x in uses)
 
-          expressions=re.findall(r"\\$\\{\\{[^}]+\\}\\}",workflow)
+          expressions=re.findall(r"\$\{\{[^}]+\}\}",workflow)
           expected_expression_counts={
               "${{ github.workflow }}":1,
               "${{ github.event_name }}":1,
