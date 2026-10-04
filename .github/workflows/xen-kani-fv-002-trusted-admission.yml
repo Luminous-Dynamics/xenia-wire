@@ -48,22 +48,63 @@
                   for x in clean_manifest.get("results",[])
               )
           )
-          hostile_ok=(
-              Path("/tmp/hostile.json").exists()
-              and int(read_optional("/tmp/hostile.exit","125"))!=0
-              and read_optional("/tmp/hostile-mutant-kernel.blob")!=read_optional("/tmp/xen-kani-trusted/kernel.blob")
-              and read_optional("/tmp/hostile-restored-kernel.blob")==read_optional("/tmp/xen-kani-trusted/kernel.blob")
-          )
-          hostile_cover_ok=(
-              Path("/tmp/cover-hostile.json").exists()
-              and str(
-                  json.loads(Path("/tmp/cover-hostile.json").read_text())
-                  .get("verification_results",{})
-                  .get("results",[{}])[0]
-                  .get("harness_id","")
-              ).endswith("::cover_initialization_reachable")
-              if Path("/tmp/cover-hostile.json").exists() else False
-          )
+          hostile_ok=False
+          if Path("/tmp/hostile.json").exists():
+              hostile=json.loads(Path("/tmp/hostile.json").read_text())
+              hresults=hostile.get("verification_results",{}).get("results",[])
+              candidates=[
+                  x for x in hresults
+                  if isinstance(x,dict)
+                  and (
+                      x.get("harness_id")=="kernel_stale_boundary_is_rejected"
+                      or str(x.get("harness_id","")).endswith("::kernel_stale_boundary_is_rejected")
+                  )
+              ]
+              failed_checks=[
+                  x for x in candidates[0].get("checks",[])
+                  if isinstance(x,dict) and str(x.get("status","")).upper()=="FAILURE"
+              ] if len(candidates)==1 else []
+              hostile_ok=(
+                  int(read_optional("/tmp/hostile.exit","125"))!=0
+                  and len(candidates)==1
+                  and str(candidates[0].get("status","")).upper()=="FAILURE"
+                  and bool(failed_checks)
+                  and read_optional("/tmp/hostile-mutant-kernel.blob")!=read_optional("/tmp/xen-kani-trusted/kernel.blob")
+                  and read_optional("/tmp/hostile-restored-kernel.blob")==read_optional("/tmp/xen-kani-trusted/kernel.blob")
+              )
+
+          hostile_cover_ok=False
+          if Path("/tmp/cover-hostile.json").exists():
+              cover_hostile=json.loads(Path("/tmp/cover-hostile.json").read_text())
+              cresults=cover_hostile.get("verification_results",{}).get("results",[])
+              candidates=[
+                  x for x in cresults
+                  if isinstance(x,dict)
+                  and (
+                      x.get("harness_id")=="cover_initialization_reachable"
+                      or str(x.get("harness_id","")).endswith("::cover_initialization_reachable")
+                  )
+              ]
+              cover_checks=[]
+              if len(candidates)==1:
+                  cover_checks=[
+                      x for x in candidates[0].get("checks",[])
+                      if isinstance(x,dict)
+                      and (
+                          ".cover." in str(x.get("name",""))
+                          or str(x.get("description","")).startswith("cover condition:")
+                      )
+                  ]
+              hostile_cover_ok=(
+                  int(read_optional("/tmp/cover-hostile.exit","0"))==0
+                  and len(candidates)==1
+                  and str(candidates[0].get("status","")).upper()=="SUCCESS"
+                  and len(cover_checks)==1
+                  and str(cover_checks[0].get("status","")).upper() in {"UNSATISFIABLE","UNREACHABLE"}
+                  and read_optional("/tmp/hostile-cover-mutant-kernel.blob")!=read_optional("/tmp/xen-kani-trusted/kernel.blob")
+                  and read_optional("/tmp/hostile-cover-restored-kernel.blob")==read_optional("/tmp/xen-kani-trusted/kernel.blob")
+              )
+
           authority_eligible=(
               read_optional("/tmp/final-pr-freshness.txt") is not None
               and kernel_binding
@@ -72,7 +113,7 @@
               and reachability_ok
               and clean_proofs_ok
               and hostile_ok
-              and read_optional("/tmp/hostile-cover-restored-kernel.blob")==read_optional("/tmp/xen-kani-trusted/kernel.blob")
+              and hostile_cover_ok
               and ("CBMC "+os.environ["EXPECTED_KANI_CBMC_VERSION"]) in read_optional("/tmp/kani-version.txt","")
               and ("commit-hash: "+os.environ["EXPECTED_KANI_RUST_COMMIT_HASH"]) in read_optional("/tmp/kani-rustc.txt","")
           )
