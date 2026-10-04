@@ -1504,6 +1504,8 @@ jobs:
           }
           Path("/tmp/trusted-admission.json").write_text(json.dumps(receipt,indent=2,sort_keys=True)+"\n")
           print(Path("/tmp/trusted-admission.json").read_text())
+          if not authority_eligible:
+              raise SystemExit("authority eligibility predicate is false")
           PY
 
       - name: Upload trusted evidence
