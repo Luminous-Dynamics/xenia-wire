@@ -135,7 +135,8 @@ jobs:
           cargo kani --version --verbose | tee /tmp/selftest-kani-version.txt
           grep -q "kani-0.68.0" /tmp/selftest-kani-version.txt
           grep -q "CBMC 6.11.0" /tmp/selftest-kani-version.txt
-          grep -q "$EXPECTED_KANI_RUST_COMMIT_HASH" /tmp/selftest-kani-version.txt
+          rustup run "$EXPECTED_KANI_RUST_TOOLCHAIN" rustc -Vv | tee /tmp/selftest-kani-rustc.txt
+          grep -q "commit-hash: $EXPECTED_KANI_RUST_COMMIT_HASH" /tmp/selftest-kani-rustc.txt
 
       - name: Execute all trusted cover witnesses as non-authoritative self-test
         working-directory: /tmp/xen-kani-selftest
@@ -197,6 +198,7 @@ jobs:
             /tmp/selftest-replay-kernel.blob
             /tmp/selftest-covers.txt
             /tmp/selftest-kani-version.txt
+            /tmp/selftest-kani-rustc.txt
             /tmp/selftest-*.json
             /tmp/selftest-*.log
           if-no-files-found: warn
