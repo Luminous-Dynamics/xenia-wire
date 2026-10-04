@@ -301,7 +301,7 @@ jobs:
           }
           abort "trusted job event env mismatch" unless trusted["env"] == expected_trusted_env
           abort "undefined event environment expression helper" if workflow.include?("exprStart")
-          expected_steps=[
+          expected_all_steps=[
             "Checkout exact PR subject",
             "Verify trusted workflow structure and Python syntax",
             "Extract verifier-generated reachability source",
@@ -343,11 +343,59 @@ jobs:
             "Upload authority terminal",
             "Verify authority terminal upload identity",
           ]
-          expected_steps.each_with_index do |name, index|
-            step=jobs.fetch("trusted-admission").fetch("steps").fetch(index)
-            abort "missing or reordered trusted step #{index+1}: #{name}" unless step["name"] == name
-          end
-          abort "trusted step count mismatch" unless jobs.fetch("trusted-admission").fetch("steps").length == 40
+          observed_all_steps=jobs.values.flat_map { |job| job.fetch("steps").map { |step| step["name"] } }
+          abort "semantic step inventory mismatch" unless observed_all_steps == expected_all_steps
+
+          expected_selftest_steps=[
+            "Checkout exact PR subject",
+            "Verify trusted workflow structure and Python syntax",
+            "Extract verifier-generated reachability source",
+            "Verify self-test reachability source policy",
+            "Fetch frozen replay kernel for self-test",
+            "Build minimal self-test crate",
+            "Install pinned Kani for self-test",
+            "Execute all trusted cover witnesses as non-authoritative self-test",
+            "Retain non-authoritative self-test evidence",
+          ]
+          expected_trusted_steps=[
+            "Prepare trusted verifier workspace",
+            "Verify trusted event envelope",
+            "Verify trusted verifier workflow identity",
+            "Verify triggering workflow identity and provenance",
+            "Verify triggering workflow source identity",
+            "Verify triggering PR identity",
+            "Fetch PR replay kernel as data",
+            "Verify PR scope independently",
+            "Verify complete tree delta independently",
+            "Verify formal evidence contract independently",
+            "Verify independent fetched source policy",
+            "Verify independent harness manifest",
+            "Verify minimal trusted crate is locked and dependency-free",
+            "Install pinned Kani",
+            "Run all trusted clean proofs",
+            "Build trusted clean proof manifest",
+            "Verify trusted reachability source shape",
+            "Run trusted reachability covers",
+            "Build trusted reachability manifest",
+            "Run trusted hostile control",
+            "Restore trusted clean source identity",
+            "Run hostile reachability control",
+            "Restore trusted clean source identity after reachability control",
+            "Re-verify triggering PR freshness before receipt",
+            "Retain trusted receipt",
+            "Verify trusted evidence inventory",
+            "Upload trusted evidence",
+            "Verify trusted evidence upload identity",
+            "Build authority terminal receipt",
+            "Upload authority terminal",
+            "Verify authority terminal upload identity",
+          ]
+          selftest_observed=selftest.fetch("steps").map { |step| step["name"] }
+          trusted_observed=trusted.fetch("steps").map { |step| step["name"] }
+          abort "self-test step inventory mismatch" unless selftest_observed == expected_selftest_steps
+          abort "trusted step inventory mismatch" unless trusted_observed == expected_trusted_steps
+          abort "self-test step count mismatch" unless selftest_observed.length == 9
+          abort "trusted step count mismatch" unless trusted_observed.length == 31
 
           expected_uses=[
             "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
