@@ -86,6 +86,7 @@ jobs:
               "Verify triggering workflow identity and provenance",
               "Verify triggering workflow source identity",
               "Verify triggering PR identity",
+              "Reject trusted-verifier self-modification",
               "Fetch PR replay kernel as data",
               "Verify PR scope independently",
               "Verify complete tree delta independently",
@@ -112,7 +113,7 @@ jobs:
               "Upload authority terminal",
               "Verify authority terminal upload identity",
           ]
-          assert len(required_steps)==40, f"expected 40 required steps, got {len(required_steps)}"
+          assert len(required_steps)==41, f"expected 41 required steps, got {len(required_steps)}"
           required_step_lines=["      - name: "+name for name in required_steps]
           observed_step_lines=[line for line in workflow.splitlines() if line.startswith("      - name: ")]
           for needle in required_step_lines:
@@ -502,6 +503,7 @@ jobs:
             "Verify triggering workflow identity and provenance",
             "Verify triggering workflow source identity",
             "Verify triggering PR identity",
+            "Reject trusted-verifier self-modification",
             "Fetch PR replay kernel as data",
             "Verify PR scope independently",
             "Verify complete tree delta independently",
@@ -549,6 +551,7 @@ jobs:
             "Verify triggering workflow identity and provenance",
             "Verify triggering workflow source identity",
             "Verify triggering PR identity",
+            "Reject trusted-verifier self-modification",
             "Fetch PR replay kernel as data",
             "Verify PR scope independently",
             "Verify complete tree delta independently",
@@ -580,7 +583,7 @@ jobs:
           abort "self-test step inventory mismatch" unless selftest_observed == expected_selftest_steps
           abort "trusted step inventory mismatch" unless trusted_observed == expected_trusted_steps
           abort "self-test step count mismatch" unless selftest_observed.length == 9
-          abort "trusted step count mismatch" unless trusted_observed.length == 31
+          abort "trusted step count mismatch" unless trusted_observed.length == 32
 
           expected_uses=[
             "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
@@ -1134,6 +1137,46 @@ jobs:
           assert d["head"]["sha"]==os.environ["HEAD_SHA"]
           assert d["head"]["repo"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]
           assert d["head"]["repo"]["full_name"]==os.environ["HEAD_REPO"]
+          PY
+
+      - name: Reject trusted-verifier self-modification
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          pr=json.loads(Path("/tmp/pr.json").read_text())
+          changed_files=pr.get("changed_files")
+          assert isinstance(changed_files,int) and 0 < changed_files <= 100, (
+              f"trusted self-modification scope requires 1..100 changed files, got {changed_files!r}"
+          )
+          PY
+          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/pulls/$PR_NUMBER/files?per_page=100&page=1"             -o /tmp/pr-files.json
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          pr=json.loads(Path("/tmp/pr.json").read_text())
+          files=json.loads(Path("/tmp/pr-files.json").read_text())
+          assert isinstance(files,list)
+          assert len(files)==pr["changed_files"], (
+              f"PR file-list pagination incomplete: metadata={pr['changed_files']} returned={len(files)}"
+          )
+          paths=[]
+          for item in files:
+              filename=item.get("filename")
+              assert isinstance(filename,str) and filename, "PR file entry missing filename"
+              paths.append(filename)
+          verifier_path=os.environ["VERIFIER_WORKFLOW_PATH"]
+          assert verifier_path not in paths, (
+              f"trusted verifier self-modification is not authority-eligible: {verifier_path}"
+          )
+          print("trusted verifier self-modification fence passed")
           PY
 
       - name: Fetch PR replay kernel as data
