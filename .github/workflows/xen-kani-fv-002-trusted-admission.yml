@@ -383,6 +383,8 @@ jobs:
           ruby_source=ruby_blocks[0]
           assert ruby_source.count('expr=lambda { |value| expr_start+" "+value+" "+expr_end }')==1
           assert ruby_source.count('expr.call("github.')==8
+          assert ruby_source.count('trusted=jobs.fetch("trusted-admission")')==1
+          assert ruby_source.index('trusted=jobs.fetch("trusted-admission")') < ruby_source.index('upload_steps=selftest.fetch("steps")')
           assert 'expected_checkout_ref=expr_start+' not in ruby_source
           assert '"PR_NUMBER"=>expr_start+' not in ruby_source
           assert '"HEAD_SHA"=>expr_start+' not in ruby_source
@@ -462,6 +464,7 @@ jobs:
           abort "unexpected job set" unless jobs.is_a?(Hash) && jobs.keys.map(&:to_s).sort == ["non-authoritative-selftest","trusted-admission"]
           selftest=jobs.fetch("non-authoritative-selftest")
           abort "self-test trigger predicate mismatch" unless selftest["if"] == "github.event_name == 'pull_request'"
+          trusted=jobs.fetch("trusted-admission")
           checkout_steps=selftest.fetch("steps").select { |step| step["uses"] == "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" }
           abort "self-test checkout cardinality mismatch" unless checkout_steps.length == 1
           checkout_with=checkout_steps[0].fetch("with")
@@ -476,7 +479,6 @@ jobs:
           abort "self-test runner mismatch" unless selftest["runs-on"] == "ubuntu-24.04" && selftest["timeout-minutes"] == 30
           abort "self-test permissions mismatch" unless selftest["permissions"] == {"contents"=>"read"}
 
-          trusted=jobs.fetch("trusted-admission")
           expected_trusted_if="github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.pull_requests[0].number != null && github.event.workflow_run.head_branch == 'formal/xen-kani-fv-002-replay-kernel' && github.event.workflow_run.conclusion == 'success'"
           abort "trusted trigger predicate mismatch" unless trusted["if"] == expected_trusted_if
           abort "trusted runner mismatch" unless trusted["runs-on"] == "ubuntu-24.04" && trusted["timeout-minutes"] == 60
