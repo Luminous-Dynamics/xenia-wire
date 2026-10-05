@@ -174,6 +174,7 @@ jobs:
               'terminal["authority_eligible"]=True',
               'assert main_branch["name"] == "main"',
               'assert main_branch["protected"] is True',
+              'assert os.environ["GITHUB_REF_PROTECTED"] == "true"',
               'assert main_branch["commit"]["commit"]["verification"]["verified"] is True',
               'assert main_branch["commit"]["commit"]["verification"]["reason"] == "valid"',
               'assert main_branch["commit"]["sha"] == os.environ["GITHUB_SHA"]',
@@ -915,6 +916,7 @@ jobs:
           set -euo pipefail
           test "$GITHUB_EVENT_NAME" = "workflow_run"
           test "$GITHUB_REF" = "refs/heads/main"
+          test "$GITHUB_REF_PROTECTED" = "true"
           test "$GITHUB_REPOSITORY" = "$EXPECTED_HEAD_REPO"
           test "$GITHUB_REPOSITORY_ID" = "$EXPECTED_HEAD_REPO_ID"
           test "$GITHUB_WORKFLOW_REF" = "$GITHUB_REPOSITORY/$VERIFIER_WORKFLOW_PATH@refs/heads/main"
@@ -1006,6 +1008,7 @@ jobs:
           from pathlib import Path
 
           main_branch=json.loads(Path("/tmp/main-branch.json").read_text())
+          assert os.environ["GITHUB_REF_PROTECTED"]=="true"
           assert main_branch["name"]=="main"
           assert main_branch["protected"] is True
           assert main_branch["commit"]["sha"]==os.environ["GITHUB_SHA"]
@@ -2073,6 +2076,7 @@ jobs:
           from pathlib import Path
 
           final_main_branch=json.loads(Path("/tmp/final-main-branch.json").read_text())
+          assert os.environ["GITHUB_REF_PROTECTED"]=="true"
           assert final_main_branch["name"]=="main"
           assert final_main_branch["protected"] is True
           assert final_main_branch["commit"]["sha"]==os.environ["GITHUB_SHA"]
@@ -2283,6 +2287,7 @@ jobs:
                   if Path("/tmp/main-branch.json").exists() else None
               ),
               "main_branch_protection_verified":main_branch_protection_verified,
+              "github_ref_protected":os.environ["GITHUB_REF_PROTECTED"]=="true",
               "main_branch_signed_tip_verified":(
                   Path("/tmp/main-branch.json").exists()
                   and json.loads(Path("/tmp/main-branch.json").read_text()).get("commit",{}).get("commit",{}).get("verification",{}).get("verified") is True
@@ -2655,6 +2660,7 @@ jobs:
           artifact=json.loads(Path("/tmp/trusted-artifact.json").read_text())
           terminal_pr=json.loads(Path("/tmp/terminal-pr.json").read_text())
           terminal_main_branch=json.loads(Path("/tmp/terminal-main-branch.json").read_text())
+          assert os.environ["GITHUB_REF_PROTECTED"]=="true"
           assert terminal_main_branch["name"] == "main"
           assert terminal_main_branch["protected"] is True
           assert terminal_main_branch["commit"]["sha"] == os.environ["GITHUB_SHA"]
@@ -2685,6 +2691,7 @@ jobs:
           terminal["evidence_artifact_verified"]=True
           terminal["terminal_pr_freshness_verified"]=True
           terminal["terminal_main_branch_protection_verified"]=True
+          terminal["github_ref_protected"]=os.environ["GITHUB_REF_PROTECTED"]=="true"
           terminal["terminal_main_branch_signed_tip_verified"]=(
               terminal_main_branch["commit"]["commit"]["verification"]["verified"] is True
               and terminal_main_branch["commit"]["commit"]["verification"]["reason"]=="valid"
