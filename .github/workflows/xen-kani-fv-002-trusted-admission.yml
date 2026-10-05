@@ -263,6 +263,8 @@ jobs:
           from collections import Counter
           expr_start="$"+"{{"
           expr_end="}}"
+          expr=lambda { |value| expr_start+" "+value+" "+expr_end }
+          expr_end="}}"
           expression_pattern=re.escape(expr_start)+r"[^}]+\}\}"
           all_expression_counts=Counter(re.findall(expression_pattern,workflow))
           run_expression_counts=Counter(
@@ -417,7 +419,7 @@ jobs:
           checkout_steps=selftest.fetch("steps").select { |step| step["uses"] == "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" }
           abort "self-test checkout cardinality mismatch" unless checkout_steps.length == 1
           checkout_with=checkout_steps[0].fetch("with")
-          expected_checkout_ref=expr_start+" github.event.pull_request.head.sha }}"
+          expected_checkout_ref=expr.call("github.event.pull_request.head.sha")
           abort "self-test checkout ref mismatch" unless checkout_with["ref"] == expected_checkout_ref
           abort "self-test checkout fetch-depth mismatch" unless checkout_with["fetch-depth"] == 1
           abort "self-test checkout credential persistence enabled" unless checkout_with["persist-credentials"] == false
@@ -434,13 +436,13 @@ jobs:
           abort "trusted runner mismatch" unless trusted["runs-on"] == "ubuntu-24.04" && trusted["timeout-minutes"] == 60
           abort "trusted job unexpectedly overrides permissions" if trusted.key?("permissions")
           expected_trusted_env={
-            "PR_NUMBER"=>expr_start+" github.event.workflow_run.pull_requests[0].number }}",
-            "HEAD_SHA"=>expr_start+" github.event.workflow_run.head_sha }}",
-            "HEAD_REPO"=>expr_start+" github.event.workflow_run.head_repository.full_name }}",
-            "HEAD_BRANCH"=>expr_start+" github.event.workflow_run.head_branch }}",
-            "TRIGGER_RUN_ID"=>expr_start+" github.event.workflow_run.id }}",
-            "TRIGGER_RUN_ATTEMPT"=>expr_start+" github.event.workflow_run.run_attempt }}",
-            "TRIGGER_CONCLUSION"=>expr_start+" github.event.workflow_run.conclusion }}",
+            "PR_NUMBER"=>expr.call("github.event.workflow_run.pull_requests[0].number"),
+            "HEAD_SHA"=>expr.call("github.event.workflow_run.head_sha"),
+            "HEAD_REPO"=>expr.call("github.event.workflow_run.head_repository.full_name"),
+            "HEAD_BRANCH"=>expr.call("github.event.workflow_run.head_branch"),
+            "TRIGGER_RUN_ID"=>expr.call("github.event.workflow_run.id"),
+            "TRIGGER_RUN_ATTEMPT"=>expr.call("github.event.workflow_run.run_attempt"),
+            "TRIGGER_CONCLUSION"=>expr.call("github.event.workflow_run.conclusion"),
           }
           abort "trusted job event env mismatch" unless trusted["env"] == expected_trusted_env
           abort "undefined event environment expression helper" if workflow.include?("exprStart")
