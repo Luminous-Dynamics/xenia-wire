@@ -146,6 +146,7 @@ jobs:
               'assert run["event"]=="pull_request"',
               'assert run["conclusion"]=="success"',
               'assert run["head_sha"]==os.environ["HEAD_SHA"]',
+              'assert run["head_sha"]==os.environ["EXPECTED_QUALIFIED_HEAD_SHA"]',
               'assert run["head_commit"]["id"]==os.environ["HEAD_SHA"]',
               'assert verification["verified"] is True',
               'Kani release commit signature verified by GitHub',
@@ -973,6 +974,7 @@ jobs:
           [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
           test "$HEAD_REPO" = "$EXPECTED_HEAD_REPO"
           test "$HEAD_BRANCH" = "$EXPECTED_TRIGGER_BRANCH"
+          test "$HEAD_SHA" = "$EXPECTED_QUALIFIED_HEAD_SHA"
           test "$TRIGGER_CONCLUSION" = "success"
           test -f "$GITHUB_EVENT_PATH"
           python3 - <<'PY'
@@ -998,6 +1000,7 @@ jobs:
           assert run["conclusion"]=="success"
           assert run["head_branch"]==os.environ["EXPECTED_TRIGGER_BRANCH"]
           assert run["head_sha"]==os.environ["HEAD_SHA"]
+          assert run["head_sha"]==os.environ["EXPECTED_QUALIFIED_HEAD_SHA"]
           assert run["head_commit"]["id"]==os.environ["HEAD_SHA"]
           assert run["head_repository"]["full_name"]==os.environ["HEAD_REPO"]
           pull_requests=run.get("pull_requests",[])
@@ -1135,6 +1138,7 @@ jobs:
           assert d["base"]["repo"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]
           assert d["head"]["ref"]==os.environ["HEAD_BRANCH"]
           assert d["head"]["sha"]==os.environ["HEAD_SHA"]
+          assert d["head"]["sha"]==os.environ["EXPECTED_QUALIFIED_HEAD_SHA"]
           assert d["head"]["repo"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]
           assert d["head"]["repo"]["full_name"]==os.environ["HEAD_REPO"]
           PY
@@ -2327,6 +2331,7 @@ jobs:
 
           pre_transport_authority_eligible=(
               envelope_evidence_ok
+              and os.environ["HEAD_SHA"]==os.environ["EXPECTED_QUALIFIED_HEAD_SHA"]
               and read_optional("/tmp/final-pr-freshness.txt") is not None
               and workflow_identity_ok
               and main_branch_protection_verified
@@ -2419,6 +2424,8 @@ jobs:
               "triggering_workflow_id":int(os.environ["EXPECTED_TRIGGER_WORKFLOW_ID"]),
               "pr_number":int(os.environ["PR_NUMBER"]),
               "head_sha":os.environ["HEAD_SHA"],
+              "qualified_head_sha_expected":os.environ["EXPECTED_QUALIFIED_HEAD_SHA"],
+              "qualified_head_sha_verified":os.environ["HEAD_SHA"]==os.environ["EXPECTED_QUALIFIED_HEAD_SHA"],
               "head_repo":os.environ["HEAD_REPO"],
               "head_repo_id":int(os.environ["EXPECTED_HEAD_REPO_ID"]),
               "expected_repository_id":int(os.environ["EXPECTED_HEAD_REPO_ID"]),
