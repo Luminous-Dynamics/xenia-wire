@@ -738,7 +738,7 @@ jobs:
             "https://crates.io/api/v1/crates/kani-verifier/0.68.0" \\
             -o /tmp/kani-crates-io.json
           python3 - <<'PY'
-          import json
+          import json, os
           from pathlib import Path
 
           api=json.loads(Path("/tmp/kani-crates-io.json").read_text())
@@ -1511,7 +1511,7 @@ jobs:
             "https://crates.io/api/v1/crates/kani-verifier/0.68.0" \\
             -o /tmp/kani-crates-io.json
           python3 - <<'PY'
-          import json
+          import json, os
           from pathlib import Path
 
           api=json.loads(Path("/tmp/kani-crates-io.json").read_text())
