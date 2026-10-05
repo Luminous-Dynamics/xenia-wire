@@ -223,7 +223,8 @@ jobs:
           assert all(line=="        run: |" for line in run_lines), "all executable blocks must use literal run: |"
           shell_lines=[line for line in lines if re.fullmatch(r" {8}shell:.*",line)]
           assert len(shell_lines)==36, f"expected 36 shell declarations, got {len(shell_lines)}"
-          assert all(line=="        shell: bash" for line in shell_lines), "all executable steps must use shell: bash"
+          invalid_shell_lines=[repr(line) for line in shell_lines if line!="        shell: bash"]
+          assert not invalid_shell_lines, f"all executable steps must use shell: bash; invalid={invalid_shell_lines!r}"
           run_blocks=[]
           for idx,line in enumerate(lines):
               if not re.fullmatch(r" {8}run: \|",line):
