@@ -260,7 +260,7 @@ jobs:
                   set_plus_blocks.append(index)
               else:
                   assert set_events==[], f"unexpected shell mode change in run block {index}"
-          assert set_plus_blocks==[7,22,25,27,29]
+          assert set_plus_blocks==[7,23,26,28,30]
           verifier_install="cargo install --locked --path "+" /tmp/kani-verifier-0.68.0".lstrip()
           assert sum(verifier_install in block for block in run_blocks)==2
           forbidden_verifier_install="cargo install --locked "+"kani-verifier --version"
