@@ -417,7 +417,7 @@ jobs:
           checkout_steps=selftest.fetch("steps").select { |step| step["uses"] == "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" }
           abort "self-test checkout cardinality mismatch" unless checkout_steps.length == 1
           checkout_with=checkout_steps[0].fetch("with")
-          expected_checkout_ref=expr_start+"github.event.pull_request.head.sha }}"
+          expected_checkout_ref=expr_start+" github.event.pull_request.head.sha }}"
           abort "self-test checkout ref mismatch" unless checkout_with["ref"] == expected_checkout_ref
           abort "self-test checkout fetch-depth mismatch" unless checkout_with["fetch-depth"] == 1
           abort "self-test checkout credential persistence enabled" unless checkout_with["persist-credentials"] == false
