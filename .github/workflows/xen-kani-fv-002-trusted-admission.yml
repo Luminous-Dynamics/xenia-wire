@@ -159,6 +159,7 @@ jobs:
               'sha256sum /tmp/trusted-artifact-download.zip',
               'sha256sum /tmp/authority-terminal-artifact-download.zip',
               'zipfile.ZipFile',
+              'assert len(members) == len(set(members))',
               'actions/artifacts/$ARTIFACT_ID/zip',
               'assert verification["verified"] is True',
               'Kani release commit signature verified by GitHub',
@@ -2735,6 +2736,7 @@ jobs:
           with zipfile.ZipFile("/tmp/trusted-artifact-download.zip") as archive:
               members=[x for x in archive.namelist() if x and not x.endswith("/")]
           assert members
+          assert len(members) == len(set(members))
           assert all(
               not PurePosixPath(name).is_absolute() and ".." not in PurePosixPath(name).parts
               for name in members
@@ -2963,6 +2965,7 @@ jobs:
           with zipfile.ZipFile("/tmp/authority-terminal-artifact-download.zip") as archive:
               members=[x for x in archive.namelist() if x and not x.endswith("/")]
           assert members
+          assert len(members) == len(set(members))
           assert all(
               not PurePosixPath(name).is_absolute() and ".." not in PurePosixPath(name).parts
               for name in members
