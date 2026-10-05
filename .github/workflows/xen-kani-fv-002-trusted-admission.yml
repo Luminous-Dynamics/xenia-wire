@@ -22,6 +22,7 @@ concurrency:
 env:
   BASE_SHA: 057dd03043b8863d8f8280abf333331cc9ddf317
   EXPECTED_HEAD_REPO: Luminous-Dynamics/xenia-wire
+  EXPECTED_HEAD_REPO_ID: 1213976974
   EXPECTED_KERNEL_BLOB: d1bc8a1f8fc0883856d5073fa37b1658a7ea63ad
   EXPECTED_PROOF_BLOB: 4e3f0f584ca189baafe230da66b4bdeac87a7515
   EXPECTED_EVIDENCE_CONTRACT_BLOB: ce3e1447cc6b9bd1f0fc361b4fb81c5fe1450b0b
@@ -132,6 +133,10 @@ jobs:
               'test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"',
               'assert event["action"]=="completed"',
               'assert event["repository"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]',
+              'assert event["repository"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])',
+              'assert run["repository"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])',
+              'assert pull_requests[0]["base"]["repo"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])',
+              'assert pull_requests[0]["head"]["repo"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])',
               'assert run["id"]==int(os.environ["TRIGGER_RUN_ID"])',
               'assert run["name"]=="XEN-KANI-FV-002 Replay Kernel"',
               'assert run["path"]==os.environ["EXPECTED_TRIGGER_WORKFLOW_PATH"]',
@@ -360,6 +365,7 @@ jobs:
           expected_env={
             "BASE_SHA"=>"057dd03043b8863d8f8280abf333331cc9ddf317",
             "EXPECTED_HEAD_REPO"=>"Luminous-Dynamics/xenia-wire",
+            "EXPECTED_HEAD_REPO_ID"=>1213976974,
             "EXPECTED_KERNEL_BLOB"=>"d1bc8a1f8fc0883856d5073fa37b1658a7ea63ad",
             "EXPECTED_PROOF_BLOB"=>"4e3f0f584ca189baafe230da66b4bdeac87a7515",
             "EXPECTED_EVIDENCE_CONTRACT_BLOB"=>"ce3e1447cc6b9bd1f0fc361b4fb81c5fe1450b0b",
@@ -910,6 +916,7 @@ jobs:
           test "$GITHUB_EVENT_NAME" = "workflow_run"
           test "$GITHUB_REF" = "refs/heads/main"
           test "$GITHUB_REPOSITORY" = "$EXPECTED_HEAD_REPO"
+          test "$GITHUB_REPOSITORY_ID" = "$EXPECTED_HEAD_REPO_ID"
           test "$GITHUB_WORKFLOW_REF" = "$GITHUB_REPOSITORY/$VERIFIER_WORKFLOW_PATH@refs/heads/main"
           test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
           [[ "$GITHUB_RUN_ID" =~ ^[1-9][0-9]*$ ]]
@@ -932,11 +939,13 @@ jobs:
           event=json.loads(event_path.read_text())
           assert event["action"]=="completed"
           assert event["repository"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]
+          assert event["repository"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])
           run=event["workflow_run"]
           assert run["id"]==int(os.environ["TRIGGER_RUN_ID"])
           assert run["run_attempt"]==int(os.environ["TRIGGER_RUN_ATTEMPT"])
           assert run["id"]==int(os.environ["TRIGGER_RUN_ID"])
           assert run["name"]=="XEN-KANI-FV-002 Replay Kernel"
+          assert run["repository"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])
           assert run["path"]==os.environ["EXPECTED_TRIGGER_WORKFLOW_PATH"]
           assert run["workflow_id"]==int(os.environ["EXPECTED_TRIGGER_WORKFLOW_ID"])
           assert run["event"]=="pull_request"
@@ -948,6 +957,8 @@ jobs:
           pull_requests=run.get("pull_requests",[])
           assert len(pull_requests)==1
           assert pull_requests[0]["number"]==int(os.environ["PR_NUMBER"])
+          assert pull_requests[0]["base"]["repo"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])
+          assert pull_requests[0]["head"]["repo"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])
           assert pull_requests[0]["head"]["sha"]==os.environ["HEAD_SHA"]
           assert pull_requests[0]["head"]["ref"]==os.environ["HEAD_BRANCH"]
           assert pull_requests[0]["head"]["repo"]["full_name"]==os.environ["HEAD_REPO"]
@@ -1024,6 +1035,7 @@ jobs:
           from pathlib import Path
           d=json.loads(Path("/tmp/trigger-run.json").read_text())
           assert d["id"]==int(os.environ["TRIGGER_RUN_ID"])
+          assert d["repository"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])
           assert d["run_attempt"]==int(os.environ["TRIGGER_RUN_ATTEMPT"])
           assert d["name"]=="XEN-KANI-FV-002 Replay Kernel"
           assert d["path"]==os.environ["EXPECTED_TRIGGER_WORKFLOW_PATH"]
@@ -1032,6 +1044,7 @@ jobs:
           assert d["event"]=="pull_request"
           assert d["head_sha"]==os.environ["HEAD_SHA"]
           assert d["head_repository"]["full_name"]==os.environ["HEAD_REPO"]
+          assert d["head_repository"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])
           assert os.environ["HEAD_REPO"]==os.environ["EXPECTED_HEAD_REPO"]
           pull_requests=d.get("pull_requests",[])
           assert len(pull_requests)==1, f"unexpected triggering PR cardinality: {len(pull_requests)}"
@@ -1067,6 +1080,8 @@ jobs:
           from pathlib import Path
           d=json.loads(Path("/tmp/pr.json").read_text())
           assert d["number"]==int(os.environ["PR_NUMBER"])
+          assert d["base"]["repo"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])
+          assert d["head"]["repo"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])
           assert d["state"]=="open"
           assert d["merged"] is False
           assert d["base"]["ref"]=="main"
@@ -2644,6 +2659,8 @@ jobs:
           assert terminal_main_branch["protected"] is True
           assert terminal_main_branch["commit"]["sha"] == os.environ["GITHUB_SHA"]
           assert terminal_pr["number"] == int(os.environ["PR_NUMBER"])
+          assert terminal_pr["base"]["repo"]["id"] == int(os.environ["EXPECTED_HEAD_REPO_ID"])
+          assert terminal_pr["head"]["repo"]["id"] == int(os.environ["EXPECTED_HEAD_REPO_ID"])
           assert terminal_pr["state"] == "open"
           assert terminal_pr["merged"] is False
           assert terminal_pr["base"]["ref"] == "main"
