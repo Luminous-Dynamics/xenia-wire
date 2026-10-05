@@ -169,14 +169,20 @@ jobs:
               'terminal["authority_eligible"]=True',
               'assert main_branch["name"] == "main"',
               'assert main_branch["protected"] is True',
+              'assert main_branch["commit"]["commit"]["verification"]["verified"] is True',
+              'assert main_branch["commit"]["commit"]["verification"]["reason"] == "valid"',
               'assert main_branch["commit"]["sha"] == os.environ["GITHUB_SHA"]',
               'main_branch_protection_verified',
               'assert final_main_branch["name"] == "main"',
               'assert final_main_branch["protected"] is True',
+              'assert final_main_branch["commit"]["commit"]["verification"]["verified"] is True',
+              'assert final_main_branch["commit"]["commit"]["verification"]["reason"] == "valid"',
               'assert final_main_branch["commit"]["sha"] == os.environ["GITHUB_SHA"]',
               'final_main_branch_protection_verified',
               'assert terminal_main_branch["name"] == "main"',
               'assert terminal_main_branch["protected"] is True',
+              'assert terminal_main_branch["commit"]["commit"]["verification"]["verified"] is True',
+              'assert terminal_main_branch["commit"]["commit"]["verification"]["reason"] == "valid"',
               'assert terminal_main_branch["commit"]["sha"] == os.environ["GITHUB_SHA"]',
               'terminal_main_branch_protection_verified',
               'assert terminal["terminal_main_branch_protection_verified"] is True',
@@ -990,7 +996,10 @@ jobs:
           main_branch=json.loads(Path("/tmp/main-branch.json").read_text())
           assert main_branch["name"]=="main"
           assert main_branch["protected"] is True
-          print("default branch protection verified")
+          assert main_branch["commit"]["sha"]==os.environ["GITHUB_SHA"]
+          assert main_branch["commit"]["commit"]["verification"]["verified"] is True
+          assert main_branch["commit"]["commit"]["verification"]["reason"]=="valid"
+          print("default branch protection, signed tip, and tip binding verified")
           PY
           curl --fail-with-body --silent --show-error \\
             -H "Authorization: Bearer $GITHUB_TOKEN" \\
@@ -2051,7 +2060,9 @@ jobs:
           assert final_main_branch["name"]=="main"
           assert final_main_branch["protected"] is True
           assert final_main_branch["commit"]["sha"]==os.environ["GITHUB_SHA"]
-          print("final default branch protection and tip verified")
+          assert final_main_branch["commit"]["commit"]["verification"]["verified"] is True
+          assert final_main_branch["commit"]["commit"]["verification"]["reason"]=="valid"
+          print("final default branch protection, signed tip, and tip binding verified")
           PY
 
       - name: Retain trusted receipt
@@ -2178,12 +2189,24 @@ jobs:
               and json.loads(Path("/tmp/main-branch.json").read_text()).get("name")=="main"
               and json.loads(Path("/tmp/main-branch.json").read_text()).get("protected") is True
               and json.loads(Path("/tmp/main-branch.json").read_text()).get("commit",{}).get("sha")==os.environ["GITHUB_SHA"]
+              and json.loads(Path("/tmp/main-branch.json").read_text()).get("commit",{}).get("commit",{}).get("verification",{}).get("verified") is True
+              and json.loads(Path("/tmp/main-branch.json").read_text()).get("commit",{}).get("commit",{}).get("verification",{}).get("reason")=="valid"
           )
           final_main_branch_protection_verified=(
               Path("/tmp/final-main-branch.json").exists()
               and json.loads(Path("/tmp/final-main-branch.json").read_text()).get("name")=="main"
               and json.loads(Path("/tmp/final-main-branch.json").read_text()).get("protected") is True
               and json.loads(Path("/tmp/final-main-branch.json").read_text()).get("commit",{}).get("sha")==os.environ["GITHUB_SHA"]
+              and json.loads(Path("/tmp/final-main-branch.json").read_text()).get("commit",{}).get("commit",{}).get("verification",{}).get("verified") is True
+              and json.loads(Path("/tmp/final-main-branch.json").read_text()).get("commit",{}).get("commit",{}).get("verification",{}).get("reason")=="valid"
+          )
+          terminal_main_branch_protection_verified=(
+              Path("/tmp/terminal-main-branch.json").exists()
+              and json.loads(Path("/tmp/terminal-main-branch.json").read_text()).get("name")=="main"
+              and json.loads(Path("/tmp/terminal-main-branch.json").read_text()).get("protected") is True
+              and json.loads(Path("/tmp/terminal-main-branch.json").read_text()).get("commit",{}).get("sha")==os.environ["GITHUB_SHA"]
+              and json.loads(Path("/tmp/terminal-main-branch.json").read_text()).get("commit",{}).get("commit",{}).get("verification",{}).get("verified") is True
+              and json.loads(Path("/tmp/terminal-main-branch.json").read_text()).get("commit",{}).get("commit",{}).get("verification",{}).get("reason")=="valid"
           )
           tree_delta_ok=Path("/tmp/trusted-tree-delta.txt").exists()
 
@@ -2244,11 +2267,21 @@ jobs:
                   if Path("/tmp/main-branch.json").exists() else None
               ),
               "main_branch_protection_verified":main_branch_protection_verified,
+              "main_branch_signed_tip_verified":(
+                  Path("/tmp/main-branch.json").exists()
+                  and json.loads(Path("/tmp/main-branch.json").read_text()).get("commit",{}).get("commit",{}).get("verification",{}).get("verified") is True
+                  and json.loads(Path("/tmp/main-branch.json").read_text()).get("commit",{}).get("commit",{}).get("verification",{}).get("reason")=="valid"
+              ),
               "final_main_branch_protection_sha256":(
                   __import__("hashlib").sha256(Path("/tmp/final-main-branch.json").read_bytes()).hexdigest()
                   if Path("/tmp/final-main-branch.json").exists() else None
               ),
               "final_main_branch_protection_verified":final_main_branch_protection_verified,
+              "final_main_branch_signed_tip_verified":(
+                  Path("/tmp/final-main-branch.json").exists()
+                  and json.loads(Path("/tmp/final-main-branch.json").read_text()).get("commit",{}).get("commit",{}).get("verification",{}).get("verified") is True
+                  and json.loads(Path("/tmp/final-main-branch.json").read_text()).get("commit",{}).get("commit",{}).get("verification",{}).get("reason")=="valid"
+              ),
               "workflow_run_event_sha256":(
                   __import__("hashlib").sha256(Path("/tmp/trusted-workflow-run-event.json").read_bytes()).hexdigest()
                   if Path("/tmp/trusted-workflow-run-event.json").exists() else None
@@ -2590,7 +2623,9 @@ jobs:
           assert terminal_main_branch["name"]=="main"
           assert terminal_main_branch["protected"] is True
           assert terminal_main_branch["commit"]["sha"]==os.environ["GITHUB_SHA"]
-          print("terminal default branch protection and tip verified")
+          assert terminal_main_branch["commit"]["commit"]["verification"]["verified"] is True
+          assert terminal_main_branch["commit"]["commit"]["verification"]["reason"]=="valid"
+          print("terminal default branch protection, signed tip, and tip binding verified")
           PY
           test -n "$ARTIFACT_ID"
           test "$ARTIFACT_ID" != "0"
