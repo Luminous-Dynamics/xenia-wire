@@ -263,8 +263,6 @@ jobs:
           from collections import Counter
           expr_start="$"+"{{"
           expr_end="}}"
-          expr=lambda { |value| expr_start+" "+value+" "+expr_end }
-          expr_end="}}"
           expression_pattern=re.escape(expr_start)+r"[^}]+\}\}"
           all_expression_counts=Counter(re.findall(expression_pattern,workflow))
           run_expression_counts=Counter(
@@ -394,6 +392,9 @@ jobs:
           }
           parsed_env=workflow.fetch("env")
           abort "top-level env mismatch" unless parsed_env == expected_env
+          expr_start="$"+"{{"
+          expr_end="}}"
+          expr=lambda { |value| expr_start+" "+value+" "+expr_end }
           expr_start="$"+"{{"
           abort "top-level env must contain no expressions" if parsed_env.values.any? { |value| value.is_a?(String) && value.include?(expr_start) }
 
