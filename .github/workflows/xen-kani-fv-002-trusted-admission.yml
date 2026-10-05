@@ -66,6 +66,7 @@ jobs:
           python3 - <<'PY'
           import ast
           import re
+          import textwrap
           from pathlib import Path
 
           workflow=Path(".github/workflows/xen-kani-fv-002-trusted-admission.yml").read_text()
@@ -319,7 +320,7 @@ jobs:
               ast.parse(block, filename=f"workflow-python-heredoc-{index}.py")
 
           for index, block in enumerate(run_blocks, start=1):
-              Path(f"/tmp/trusted-workflow-run-{index}.sh").write_text(block + "\n")
+              Path(f"/tmp/trusted-workflow-run-{index}.sh").write_text(textwrap.dedent(block) + "\n")
           for index in range(1, len(run_blocks) + 1):
               assert __import__("subprocess").run(
                   ["bash", "-n", f"/tmp/trusted-workflow-run-{index}.sh"],
