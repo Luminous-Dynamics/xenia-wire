@@ -318,18 +318,31 @@ jobs:
           assert len(blocks) >= 10, f"unexpected Python heredoc count: {len(blocks)}"
           for index, block in enumerate(blocks, start=1):
               tree=ast.parse(block, filename=f"workflow-python-heredoc-{index}.py")
-              uses_os_environ=any(
-                  isinstance(node, ast.Subscript)
-                  and isinstance(node.value, ast.Attribute)
-                  and isinstance(node.value.value, ast.Name)
-                  and node.value.value.id=="os"
-                  and node.value.attr=="environ"
+              imported_names=set()
+              for node in tree.body:
+                  if isinstance(node, ast.Import):
+                      imported_names.update(
+                          alias.asname or alias.name.split(".")[0]
+                          for alias in node.names
+                      )
+                  elif isinstance(node, ast.ImportFrom):
+                      imported_names.update(
+                          alias.asname or alias.name
+                          for alias in node.names
+                          if alias.name!="*"
+                      )
+              checked_names={"ast","hashlib","json","os","Path","PurePosixPath","re","shutil","subprocess","sys","tarfile","textwrap","urllib"}
+              referenced_names={
+                  node.id
                   for node in ast.walk(tree)
+                  if isinstance(node, ast.Name)
+                  and isinstance(node.ctx, ast.Load)
+                  and node.id in checked_names
+              }
+              missing_imports=sorted(referenced_names-imported_names)
+              assert not missing_imports, (
+                  f"Python heredoc {index} references unimported names: {missing_imports}"
               )
-              if uses_os_environ:
-                  assert re.search(r"^\s*import\s+[^#\n]*\bos\b", block, re.MULTILINE), (
-                      f"Python heredoc {index} references os.environ without importing os"
-                  )
 
           for index, block in enumerate(run_blocks, start=1):
               Path(f"/tmp/trusted-workflow-run-{index}.sh").write_text(textwrap.dedent(block) + "\n")
