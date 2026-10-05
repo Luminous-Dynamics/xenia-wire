@@ -194,6 +194,7 @@ jobs:
               'assert terminal["terminal_main_branch_protection_verified"] is True',
               'terminal["terminal_main_branch_protection_sha256"]',
               'terminal["terminal_main_branch_signed_tip_verified"] is True',
+              'terminal_commit_signature_verified',
               'authority terminal must retain terminal main branch evidence',
               'assert concurrency["group"] == expected_group',
           ):
@@ -2655,6 +2656,23 @@ jobs:
           test "$ARTIFACT_ID" != "0"
           [[ "$ARTIFACT_DIGEST" =~ ^[0-9a-f]{64}$ ]]
           test -s /tmp/trusted-artifact.json
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$EXPECTED_HEAD_REPO/commits/$GITHUB_SHA" \
+            -o /tmp/terminal-main-commit.json
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          terminal_main_commit=json.loads(Path("/tmp/terminal-main-commit.json").read_text())
+          assert terminal_main_commit["sha"]==os.environ["GITHUB_SHA"]
+          assert terminal_main_commit["repository"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])
+          assert terminal_main_commit["repository"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]
+          assert terminal_main_commit["commit"]["verification"]["verified"] is True
+          assert terminal_main_commit["commit"]["verification"]["reason"]=="valid"
+          print("terminal verifier commit signature independently verified")
+          PY
           python3 - <<'PY'
           import json, os, hashlib
           from pathlib import Path
@@ -2663,7 +2681,12 @@ jobs:
           artifact=json.loads(Path("/tmp/trusted-artifact.json").read_text())
           terminal_pr=json.loads(Path("/tmp/terminal-pr.json").read_text())
           terminal_main_branch=json.loads(Path("/tmp/terminal-main-branch.json").read_text())
+          terminal_main_commit=json.loads(Path("/tmp/terminal-main-commit.json").read_text())
           assert os.environ["GITHUB_REF_PROTECTED"]=="true"
+          assert terminal_main_commit["sha"] == os.environ["GITHUB_SHA"]
+          assert terminal_main_commit["repository"]["id"] == int(os.environ["EXPECTED_HEAD_REPO_ID"])
+          assert terminal_main_commit["commit"]["verification"]["verified"] is True
+          assert terminal_main_commit["commit"]["verification"]["reason"] == "valid"
           assert terminal_main_branch["name"] == "main"
           assert terminal_main_branch["protected"] is True
           assert terminal_main_branch["commit"]["sha"] == os.environ["GITHUB_SHA"]
@@ -2699,6 +2722,13 @@ jobs:
               terminal_main_branch["commit"]["commit"]["verification"]["verified"] is True
               and terminal_main_branch["commit"]["commit"]["verification"]["reason"]=="valid"
           )
+          terminal["terminal_commit_signature_verified"]=(
+              terminal_main_commit["commit"]["verification"]["verified"] is True
+              and terminal_main_commit["commit"]["verification"]["reason"]=="valid"
+          )
+          terminal["terminal_main_commit_payload_sha256"]=hashlib.sha256(
+              Path("/tmp/terminal-main-commit.json").read_bytes()
+          ).hexdigest()
           terminal["terminal_main_branch_protection_sha256"]=hashlib.sha256(
               Path("/tmp/terminal-main-branch.json").read_bytes()
           ).hexdigest()
@@ -2723,6 +2753,7 @@ jobs:
           path: |
             /tmp/authority-terminal.json
             /tmp/terminal-main-branch.json
+            /tmp/terminal-main-commit.json
           if-no-files-found: error
           retention-days: 30
           overwrite: false
