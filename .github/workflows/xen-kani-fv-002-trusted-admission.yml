@@ -180,6 +180,8 @@ jobs:
               'assert terminal_main_branch["commit"]["sha"] == os.environ["GITHUB_SHA"]',
               'terminal_main_branch_protection_verified',
               'assert terminal["terminal_main_branch_protection_verified"] is True',
+              'terminal["terminal_main_branch_protection_sha256"]',
+              'authority terminal must retain terminal main branch evidence',
               'assert concurrency["group"] == expected_group',
           ):
               assert required_literal in workflow, f"missing event envelope guard: {required_literal}"
@@ -2399,7 +2401,6 @@ jobs:
             /tmp/verifier-workflow.blob
             /tmp/main-branch.json
             /tmp/final-main-branch.json
-            /tmp/terminal-main-branch.json
             /tmp/trigger-workflow.txt
             /tmp/trigger-workflow.blob
             /tmp/trusted-workflow-run-event.json
@@ -2652,7 +2653,9 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: trusted-xen-kani-fv-002-authority-terminal-${{ github.event.workflow_run.pull_requests[0].number }}-${{ github.event.workflow_run.head_sha }}
-          path: /tmp/authority-terminal.json
+          path: |
+            /tmp/authority-terminal.json
+            /tmp/terminal-main-branch.json
           if-no-files-found: error
           retention-days: 30
           overwrite: false
