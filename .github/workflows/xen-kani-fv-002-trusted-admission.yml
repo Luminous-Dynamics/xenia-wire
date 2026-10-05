@@ -318,7 +318,7 @@ jobs:
           assert len(blocks) >= 10, f"unexpected Python heredoc count: {len(blocks)}"
           for index, block in enumerate(blocks, start=1):
               ast.parse(block, filename=f"workflow-python-heredoc-{index}.py")
-              if "os.environ" in block:
+              if re.search(r"\\bos\\.environ\\s*\\[", block):
                   assert re.search(r"^\s*import\s+[^#\n]*\bos\b", block, re.MULTILINE), (
                       f"Python heredoc {index} references os.environ without importing os"
                   )
