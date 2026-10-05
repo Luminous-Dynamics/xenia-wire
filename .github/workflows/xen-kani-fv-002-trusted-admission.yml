@@ -2336,6 +2336,8 @@ jobs:
               "pr_number":int(os.environ["PR_NUMBER"]),
               "head_sha":os.environ["HEAD_SHA"],
               "head_repo":os.environ["HEAD_REPO"],
+              "head_repo_id":int(os.environ["EXPECTED_HEAD_REPO_ID"]),
+              "expected_repository_id":int(os.environ["EXPECTED_HEAD_REPO_ID"]),
               "head_repo_expected":os.environ["EXPECTED_HEAD_REPO"],
               "final_pr_freshness_sha256":(
                   __import__("hashlib").sha256(
