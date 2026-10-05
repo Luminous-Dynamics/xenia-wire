@@ -156,6 +156,10 @@ jobs:
               'assert d["head_sha"]==os.environ["HEAD_SHA"]',
               'assert d["head_sha"]==os.environ["EXPECTED_QUALIFIED_HEAD_SHA"]',
               'assert d["workflow_run"]["head_sha"]==os.environ["GITHUB_SHA"]',
+              'sha256sum /tmp/trusted-artifact-download.zip',
+              'sha256sum /tmp/authority-terminal-artifact-download.zip',
+              'zipfile.ZipFile',
+              'actions/artifacts/$ARTIFACT_ID/zip',
               'assert verification["verified"] is True',
               'Kani release commit signature verified by GitHub',
               'EXPECTED_KANI_RELEASE_ASSET_ID',
@@ -342,7 +346,7 @@ jobs:
                           for alias in node.names
                           if alias.name!="*"
                       )
-              checked_names={"ast","hashlib","json","os","Path","PurePosixPath","re","shutil","subprocess","sys","tarfile","textwrap","urllib"}
+              checked_names={"ast","hashlib","json","os","Path","PurePosixPath","re","shutil","subprocess","sys","tarfile","textwrap","urllib","zipfile"}
               referenced_names={
                   node.id
                   for node in ast.walk(tree)
@@ -2610,7 +2614,11 @@ jobs:
             /tmp/kani-release-bundle-sha256.txt
             /tmp/trusted-admission.json
             /tmp/trusted-artifact.json
+            /tmp/trusted-artifact-download.sha256
+            /tmp/trusted-artifact-members.txt
             /tmp/trusted-artifact-provenance.txt
+            /tmp/trusted-artifact-download.sha256
+            /tmp/trusted-artifact-members.txt
             /tmp/final-pr.json
             /tmp/final-pr-freshness.txt
             /tmp/terminal-pr.json
@@ -2698,9 +2706,15 @@ jobs:
           test "$ARTIFACT_ID" != "0"
           [[ "$ARTIFACT_DIGEST" =~ ^[0-9a-f]{64}$ ]]
           curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/actions/artifacts/$ARTIFACT_ID"             -o /tmp/trusted-artifact.json
+          curl --fail-with-body --silent --show-error --location \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/actions/artifacts/$ARTIFACT_ID/zip" \
+            -o /tmp/trusted-artifact-download.zip
+          sha256sum /tmp/trusted-artifact-download.zip | cut -d" " -f1 > /tmp/trusted-artifact-download.sha256
           python3 - <<'PY'
-          import json, os
-          from pathlib import Path
+          import json, os, zipfile
+          from pathlib import Path, PurePosixPath
 
           d=json.loads(Path("/tmp/trusted-artifact.json").read_text())
           verifier_run=json.loads(Path("/tmp/verifier-run.json").read_text())
@@ -2716,6 +2730,19 @@ jobs:
           assert verifier_run["run_attempt"] == int(os.environ["GITHUB_RUN_ATTEMPT"])
           assert d["workflow_run"]["head_sha"] == os.environ["GITHUB_SHA"]
           assert d["expired"] is False
+          downloaded_digest=Path("/tmp/trusted-artifact-download.sha256").read_text().strip()
+          assert downloaded_digest == os.environ["ARTIFACT_DIGEST"]
+          with zipfile.ZipFile("/tmp/trusted-artifact-download.zip") as archive:
+              members=[x for x in archive.namelist() if x and not x.endswith("/")]
+          assert members
+          assert all(
+              not PurePosixPath(name).is_absolute() and ".." not in PurePosixPath(name).parts
+              for name in members
+          )
+          member_basenames={PurePosixPath(name).name for name in members}
+          for required in {"trusted-admission.json","trusted-artifact.json","trusted-artifact-provenance.txt"}:
+              assert required in member_basenames
+          Path("/tmp/trusted-artifact-members.txt").write_text("\n".join(sorted(members))+"\n")
           Path("/tmp/trusted-artifact-provenance.txt").write_text(
               "artifact_id="+str(d["id"])+"\n"
               "artifact_name="+d["name"]+"\n"
@@ -2727,6 +2754,8 @@ jobs:
               "workflow_run_attempt="+str(verifier_run["run_attempt"])+"\n"
               "workflow_run_head_sha="+d["workflow_run"]["head_sha"]+"\n"
               "verifier_run_head_sha="+verifier_run["head_sha"]+"\n"
+              "downloaded_archive_sha256="+downloaded_digest+"\n"
+              "downloaded_archive_member_count="+str(len(members))+"\n"
           )
           PY
           cat /tmp/trusted-artifact-provenance.txt
@@ -2880,6 +2909,8 @@ jobs:
             /tmp/authority-terminal.json
             /tmp/terminal-main-branch.json
             /tmp/terminal-main-commit.json
+            /tmp/authority-terminal-artifact-download.sha256
+            /tmp/authority-terminal-artifact-members.txt
           if-no-files-found: error
           retention-days: 30
           overwrite: false
@@ -2903,9 +2934,15 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/actions/artifacts/$ARTIFACT_ID" \
             -o /tmp/authority-terminal-artifact.json
+          curl --fail-with-body --silent --show-error --location \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/actions/artifacts/$ARTIFACT_ID/zip" \
+            -o /tmp/authority-terminal-artifact-download.zip
+          sha256sum /tmp/authority-terminal-artifact-download.zip | cut -d" " -f1 > /tmp/authority-terminal-artifact-download.sha256
           python3 - <<'PY'
-          import json, os
-          from pathlib import Path
+          import json, os, zipfile
+          from pathlib import Path, PurePosixPath
 
           d=json.loads(Path("/tmp/authority-terminal-artifact.json").read_text())
           verifier_run=json.loads(Path("/tmp/verifier-run.json").read_text())
@@ -2921,5 +2958,18 @@ jobs:
           assert verifier_run["run_attempt"] == int(os.environ["GITHUB_RUN_ATTEMPT"])
           assert d["workflow_run"]["head_sha"] == os.environ["GITHUB_SHA"]
           assert d["expired"] is False
+          downloaded_digest=Path("/tmp/authority-terminal-artifact-download.sha256").read_text().strip()
+          assert downloaded_digest == os.environ["ARTIFACT_DIGEST"]
+          with zipfile.ZipFile("/tmp/authority-terminal-artifact-download.zip") as archive:
+              members=[x for x in archive.namelist() if x and not x.endswith("/")]
+          assert members
+          assert all(
+              not PurePosixPath(name).is_absolute() and ".." not in PurePosixPath(name).parts
+              for name in members
+          )
+          member_basenames={PurePosixPath(name).name for name in members}
+          for required in {"authority-terminal.json","terminal-main-branch.json","terminal-main-commit.json"}:
+              assert required in member_basenames
+          Path("/tmp/authority-terminal-artifact-members.txt").write_text("\n".join(sorted(members))+"\n")
           PY
-          printf 'authority terminal artifact verified: %s sha256:%s run_attempt=%s\n' "$ARTIFACT_ID" "$ARTIFACT_DIGEST" "$GITHUB_RUN_ATTEMPT"
+          printf 'authority terminal artifact verified: %s sha256:%s run_attempt=%s downloaded_sha256=%s\n' "$ARTIFACT_ID" "$ARTIFACT_DIGEST" "$GITHUB_RUN_ATTEMPT"
