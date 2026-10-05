@@ -2689,10 +2689,14 @@ jobs:
           from pathlib import Path
 
           d=json.loads(Path("/tmp/trusted-artifact.json").read_text())
+          verifier_run=json.loads(Path("/tmp/verifier-run.json").read_text())
           assert d["id"] == int(os.environ["ARTIFACT_ID"])
           assert d["name"] == os.environ["EXPECTED_ARTIFACT_NAME"]
           assert d["digest"] == "sha256:"+os.environ["ARTIFACT_DIGEST"]
           assert d["workflow_run"]["id"] == int(os.environ["EXPECTED_RUN_ID"])
+          assert verifier_run["id"] == int(os.environ["EXPECTED_RUN_ID"])
+          assert verifier_run["head_sha"] == os.environ["GITHUB_SHA"]
+          assert verifier_run["run_attempt"] == int(os.environ["GITHUB_RUN_ATTEMPT"])
           assert d["workflow_run"]["head_sha"] == os.environ["HEAD_SHA"]
           assert d["expired"] is False
           Path("/tmp/trusted-artifact-provenance.txt").write_text(
@@ -2700,6 +2704,7 @@ jobs:
               "artifact_name="+d["name"]+"\n"
               "artifact_digest="+d["digest"]+"\n"
               "workflow_run_id="+str(d["workflow_run"]["id"])+"\n"
+              "workflow_run_attempt="+str(verifier_run["run_attempt"])+"\n"
               "workflow_run_head_sha="+d["workflow_run"]["head_sha"]+"\n"
           )
           PY
@@ -2882,11 +2887,15 @@ jobs:
           from pathlib import Path
 
           d=json.loads(Path("/tmp/authority-terminal-artifact.json").read_text())
+          verifier_run=json.loads(Path("/tmp/verifier-run.json").read_text())
           assert d["id"] == int(os.environ["ARTIFACT_ID"])
           assert d["name"] == os.environ["EXPECTED_ARTIFACT_NAME"]
           assert d["digest"] == "sha256:"+os.environ["ARTIFACT_DIGEST"]
           assert d["workflow_run"]["id"] == int(os.environ["EXPECTED_RUN_ID"])
+          assert verifier_run["id"] == int(os.environ["EXPECTED_RUN_ID"])
+          assert verifier_run["head_sha"] == os.environ["GITHUB_SHA"]
+          assert verifier_run["run_attempt"] == int(os.environ["GITHUB_RUN_ATTEMPT"])
           assert d["workflow_run"]["head_sha"] == os.environ["HEAD_SHA"]
           assert d["expired"] is False
           PY
-          echo "authority terminal artifact verified: $ARTIFACT_ID sha256:$ARTIFACT_DIGEST"
+          printf 'authority terminal artifact verified: %s sha256:%s run_attempt=%s\n' "$ARTIFACT_ID" "$ARTIFACT_DIGEST" "$GITHUB_RUN_ATTEMPT"
