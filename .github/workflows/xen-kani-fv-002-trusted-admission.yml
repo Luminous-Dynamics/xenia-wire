@@ -282,7 +282,7 @@ jobs:
               expr("github.workflow"):1,
               expr("github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.run_id"):1,
               expr("github.event.pull_request.head.sha"):2,
-              expr("github.token"):13,
+              expr("github.token"):14,
               expr("github.event.workflow_run.pull_requests[0].number"):5,
               expr("github.event.workflow_run.head_sha"):5,
               expr("github.event.workflow_run.head_repository.full_name"):1,
