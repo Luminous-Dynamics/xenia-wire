@@ -175,6 +175,11 @@ jobs:
               'assert final_main_branch["protected"] is True',
               'assert final_main_branch["commit"]["sha"] == os.environ["GITHUB_SHA"]',
               'final_main_branch_protection_verified',
+              'assert terminal_main_branch["name"] == "main"',
+              'assert terminal_main_branch["protected"] is True',
+              'assert terminal_main_branch["commit"]["sha"] == os.environ["GITHUB_SHA"]',
+              'terminal_main_branch_protection_verified',
+              'assert terminal["terminal_main_branch_protection_verified"] is True',
               'assert concurrency["group"] == expected_group',
           ):
               assert required_literal in workflow, f"missing event envelope guard: {required_literal}"
@@ -2394,6 +2399,7 @@ jobs:
             /tmp/verifier-workflow.blob
             /tmp/main-branch.json
             /tmp/final-main-branch.json
+            /tmp/terminal-main-branch.json
             /tmp/trigger-workflow.txt
             /tmp/trigger-workflow.blob
             /tmp/trusted-workflow-run-event.json
@@ -2570,6 +2576,21 @@ jobs:
           assert d["head"]["repo"]["full_name"]==os.environ["HEAD_REPO"]
           print("terminal PR freshness verified")
           PY
+          curl --fail-with-body --silent --show-error \\
+            -H "Authorization: Bearer $GITHUB_TOKEN" \\
+            -H "Accept: application/vnd.github+json" \\
+            "https://api.github.com/repos/$EXPECTED_HEAD_REPO/branches/main" \\
+            -o /tmp/terminal-main-branch.json
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          terminal_main_branch=json.loads(Path("/tmp/terminal-main-branch.json").read_text())
+          assert terminal_main_branch["name"]=="main"
+          assert terminal_main_branch["protected"] is True
+          assert terminal_main_branch["commit"]["sha"]==os.environ["GITHUB_SHA"]
+          print("terminal default branch protection and tip verified")
+          PY
           test -n "$ARTIFACT_ID"
           test "$ARTIFACT_ID" != "0"
           [[ "$ARTIFACT_DIGEST" =~ ^[0-9a-f]{64}$ ]]
@@ -2581,6 +2602,10 @@ jobs:
           receipt=json.loads(Path("/tmp/trusted-admission.json").read_text())
           artifact=json.loads(Path("/tmp/trusted-artifact.json").read_text())
           terminal_pr=json.loads(Path("/tmp/terminal-pr.json").read_text())
+          terminal_main_branch=json.loads(Path("/tmp/terminal-main-branch.json").read_text())
+          assert terminal_main_branch["name"] == "main"
+          assert terminal_main_branch["protected"] is True
+          assert terminal_main_branch["commit"]["sha"] == os.environ["GITHUB_SHA"]
           assert terminal_pr["number"] == int(os.environ["PR_NUMBER"])
           assert terminal_pr["state"] == "open"
           assert terminal_pr["merged"] is False
@@ -2605,6 +2630,10 @@ jobs:
           terminal["evidence_artifact_digest"]=artifact["digest"]
           terminal["evidence_artifact_verified"]=True
           terminal["terminal_pr_freshness_verified"]=True
+          terminal["terminal_main_branch_protection_verified"]=True
+          terminal["terminal_main_branch_protection_sha256"]=hashlib.sha256(
+              Path("/tmp/terminal-main-branch.json").read_bytes()
+          ).hexdigest()
           terminal["terminal_pr_payload_sha256"]=hashlib.sha256(
               Path("/tmp/terminal-pr.json").read_bytes()
           ).hexdigest()
