@@ -187,6 +187,7 @@ jobs:
               'terminal_main_branch_protection_verified',
               'assert terminal["terminal_main_branch_protection_verified"] is True',
               'terminal["terminal_main_branch_protection_sha256"]',
+              'terminal["terminal_main_branch_signed_tip_verified"] is True',
               'authority terminal must retain terminal main branch evidence',
               'assert concurrency["group"] == expected_group',
           ):
@@ -2667,6 +2668,10 @@ jobs:
           terminal["evidence_artifact_verified"]=True
           terminal["terminal_pr_freshness_verified"]=True
           terminal["terminal_main_branch_protection_verified"]=True
+          terminal["terminal_main_branch_signed_tip_verified"]=(
+              terminal_main_branch["commit"]["commit"]["verification"]["verified"] is True
+              and terminal_main_branch["commit"]["commit"]["verification"]["reason"]=="valid"
+          )
           terminal["terminal_main_branch_protection_sha256"]=hashlib.sha256(
               Path("/tmp/terminal-main-branch.json").read_bytes()
           ).hexdigest()
