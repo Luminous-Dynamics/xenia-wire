@@ -145,9 +145,12 @@ jobs:
               'assert run["workflow_id"]==int(os.environ["EXPECTED_TRIGGER_WORKFLOW_ID"])',
               'assert run["event"]=="pull_request"',
               'assert run["conclusion"]=="success"',
+              'test "$HEAD_SHA" = "$EXPECTED_QUALIFIED_HEAD_SHA"',
               'assert run["head_sha"]==os.environ["HEAD_SHA"]',
               'assert run["head_sha"]==os.environ["EXPECTED_QUALIFIED_HEAD_SHA"]',
               'assert run["head_commit"]["id"]==os.environ["HEAD_SHA"]',
+              'assert d["head_sha"]==os.environ["HEAD_SHA"]',
+              'assert d["head_sha"]==os.environ["EXPECTED_QUALIFIED_HEAD_SHA"]',
               'assert verification["verified"] is True',
               'Kani release commit signature verified by GitHub',
               'EXPECTED_KANI_RELEASE_ASSET_ID',
@@ -1093,6 +1096,7 @@ jobs:
           assert d["head_branch"]==os.environ["EXPECTED_TRIGGER_BRANCH"]
           assert d["event"]=="pull_request"
           assert d["head_sha"]==os.environ["HEAD_SHA"]
+          assert d["head_sha"]==os.environ["EXPECTED_QUALIFIED_HEAD_SHA"]
           assert d["head_repository"]["full_name"]==os.environ["HEAD_REPO"]
           assert d["head_repository"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])
           assert os.environ["HEAD_REPO"]==os.environ["EXPECTED_HEAD_REPO"]
@@ -1176,6 +1180,12 @@ jobs:
               filename=item.get("filename")
               assert isinstance(filename,str) and filename, "PR file entry missing filename"
               paths.append(filename)
+              previous_filename=item.get("previous_filename")
+              assert previous_filename is None or (
+                  isinstance(previous_filename,str) and previous_filename
+              ), "PR rename entry has invalid previous_filename"
+              if previous_filename:
+                  paths.append(previous_filename)
           verifier_path=os.environ["VERIFIER_WORKFLOW_PATH"]
           assert verifier_path not in paths, (
               f"trusted verifier self-modification is not authority-eligible: {verifier_path}"
