@@ -2602,6 +2602,8 @@ jobs:
             /tmp/kani-release-asset.txt
             /tmp/kani-release-bundle-sha256.txt
             /tmp/trusted-admission.json
+            /tmp/trusted-artifact.json
+            /tmp/trusted-artifact-provenance.txt
             /tmp/final-pr.json
             /tmp/final-pr-freshness.txt
             /tmp/terminal-pr.json
@@ -2660,6 +2662,8 @@ jobs:
             /tmp/kani-version.txt
             /tmp/kani-rustc.txt
             /tmp/trusted-admission.json
+            /tmp/trusted-artifact.json
+            /tmp/trusted-artifact-provenance.txt
             /tmp/final-pr.json
             /tmp/final-pr-freshness.txt
             /tmp/terminal-pr.json
