@@ -290,6 +290,7 @@ jobs:
               expr("github.event.workflow_run.id"):1,
               expr("github.event.workflow_run.run_attempt"):1,
               expr("github.event.workflow_run.conclusion"):1,
+              expr("github.run_attempt"):5,
               expr("github.run_id"):2,
               expr("steps.trusted-evidence-upload.outputs.artifact-id"):2,
               expr("steps.trusted-evidence-upload.outputs.artifact-digest"):2,
@@ -917,7 +918,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: xen-kani-fv-002-reachability-selftest-${{ github.event.pull_request.head.sha }}
+          name: xen-kani-fv-002-reachability-selftest-${{ github.event.pull_request.head.sha }}-${{ github.run_attempt }}
           path: |
             /tmp/replay_kernel_cover.rs
             /tmp/selftest-replay_kernel.rs
@@ -2620,7 +2621,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: trusted-xen-kani-fv-002-${{ github.event.workflow_run.pull_requests[0].number }}-${{ github.event.workflow_run.head_sha }}
+          name: trusted-xen-kani-fv-002-${{ github.event.workflow_run.pull_requests[0].number }}-${{ github.event.workflow_run.head_sha }}-${{ github.run_attempt }}
           path: |
             /tmp/trusted-subject.txt
             /tmp/verifier-workflow.txt
@@ -2675,7 +2676,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           ARTIFACT_ID: ${{ steps.trusted-evidence-upload.outputs.artifact-id }}
           ARTIFACT_DIGEST: ${{ steps.trusted-evidence-upload.outputs.artifact-digest }}
-          EXPECTED_ARTIFACT_NAME: trusted-xen-kani-fv-002-${{ github.event.workflow_run.pull_requests[0].number }}-${{ github.event.workflow_run.head_sha }}
+          EXPECTED_ARTIFACT_NAME: trusted-xen-kani-fv-002-${{ github.event.workflow_run.pull_requests[0].number }}-${{ github.event.workflow_run.head_sha }}-${{ github.run_attempt }}
           EXPECTED_RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
@@ -2848,7 +2849,7 @@ jobs:
         id: authority-terminal-upload
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: trusted-xen-kani-fv-002-authority-terminal-${{ github.event.workflow_run.pull_requests[0].number }}-${{ github.event.workflow_run.head_sha }}
+          name: trusted-xen-kani-fv-002-authority-terminal-${{ github.event.workflow_run.pull_requests[0].number }}-${{ github.event.workflow_run.head_sha }}-${{ github.run_attempt }}
           path: |
             /tmp/authority-terminal.json
             /tmp/terminal-main-branch.json
@@ -2864,7 +2865,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           ARTIFACT_ID: ${{ steps.authority-terminal-upload.outputs.artifact-id }}
           ARTIFACT_DIGEST: ${{ steps.authority-terminal-upload.outputs.artifact-digest }}
-          EXPECTED_ARTIFACT_NAME: trusted-xen-kani-fv-002-authority-terminal-${{ github.event.workflow_run.pull_requests[0].number }}-${{ github.event.workflow_run.head_sha }}
+          EXPECTED_ARTIFACT_NAME: trusted-xen-kani-fv-002-authority-terminal-${{ github.event.workflow_run.pull_requests[0].number }}-${{ github.event.workflow_run.head_sha }}-${{ github.run_attempt }}
           EXPECTED_RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
