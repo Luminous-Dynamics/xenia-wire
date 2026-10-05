@@ -385,8 +385,9 @@ jobs:
           ruby_source=ruby_blocks[0]
           assert ruby_source.count('expr=lambda { |value| expr_start+" "+value+" "+expr_end }')==1
           assert ruby_source.count('expr.call("github.')==8
-          assert ruby_source.count('trusted=jobs.fetch("trusted-admission")')==1
-          assert ruby_source.index('trusted=jobs.fetch("trusted-admission")') < ruby_source.index('upload_steps=selftest.fetch("steps")')
+          trusted_assignment="trusted="+"jobs.fetch("+""trusted-admission""+")"
+          assert ruby_source.count(trusted_assignment)==1
+          assert ruby_source.index(trusted_assignment) < ruby_source.index('upload_steps=selftest.fetch("steps")')
           assert 'expected_checkout_ref=expr_start+' not in ruby_source
           assert '"PR_NUMBER"=>expr_start+' not in ruby_source
           assert '"HEAD_SHA"=>expr_start+' not in ruby_source
