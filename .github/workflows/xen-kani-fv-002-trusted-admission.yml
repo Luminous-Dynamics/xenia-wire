@@ -346,6 +346,17 @@ jobs:
                   ruby_blocks.append("\n".join(body)+"\n")
               i+=1
           assert len(ruby_blocks)==1, f"unexpected Ruby heredoc count: {len(ruby_blocks)}"
+          ruby_source=ruby_blocks[0]
+          assert ruby_source.count(\'expr=lambda { |value| expr_start+" "+value+" "+expr_end }\')==1
+          assert ruby_source.count(\'expr.call("github.\')==8
+          assert \'expected_checkout_ref=expr_start+\' not in ruby_source
+          assert \'"PR_NUMBER"=>expr_start+\' not in ruby_source
+          assert \'"HEAD_SHA"=>expr_start+\' not in ruby_source
+          assert \'"HEAD_REPO"=>expr_start+\' not in ruby_source
+          assert \'"HEAD_BRANCH"=>expr_start+\' not in ruby_source
+          assert \'"TRIGGER_RUN_ID"=>expr_start+\' not in ruby_source
+          assert \'"TRIGGER_RUN_ATTEMPT"=>expr_start+\' not in ruby_source
+          assert \'"TRIGGER_CONCLUSION"=>expr_start+\' not in ruby_source
           for index, block in enumerate(ruby_blocks, start=1):
               path=Path(f"/tmp/trusted-workflow-ruby-{index}.rb")
               path.write_text(block)
