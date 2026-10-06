@@ -1989,6 +1989,7 @@ jobs:
           assert checks
           assert all(str(x.get("status","")).upper()=="SUCCESS" for x in checks if isinstance(x,dict))
           summary=vr.get("summary",{})
+          assert isinstance(summary,dict)
           assert summary.get("total_harnesses")==1
           assert summary.get("executed")==1
           assert summary.get("successful")==1
@@ -2193,6 +2194,7 @@ jobs:
           assert isinstance(summary,dict)
           assert summary.get("total_harnesses")==1
           assert summary.get("executed")==1
+          assert summary.get("successful")==1
           assert summary.get("failed")==0
           print(json.dumps({"harness":harness,"status":"SATISFIED","cover_checks":1}))
           PY
