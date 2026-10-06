@@ -487,6 +487,8 @@ jobs:
                   'assert source.count("#[kani::proof]")==14',
               ],
               "Build authority terminal receipt":[
+                  'assert d["base"]["repo"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])',
+                  'assert d["head"]["repo"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])',
                   'assert receipt["pre_transport_authority_eligible"] is True',
                   'assert receipt["authority_eligible"] is False',
                   'terminal["authority_eligible"]=True',
@@ -2871,9 +2873,11 @@ jobs:
           assert d["state"]=="open"
           assert d["merged"] is False
           assert d["base"]["ref"]=="main"
+          assert d["base"]["repo"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])
           assert d["base"]["repo"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]
           assert d["head"]["ref"]==os.environ["HEAD_BRANCH"]
           assert d["head"]["sha"]==os.environ["HEAD_SHA"]
+          assert d["head"]["repo"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])
           assert d["head"]["repo"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]
           assert d["head"]["repo"]["full_name"]==os.environ["HEAD_REPO"]
 
