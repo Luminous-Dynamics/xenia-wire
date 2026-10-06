@@ -70,6 +70,8 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           import ast
+          import json
+          import os
           import re
           import subprocess
           import textwrap
@@ -78,6 +80,7 @@ jobs:
           workflow_path=Path(".github/workflows/xen-kani-fv-002-trusted-admission.yml")
           workflow=workflow_path.read_text()
           event=json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
+          assert isinstance(event.get("pull_request"), dict)
           checked_out_sha=subprocess.check_output(["git","rev-parse","HEAD"], text=True).strip()
           expected_checkout_sha=event["pull_request"]["head"]["sha"]
           assert checked_out_sha==expected_checkout_sha, (
@@ -629,7 +632,10 @@ jobs:
                           for alias in node.names
                           if alias.name!="*"
                       )
-              checked_names={"ast","hashlib","json","os","Path","PurePosixPath","re","shutil","subprocess","sys","tarfile","textwrap","urllib","zipfile"}
+              assert "json" in imported_names and "os" in imported_names, (
+              f"structural verifier bootstrap imports missing: {sorted(imported_names)!r}"
+          )
+          checked_names={"ast","hashlib","json","os","Path","PurePosixPath","re","shutil","subprocess","sys","tarfile","textwrap","urllib","zipfile"}
               referenced_names={
                   node.id
                   for node in ast.walk(tree)
