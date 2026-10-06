@@ -38,6 +38,7 @@ env:
   KANI_VERSION: 0.68.0
   EXPECTED_KANI_CBMC_VERSION: 6.11.0
   EXPECTED_KANI_RELEASE_TAG: kani-0.68.0
+  EXPECTED_KANI_REPO_ID: 351882164
   EXPECTED_KANI_RELEASE_COMMIT_SHA: 0d2328a93f0e0ff66132d6bfa1a7d884877cf862
   EXPECTED_KANI_RELEASE_ASSET_ID: 566906903
   EXPECTED_KANI_RELEASE_ASSET_NAME: kani-0.68.0-x86_64-unknown-linux-gnu.tar.gz
@@ -179,6 +180,8 @@ jobs:
               'zipfile.ZipFile',
               'assert len(members) == len(set(members))',
               'actions/artifacts/$ARTIFACT_ID/zip',
+              'assert d["repository"]["id"]==int(os.environ["EXPECTED_KANI_REPO_ID"])',
+              'assert d["repository"]["full_name"]=="model-checking/kani"',
               'assert verification["verified"] is True',
               'Kani release commit signature and verification metadata verified by GitHub',
               'assert main_verification.get("signature")',
@@ -678,6 +681,7 @@ jobs:
             "KANI_VERSION"=>"0.68.0",
             "EXPECTED_KANI_CBMC_VERSION"=>"6.11.0",
             "EXPECTED_KANI_RELEASE_TAG"=>"kani-0.68.0",
+            "EXPECTED_KANI_REPO_ID"=>351882164,
             "EXPECTED_KANI_RELEASE_COMMIT_SHA"=>"0d2328a93f0e0ff66132d6bfa1a7d884877cf862",
             "EXPECTED_KANI_RELEASE_ASSET_ID"=>566906903,
             "EXPECTED_KANI_RELEASE_ASSET_NAME"=>"kani-0.68.0-x86_64-unknown-linux-gnu.tar.gz",
@@ -2299,6 +2303,8 @@ jobs:
 
           d=json.loads(Path("/tmp/kani-release-commit.json").read_text())
           assert d["sha"]==os.environ["EXPECTED_KANI_RELEASE_COMMIT_SHA"]
+          assert d["repository"]["id"]==int(os.environ["EXPECTED_KANI_REPO_ID"])
+          assert d["repository"]["full_name"]=="model-checking/kani"
           verification=d["commit"]["verification"]
           assert verification["verified"] is True
           assert verification["reason"]=="valid"
