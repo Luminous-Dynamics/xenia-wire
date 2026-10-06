@@ -161,7 +161,17 @@ jobs:
               'assert d["workflow_run"]["head_sha"]==os.environ["GITHUB_SHA"]',
               'sha256sum /tmp/trusted-artifact-download.zip',
               'sha256sum /tmp/trusted-verifier-workflow.yml',
+              'https://api.github.com/repos/$EXPECTED_HEAD_REPO/commits/$GITHUB_SHA',
+              'https://api.github.com/repos/$EXPECTED_HEAD_REPO/git/trees/$verifier_tree_sha?recursive=1',
+              'verifier_tree_entry["type"]=="blob"',
+              'verifier_tree_entry["mode"]=="100644"',
+              'verifier_tree_entry["sha"]==Path("/tmp/verifier-workflow.blob").read_text().strip()',
               'sha256sum /tmp/trigger-workflow.yml',
+              'https://api.github.com/repos/$HEAD_REPO/commits/$HEAD_SHA',
+              'https://api.github.com/repos/$HEAD_REPO/git/trees/$trigger_tree_sha?recursive=1',
+              'trigger_tree_entry["type"]=="blob"',
+              'trigger_tree_entry["mode"]=="100644"',
+              'trigger_tree_entry["sha"]==os.environ["EXPECTED_TRIGGER_WORKFLOW_BLOB"]',
               'sha256sum /tmp/authority-terminal-artifact-download.zip',
               'zipfile.ZipFile',
               'assert len(members) == len(set(members))',
@@ -1344,6 +1354,42 @@ jobs:
           printf '%s\\n' "$verifier_sha256" > /tmp/verifier-workflow.sha256
           printf 'verifier_commit=%s\\nverifier_workflow_blob=%s\\n' "$GITHUB_SHA" "$verifier_blob" | tee /tmp/verifier-workflow.txt
           test -s /tmp/trusted-verifier-workflow.yml
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$EXPECTED_HEAD_REPO/commits/$GITHUB_SHA" \
+            -o /tmp/verifier-workflow-commit.json
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          d=json.loads(Path("/tmp/verifier-workflow-commit.json").read_text())
+          assert d["sha"]==os.environ["GITHUB_SHA"]
+          assert d["repository"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])
+          tree_sha=d["commit"]["tree"]["sha"]
+          assert isinstance(tree_sha,str) and len(tree_sha)==40
+          Path("/tmp/verifier-workflow-tree-sha").write_text(tree_sha+"\n")
+          PY
+          verifier_tree_sha="$(cat /tmp/verifier-workflow-tree-sha)"
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$EXPECTED_HEAD_REPO/git/trees/$verifier_tree_sha?recursive=1" \
+            -o /tmp/verifier-workflow-tree.json
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          tree=json.loads(Path("/tmp/verifier-workflow-tree.json").read_text())
+          assert tree["truncated"] is False
+          matches=[x for x in tree["tree"] if x.get("path")==os.environ["VERIFIER_WORKFLOW_PATH"]]
+          assert len(matches)==1
+          verifier_tree_entry=matches[0]
+          assert verifier_tree_entry["type"]=="blob"
+          assert verifier_tree_entry["mode"]=="100644"
+          assert verifier_tree_entry["sha"]==Path("/tmp/verifier-workflow.blob").read_text().strip()
+          print("verifier workflow raw bytes are bound to the signed commit tree")
+          PY
 
       - name: Verify triggering workflow identity and provenance
         shell: bash
@@ -1392,6 +1438,43 @@ jobs:
           trigger_sha256="$(sha256sum /tmp/trigger-workflow.yml | cut -d" " -f1)"
           printf '%s\\n' "$trigger_sha256" > /tmp/trigger-workflow.sha256
           test "$trigger_blob" = "$EXPECTED_TRIGGER_WORKFLOW_BLOB"
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$HEAD_REPO/commits/$HEAD_SHA" \
+            -o /tmp/trigger-workflow-commit.json
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          d=json.loads(Path("/tmp/trigger-workflow-commit.json").read_text())
+          assert d["sha"]==os.environ["HEAD_SHA"]
+          assert d["repository"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])
+          tree_sha=d["commit"]["tree"]["sha"]
+          assert isinstance(tree_sha,str) and len(tree_sha)==40
+          Path("/tmp/trigger-workflow-tree-sha").write_text(tree_sha+"\n")
+          PY
+          trigger_tree_sha="$(cat /tmp/trigger-workflow-tree-sha)"
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$HEAD_REPO/git/trees/$trigger_tree_sha?recursive=1" \
+            -o /tmp/trigger-workflow-tree.json
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          tree=json.loads(Path("/tmp/trigger-workflow-tree.json").read_text())
+          assert tree["truncated"] is False
+          matches=[x for x in tree["tree"] if x.get("path")==os.environ["EXPECTED_TRIGGER_WORKFLOW_PATH"]]
+          assert len(matches)==1
+          trigger_tree_entry=matches[0]
+          assert trigger_tree_entry["type"]=="blob"
+          assert trigger_tree_entry["mode"]=="100644"
+          assert trigger_tree_entry["sha"]==os.environ["EXPECTED_TRIGGER_WORKFLOW_BLOB"]
+          assert trigger_tree_entry["sha"]==Path("/tmp/trigger-workflow.blob").read_text().strip()
+          print("trigger workflow raw bytes are bound to the qualified commit tree")
+          PY
           printf 'trigger_workflow_blob=%s\\n' "$trigger_blob" | tee /tmp/trigger-workflow.txt
 
       - name: Verify triggering PR identity
@@ -2656,6 +2739,18 @@ jobs:
               "verifier_workflow_id":int(os.environ["EXPECTED_VERIFIER_WORKFLOW_ID"]),
               "verifier_workflow_blob":read_optional("/tmp/verifier-workflow.blob"),
               "verifier_workflow_sha256":read_optional("/tmp/verifier-workflow.sha256"),
+              "verifier_workflow_commit_payload_sha256":(
+                  __import__("hashlib").sha256(Path("/tmp/verifier-workflow-commit.json").read_bytes()).hexdigest()
+                  if Path("/tmp/verifier-workflow-commit.json").exists() else None
+              ),
+              "verifier_workflow_tree_sha256":(
+                  __import__("hashlib").sha256(Path("/tmp/verifier-workflow-tree.json").read_bytes()).hexdigest()
+                  if Path("/tmp/verifier-workflow-tree.json").exists() else None
+              ),
+              "verifier_workflow_tree_binding_verified":(
+                  Path("/tmp/verifier-workflow-tree.json").exists()
+                  and Path("/tmp/verifier-workflow.blob").exists()
+              ),
               "main_branch_protection_sha256":(
                   __import__("hashlib").sha256(Path("/tmp/main-branch.json").read_bytes()).hexdigest()
                   if Path("/tmp/main-branch.json").exists() else None
@@ -2699,6 +2794,18 @@ jobs:
               ),
               "trigger_workflow_blob":read_optional("/tmp/trigger-workflow.blob"),
               "trigger_workflow_sha256":read_optional("/tmp/trigger-workflow.sha256"),
+              "trigger_workflow_commit_payload_sha256":(
+                  __import__("hashlib").sha256(Path("/tmp/trigger-workflow-commit.json").read_bytes()).hexdigest()
+                  if Path("/tmp/trigger-workflow-commit.json").exists() else None
+              ),
+              "trigger_workflow_tree_sha256":(
+                  __import__("hashlib").sha256(Path("/tmp/trigger-workflow-tree.json").read_bytes()).hexdigest()
+                  if Path("/tmp/trigger-workflow-tree.json").exists() else None
+              ),
+              "trigger_workflow_tree_binding_verified":(
+                  Path("/tmp/trigger-workflow-tree.json").exists()
+                  and Path("/tmp/trigger-workflow.blob").exists()
+              ),
               "github_run_id":int(os.environ["GITHUB_RUN_ID"]),
               "github_run_attempt":int(os.environ["GITHUB_RUN_ATTEMPT"]),
               "triggering_run_id":int(os.environ["TRIGGER_RUN_ID"]),
@@ -2834,12 +2941,18 @@ jobs:
             /tmp/verifier-workflow.blob
             /tmp/verifier-workflow.sha256
             /tmp/trusted-verifier-workflow.yml
+            /tmp/verifier-workflow-commit.json
+            /tmp/verifier-workflow-tree-sha
+            /tmp/verifier-workflow-tree.json
             /tmp/main-branch.json
             /tmp/final-main-branch.json
             /tmp/trigger-workflow.txt
             /tmp/trigger-workflow.blob
             /tmp/trigger-workflow.sha256
             /tmp/trigger-workflow.yml
+            /tmp/trigger-workflow-commit.json
+            /tmp/trigger-workflow-tree-sha
+            /tmp/trigger-workflow-tree.json
             /tmp/trusted-workflow-run-event.json
             /tmp/verifier-run.json
             /tmp/trigger-run.json
@@ -2906,12 +3019,18 @@ jobs:
             /tmp/verifier-workflow.blob
             /tmp/verifier-workflow.sha256
             /tmp/trusted-verifier-workflow.yml
+            /tmp/verifier-workflow-commit.json
+            /tmp/verifier-workflow-tree-sha
+            /tmp/verifier-workflow-tree.json
             /tmp/main-branch.json
             /tmp/final-main-branch.json
             /tmp/trigger-workflow.txt
             /tmp/trigger-workflow.blob
             /tmp/trigger-workflow.sha256
             /tmp/trigger-workflow.yml
+            /tmp/trigger-workflow-commit.json
+            /tmp/trigger-workflow-tree-sha
+            /tmp/trigger-workflow-tree.json
             /tmp/trusted-workflow-run-event.json
             /tmp/verifier-run.json
             /tmp/trigger-run.json
