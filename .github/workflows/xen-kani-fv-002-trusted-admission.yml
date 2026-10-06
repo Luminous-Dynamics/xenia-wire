@@ -763,6 +763,7 @@ jobs:
               ],
             },
           }
+          upload_steps=selftest.fetch("steps").select { |step| step["uses"] == "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f" } + trusted.fetch("steps").select { |step| step["uses"] == "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f" }
           expected_upload_keys=["name","path","if-no-files-found","retention-days","overwrite","include-hidden-files"]
           upload_steps.each do |step|
             with=step.fetch("with")
@@ -772,7 +773,6 @@ jobs:
             observed_path=with.fetch("path").lines.map(&:strip).reject(&:empty?)
             abort "upload path inventory mismatch in #{step["name"]}" unless observed_path == expected.fetch("path")
           end
-          upload_steps=selftest.fetch("steps").select { |step| step["uses"] == "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f" } + trusted.fetch("steps").select { |step| step["uses"] == "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f" }
           abort "artifact upload cardinality mismatch" unless upload_steps.length == 4
           abort "artifact overwrite must remain disabled" unless upload_steps.all? { |step| step.fetch("with").fetch("overwrite") == false }
           abort "artifact hidden-file inclusion must remain disabled" unless upload_steps.all? { |step| step.fetch("with").fetch("include-hidden-files") == false }
