@@ -636,7 +636,7 @@ jobs:
               assert "json" in imported_names and "os" in imported_names, (
               f"structural verifier bootstrap imports missing: {sorted(imported_names)!r}"
           )
-          checked_names={"ast","hashlib","json","os","Path","PurePosixPath","re","shutil","subprocess","sys","tarfile","textwrap","urllib","zipfile"}
+              checked_names={"ast","hashlib","json","os","Path","PurePosixPath","re","shutil","subprocess","sys","tarfile","textwrap","urllib","zipfile"}
               referenced_names={
                   node.id
                   for node in ast.walk(tree)
