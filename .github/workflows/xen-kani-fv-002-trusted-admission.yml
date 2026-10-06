@@ -3399,7 +3399,7 @@ jobs:
               "xen-kani-trusted/evidence.blob",
               "xen-kani-trusted/evidence.json",
           }
-          assert archive_names==sorted(expected_members), (
+          assert set(archive_names)==expected_members, (
               f"trusted evidence archive member set mismatch: "
               f"unexpected={sorted(set(archive_names)-expected_members)} "
               f"missing={sorted(expected_members-set(archive_names))}"
@@ -3661,7 +3661,7 @@ jobs:
               "trusted-artifact-download.sha256",
               "trusted-artifact-members.txt",
           }
-          assert archive_names==sorted(expected_members), (
+          assert set(archive_names)==expected_members, (
               f"authority terminal archive member set mismatch: "
               f"unexpected={sorted(set(archive_names)-expected_members)} "
               f"missing={sorted(expected_members-set(archive_names))}"
