@@ -171,6 +171,7 @@ jobs:
               'self-test checkout credential persistence enabled',
               'artifact overwrite must remain disabled',
               'artifact hidden-file inclusion must remain disabled',
+              'authority terminal must retain trusted transport evidence:',
               'self-test checkout fetch-depth mismatch',
               'self-test checkout ref mismatch',
               'assert checksum==os.environ["EXPECTED_KANI_CRATE_SHA256"]',
@@ -484,6 +485,12 @@ jobs:
           abort "artifact upload cardinality mismatch" unless upload_steps.length == 3
           abort "artifact overwrite must remain disabled" unless upload_steps.all? { |step| step.fetch("with").fetch("overwrite") == false }
           abort "artifact hidden-file inclusion must remain disabled" unless upload_steps.all? { |step| step.fetch("with").fetch("include-hidden-files") == false }
+          authority_terminal_upload=trusted.fetch("steps").find { |step| step["name"] == "Upload authority terminal" }
+          abort "authority terminal upload step missing" unless authority_terminal_upload
+          authority_terminal_paths=authority_terminal_upload.fetch("with").fetch("path")
+          %w[/tmp/trusted-artifact.json /tmp/trusted-artifact-provenance.txt /tmp/trusted-artifact-download.sha256 /tmp/trusted-artifact-members.txt].each do |required_path|
+            abort "authority terminal must retain trusted transport evidence: #{required_path}" unless authority_terminal_paths.include?(required_path)
+          end
           abort "self-test runner mismatch" unless selftest["runs-on"] == "ubuntu-24.04" && selftest["timeout-minutes"] == 30
           abort "self-test permissions mismatch" unless selftest["permissions"] == {"contents"=>"read"}
 
@@ -2614,10 +2621,6 @@ jobs:
             /tmp/kani-release-asset.txt
             /tmp/kani-release-bundle-sha256.txt
             /tmp/trusted-admission.json
-            /tmp/trusted-artifact.json
-            /tmp/trusted-artifact-download.sha256
-            /tmp/trusted-artifact-members.txt
-            /tmp/trusted-artifact-provenance.txt
             /tmp/trusted-artifact-download.sha256
             /tmp/trusted-artifact-members.txt
             /tmp/final-pr.json
@@ -2911,6 +2914,10 @@ jobs:
             /tmp/authority-terminal.json
             /tmp/terminal-main-branch.json
             /tmp/terminal-main-commit.json
+            /tmp/trusted-artifact.json
+            /tmp/trusted-artifact-provenance.txt
+            /tmp/trusted-artifact-download.sha256
+            /tmp/trusted-artifact-members.txt
             /tmp/authority-terminal-artifact-download.sha256
             /tmp/authority-terminal-artifact-members.txt
           if-no-files-found: error
