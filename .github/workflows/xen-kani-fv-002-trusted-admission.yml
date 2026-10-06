@@ -566,8 +566,26 @@ jobs:
           assert len(ruby_blocks)==1, f"unexpected Ruby heredoc count: {len(ruby_blocks)}"
           ruby_source=ruby_blocks[0]
           assert ruby_source.count('expr=lambda { |value| expr_start+" "+value+" "+expr_end }')==1
-          assert len(re.findall(r'(?<!g)expr\.call\("github\.', ruby_source))==8
-          assert len(re.findall(r'gexpr\.call\("github\.', ruby_source))==35
+          expected_ruby_expr_calls=[
+              "github.event.pull_request.head.sha",
+              "github.event.workflow_run.pull_requests[0].number",
+              "github.event.workflow_run.head_sha",
+              "github.event.workflow_run.head_repository.full_name",
+              "github.event.workflow_run.head_branch",
+              "github.event.workflow_run.id",
+              "github.event.workflow_run.run_attempt",
+              "github.event.workflow_run.conclusion",
+          ]
+          observed_ruby_expr_calls=re.findall(
+              r'(?<![A-Za-z0-9_])expr\.call\("([^"]+)"\)',
+              ruby_source,
+          )
+          assert observed_ruby_expr_calls==expected_ruby_expr_calls, (
+              f"Ruby expr.call manifest mismatch: {observed_ruby_expr_calls!r}"
+          )
+          observed_gexpr_calls=re.findall(r'gexpr\.call\("([^"]+)"\)',ruby_source)
+          assert len(observed_gexpr_calls)==35
+          assert all(call.startswith("github.") for call in observed_gexpr_calls)
           assert ruby_source.index('"Retain authority terminal transport attestation"=>{') < ruby_source.index('expected_upload_keys=[')
           assert ruby_source.index('upload_steps=selftest.fetch("steps")') < ruby_source.index('upload_steps.each do |step|')
           trusted_assignment='trusted=jobs.fetch("trusted-admission")'
@@ -3276,8 +3294,112 @@ jobs:
           )
           assert members
           member_basenames={PurePosixPath(name).name for name in members}
-          for required in {"trusted-admission.json","trusted-artifact.json","trusted-artifact-provenance.txt"}:
-              assert required in member_basenames
+          kernel_harnesses=[
+              "kernel_duplicate_rejected",
+              "kernel_first_sequence_initializes_exactly",
+              "kernel_stale_boundary_is_rejected",
+              "kernel_higher_sequence_is_monotonic",
+              "kernel_cross_word_shift_preserves_in_window_history",
+              "kernel_exact_word_shift_preserves_in_window_history",
+              "kernel_max_width_multiword_shift_preserves_history",
+              "kernel_exact_window_jump_resets_history",
+              "kernel_max_width_near_window_shift_preserves_history_boundary",
+              "kernel_symbolic_shift_preserves_or_discards_history_exactly",
+              "kernel_supported_widths_do_not_panic",
+              "kernel_supported_width_boundary_is_exact",
+              "kernel_bitmap_tail_is_zero_for_supported_widths",
+              "kernel_u64_max_advance_preserves_previous_sequence",
+          ]
+          cover_harnesses=[
+              "cover_initialization_reachable",
+              "cover_advance_shift_reachable",
+              "cover_in_window_replay_mark_reachable",
+              "cover_exact_window_boundary_reachable",
+              "cover_stale_boundary_rejection_reachable",
+              "cover_exact_window_jump_reset_reachable",
+          ]
+          expected_members={
+              "trusted-subject.txt",
+              "verifier-workflow.txt",
+              "verifier-workflow.blob",
+              "verifier-workflow.sha256",
+              "trusted-verifier-workflow.yml",
+              "verifier-workflow-commit.json",
+              "verifier-workflow-tree-sha",
+              "verifier-workflow-tree.json",
+              "main-branch.json",
+              "final-main-branch.json",
+              "trigger-workflow.txt",
+              "trigger-workflow.blob",
+              "trigger-workflow.sha256",
+              "trigger-workflow.yml",
+              "trigger-workflow-commit.json",
+              "trigger-workflow-tree-sha",
+              "trigger-workflow-tree.json",
+              "trusted-workflow-run-event.json",
+              "verifier-run.json",
+              "trigger-run.json",
+              "pr.json",
+              "base-tree-sha",
+              "head-tree-sha",
+              "trusted-tree-delta.txt",
+              "trusted-reachability-manifest.json",
+              "cover-hostile.json",
+              "cover-hostile.log",
+              "cover-hostile.exit",
+              "hostile-cover-mutant-kernel.blob",
+              "hostile-cover-restored-kernel.blob",
+              "replay_kernel_cover.rs",
+              "cover-harnesses.txt",
+              "trusted-clean-manifest.json",
+              "kernel.blob",
+              "proof.blob",
+              "evidence.blob",
+              "evidence.json",
+              "kani-version.txt",
+              "kani-rustc.txt",
+              "trusted-admission.json",
+              "final-pr.json",
+              "final-pr-freshness.txt",
+              "hostile.json",
+              "hostile.log",
+              "hostile.exit",
+              "hostile-mutant-kernel.blob",
+              "hostile-restored-kernel.blob",
+              "kani-verifier-0.68.0.crate",
+              "kani-release-ref.txt",
+              "kani-release-commit.json",
+              "kani-release.json",
+              "kani-release-asset.txt",
+              "kani-release-bundle-sha256.txt",
+              "kani-release-bundle.tar.gz",
+              "kani-crates-io.json",
+              "kani-crate-sha256.txt",
+              "kani-extraction-binding.txt",
+              "kani-registry-checksum.txt",
+              "verifier-workflow-tree.json",
+              "trigger-workflow-tree.json",
+          }
+          expected_members |= {
+              f"{h}.json" for h in kernel_harnesses+cover_harnesses
+          }
+          expected_members |= {f"{h}.log" for h in cover_harnesses}
+          expected_members |= {f"{h}.exit" for h in cover_harnesses}
+          # These are the only wildcard expansions in the uploaded contract.
+          assert member_basenames==expected_members, (
+              f"trusted evidence archive member set mismatch: "
+              f"unexpected={sorted(member_basenames-expected_members)} "
+              f"missing={sorted(expected_members-member_basenames)}"
+          )
+          for name in (
+              "trusted-admission.json",
+              "trusted-reachability-manifest.json",
+              "trusted-clean-manifest.json",
+          ):
+              with zipfile.ZipFile("/tmp/trusted-artifact-download.zip") as archive:
+                  archived=archive.read(name)
+              local=Path("/tmp/"+name).read_bytes()
+              assert archived==local, f"trusted evidence member content mismatch: {name}"
           Path("/tmp/trusted-artifact-members.txt").write_text("\n".join(sorted(members))+"\n")
           Path("/tmp/trusted-artifact-provenance.txt").write_text(
               "artifact_id="+str(d["id"])+"\n"
@@ -3511,14 +3633,48 @@ jobs:
           )
           assert members
           member_basenames={PurePosixPath(name).name for name in members}
-          for required in {"authority-terminal.json","terminal-main-branch.json","terminal-main-commit.json"}:
-              assert required in member_basenames
+          expected_members={
+              "authority-terminal.json",
+              "terminal-main-branch.json",
+              "terminal-main-commit.json",
+              "trusted-artifact.json",
+              "trusted-artifact-provenance.txt",
+              "trusted-artifact-download.sha256",
+              "trusted-artifact-members.txt",
+          }
+          assert member_basenames==expected_members, (
+              f"authority terminal archive member set mismatch: "
+              f"unexpected={sorted(member_basenames-expected_members)} "
+              f"missing={sorted(expected_members-member_basenames)}"
+          )
+          critical_members={
+              "authority-terminal.json":"/tmp/authority-terminal.json",
+              "terminal-main-branch.json":"/tmp/terminal-main-branch.json",
+              "terminal-main-commit.json":"/tmp/terminal-main-commit.json",
+              "trusted-artifact.json":"/tmp/trusted-artifact.json",
+              "trusted-artifact-provenance.txt":"/tmp/trusted-artifact-provenance.txt",
+              "trusted-artifact-download.sha256":"/tmp/trusted-artifact-download.sha256",
+              "trusted-artifact-members.txt":"/tmp/trusted-artifact-members.txt",
+          }
+          with zipfile.ZipFile("/tmp/authority-terminal-artifact-download.zip") as archive:
+              for name, local_path in critical_members.items():
+                  assert archive.read(name)==Path(local_path).read_bytes(), (
+                      f"authority terminal member content mismatch: {name}"
+                  )
           Path("/tmp/authority-terminal-artifact-members.txt").write_text("\n".join(sorted(members))+"\n")
           PY
           python3 - <<'PY'
           import hashlib, json, os
           from pathlib import Path
 
+          with __import__("zipfile").ZipFile("/tmp/authority-terminal-artifact-download.zip") as archive:
+              assert archive.read("authority-terminal.json")==Path("/tmp/authority-terminal.json").read_bytes()
+              assert archive.read("terminal-main-branch.json")==Path("/tmp/terminal-main-branch.json").read_bytes()
+              assert archive.read("terminal-main-commit.json")==Path("/tmp/terminal-main-commit.json").read_bytes()
+              assert archive.read("trusted-artifact.json")==Path("/tmp/trusted-artifact.json").read_bytes()
+              assert archive.read("trusted-artifact-provenance.txt")==Path("/tmp/trusted-artifact-provenance.txt").read_bytes()
+              assert archive.read("trusted-artifact-download.sha256")==Path("/tmp/trusted-artifact-download.sha256").read_bytes()
+              assert archive.read("trusted-artifact-members.txt")==Path("/tmp/trusted-artifact-members.txt").read_bytes()
           transport={
               "schema":"xenia.formal.kani-replay-kernel.authority-terminal-transport.v1",
               "authority_eligible":False,
