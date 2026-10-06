@@ -1580,6 +1580,7 @@ jobs:
           set -euo pipefail
           curl --fail-with-body --silent --show-error \
             -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/actions/upload-artifact/commits/b7c566a772e6b6bfb58ed0dc250532a479d7789f" \
             -o /tmp/upload-artifact-commit.json
           python3 - <<\x27PY\x27
@@ -1594,6 +1595,7 @@ jobs:
           assert verification["reason"]=="valid"
           assert verification.get("signature")
           assert verification.get("payload")
+          assert verification.get("verified_at")
           print("privileged upload-artifact commit signature verified by GitHub")
           PY
       - name: Verify triggering workflow identity and provenance
