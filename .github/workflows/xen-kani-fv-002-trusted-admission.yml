@@ -307,7 +307,7 @@ jobs:
               expr("github.event.workflow_run.run_attempt"):1,
               expr("github.event.workflow_run.conclusion"):1,
               expr("github.run_attempt"):6,
-              expr("github.run_id"):6,
+              expr("github.run_id"):8,
               expr("steps.trusted-evidence-upload.outputs.artifact-id"):2,
               expr("steps.trusted-evidence-upload.outputs.artifact-digest"):2,
               expr("steps.authority-terminal-upload.outputs.artifact-id"):1,
@@ -818,7 +818,7 @@ jobs:
             "GITHUB_TOKEN"=>gexpr.call("github.token"),
             "ARTIFACT_ID"=>gexpr.call("steps.trusted-evidence-upload.outputs.artifact-id"),
             "ARTIFACT_DIGEST"=>gexpr.call("steps.trusted-evidence-upload.outputs.artifact-digest"),
-            "EXPECTED_ARTIFACT_NAME"=>"trusted-xen-kani-fv-002-"+gexpr.call("github.event.workflow_run.pull_requests[0].number")+"-"+gexpr.call("github.event.workflow_run.head_sha")+"-"+gexpr.call("github.run_attempt"),
+            "EXPECTED_ARTIFACT_NAME"=>"trusted-xen-kani-fv-002-"+gexpr.call("github.event.workflow_run.pull_requests[0].number")+"-"+gexpr.call("github.event.workflow_run.head_sha")+"-"+gexpr.call("github.run_id")+"-"+gexpr.call("github.run_attempt"),
             "EXPECTED_RUN_ID"=>gexpr.call("github.run_id"),
           }
           expected_step_env["Build authority terminal receipt"]={
@@ -830,7 +830,7 @@ jobs:
             "GITHUB_TOKEN"=>gexpr.call("github.token"),
             "ARTIFACT_ID"=>gexpr.call("steps.authority-terminal-upload.outputs.artifact-id"),
             "ARTIFACT_DIGEST"=>gexpr.call("steps.authority-terminal-upload.outputs.artifact-digest"),
-            "EXPECTED_ARTIFACT_NAME"=>"trusted-xen-kani-fv-002-authority-terminal-"+gexpr.call("github.event.workflow_run.pull_requests[0].number")+"-"+gexpr.call("github.event.workflow_run.head_sha")+"-"+gexpr.call("github.run_attempt"),
+            "EXPECTED_ARTIFACT_NAME"=>"trusted-xen-kani-fv-002-authority-terminal-"+gexpr.call("github.event.workflow_run.pull_requests[0].number")+"-"+gexpr.call("github.event.workflow_run.head_sha")+"-"+gexpr.call("github.run_id")+"-"+gexpr.call("github.run_attempt"),
             "EXPECTED_RUN_ID"=>gexpr.call("github.run_id"),
           }
 
@@ -2931,7 +2931,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           ARTIFACT_ID: ${{ steps.trusted-evidence-upload.outputs.artifact-id }}
           ARTIFACT_DIGEST: ${{ steps.trusted-evidence-upload.outputs.artifact-digest }}
-          EXPECTED_ARTIFACT_NAME: trusted-xen-kani-fv-002-${{ github.event.workflow_run.pull_requests[0].number }}-${{ github.event.workflow_run.head_sha }}-${{ github.run_attempt }}
+          EXPECTED_ARTIFACT_NAME: trusted-xen-kani-fv-002-${{ github.event.workflow_run.pull_requests[0].number }}-${{ github.event.workflow_run.head_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           EXPECTED_RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
@@ -3164,7 +3164,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           ARTIFACT_ID: ${{ steps.authority-terminal-upload.outputs.artifact-id }}
           ARTIFACT_DIGEST: ${{ steps.authority-terminal-upload.outputs.artifact-digest }}
-          EXPECTED_ARTIFACT_NAME: trusted-xen-kani-fv-002-authority-terminal-${{ github.event.workflow_run.pull_requests[0].number }}-${{ github.event.workflow_run.head_sha }}-${{ github.run_attempt }}
+          EXPECTED_ARTIFACT_NAME: trusted-xen-kani-fv-002-authority-terminal-${{ github.event.workflow_run.pull_requests[0].number }}-${{ github.event.workflow_run.head_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           EXPECTED_RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
