@@ -3385,21 +3385,40 @@ jobs:
           }
           expected_members |= {f"{h}.log" for h in cover_harnesses}
           expected_members |= {f"{h}.exit" for h in cover_harnesses}
-          # These are the only wildcard expansions in the uploaded contract.
-          assert member_basenames==expected_members, (
+          # upload-artifact uses the least common ancestor of the supplied paths
+          # as the archive root, preserving deeper directory hierarchy.
+          expected_members.remove("kernel.blob")
+          expected_members.remove("proof.blob")
+          expected_members.remove("evidence.blob")
+          expected_members.remove("evidence.json")
+          expected_members.remove("replay_kernel_cover.rs")
+          expected_members |= {
+              "xen-kani-trusted/src/replay_kernel_cover.rs",
+              "xen-kani-trusted/kernel.blob",
+              "xen-kani-trusted/proof.blob",
+              "xen-kani-trusted/evidence.blob",
+              "xen-kani-trusted/evidence.json",
+          }
+          assert archive_names==sorted(expected_members), (
               f"trusted evidence archive member set mismatch: "
-              f"unexpected={sorted(member_basenames-expected_members)} "
-              f"missing={sorted(expected_members-member_basenames)}"
+              f"unexpected={sorted(set(archive_names)-expected_members)} "
+              f"missing={sorted(expected_members-set(archive_names))}"
           )
-          for name in (
-              "trusted-admission.json",
-              "trusted-reachability-manifest.json",
-              "trusted-clean-manifest.json",
-          ):
-              with zipfile.ZipFile("/tmp/trusted-artifact-download.zip") as archive:
-                  archived=archive.read(name)
-              local=Path("/tmp/"+name).read_bytes()
-              assert archived==local, f"trusted evidence member content mismatch: {name}"
+          critical_members={
+              "trusted-admission.json":"/tmp/trusted-admission.json",
+              "trusted-reachability-manifest.json":"/tmp/trusted-reachability-manifest.json",
+              "trusted-clean-manifest.json":"/tmp/trusted-clean-manifest.json",
+              "xen-kani-trusted/src/replay_kernel_cover.rs":"/tmp/xen-kani-trusted/src/replay_kernel_cover.rs",
+              "xen-kani-trusted/kernel.blob":"/tmp/xen-kani-trusted/kernel.blob",
+              "xen-kani-trusted/proof.blob":"/tmp/xen-kani-trusted/proof.blob",
+              "xen-kani-trusted/evidence.blob":"/tmp/xen-kani-trusted/evidence.blob",
+              "xen-kani-trusted/evidence.json":"/tmp/xen-kani-trusted/evidence.json",
+          }
+          with zipfile.ZipFile("/tmp/trusted-artifact-download.zip") as archive:
+              for name, local_path in critical_members.items():
+                  assert archive.read(name)==Path(local_path).read_bytes(), (
+                      f"trusted evidence member content mismatch: {name}"
+                  )
           Path("/tmp/trusted-artifact-members.txt").write_text("\n".join(sorted(members))+"\n")
           Path("/tmp/trusted-artifact-provenance.txt").write_text(
               "artifact_id="+str(d["id"])+"\n"
@@ -3642,10 +3661,10 @@ jobs:
               "trusted-artifact-download.sha256",
               "trusted-artifact-members.txt",
           }
-          assert member_basenames==expected_members, (
+          assert archive_names==sorted(expected_members), (
               f"authority terminal archive member set mismatch: "
-              f"unexpected={sorted(member_basenames-expected_members)} "
-              f"missing={sorted(expected_members-member_basenames)}"
+              f"unexpected={sorted(set(archive_names)-expected_members)} "
+              f"missing={sorted(expected_members-set(archive_names))}"
           )
           critical_members={
               "authority-terminal.json":"/tmp/authority-terminal.json",
