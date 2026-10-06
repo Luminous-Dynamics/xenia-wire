@@ -311,7 +311,7 @@ jobs:
               block_lines=block.splitlines()
               index=0
               while index < len(block_lines):
-                  if re.match(r"^\s*curl\\b", block_lines[index]):
+                  if re.match(r"^\s*curl\b", block_lines[index]):
                       command=block_lines[index]
                       while command.rstrip().endswith("\\") and index+1 < len(block_lines):
                           index+=1
@@ -323,6 +323,10 @@ jobs:
               if "https://api.github.com/" in command
           ]
           assert github_api_curl_commands, "expected GitHub API curl commands"
+          assert all(
+              (command.count("X-GitHub-Api-Version: 2026-03-10") == 1)
+              for command in github_api_curl_commands
+          ), "each GitHub API curl command must contain exactly one pinned API-version header"
           assert all(
               command.count("X-GitHub-Api-Version: 2026-03-10")==1
               for command in github_api_curl_commands
