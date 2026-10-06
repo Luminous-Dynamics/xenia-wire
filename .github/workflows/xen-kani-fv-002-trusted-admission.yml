@@ -474,6 +474,11 @@ jobs:
                       f"critical runtime guard missing from executable step {step_name}: {needle}"
                   )
 
+          for index, block in enumerate(run_blocks, start=1):
+              assert not any(
+                  line.rstrip().endswith(chr(92)*2)
+                  for line in block.splitlines()
+              ), f"run block {index} contains a doubled shell continuation backslash"
           set_plus_blocks=[]
           set_fail_open="set "+"+e"
           set_fail_closed="set "+"-e"
@@ -1272,9 +1277,9 @@ jobs:
         run: |
           set -euo pipefail
           # Verify the registry archive before compiling any of its code.
-          curl --fail-with-body --silent --show-error \\
-            -H "Accept: application/json" \\
-            "https://crates.io/api/v1/crates/kani-verifier/0.68.0" \\
+          curl --fail-with-body --silent --show-error \
+            -H "Accept: application/json" \
+            "https://crates.io/api/v1/crates/kani-verifier/0.68.0" \
             -o /tmp/kani-crates-io.json
           python3 - <<'PY'
           import json, os
@@ -1288,9 +1293,9 @@ jobs:
           assert checksum==os.environ["EXPECTED_KANI_CRATE_SHA256"]
           Path("/tmp/kani-registry-checksum.txt").write_text(checksum+"\n")
           PY
-          curl --fail-with-body --silent --show-error --location \\
-            -H "Accept: application/octet-stream" \\
-            "https://crates.io/api/v1/crates/kani-verifier/0.68.0/download" \\
+          curl --fail-with-body --silent --show-error --location \
+            -H "Accept: application/octet-stream" \
+            "https://crates.io/api/v1/crates/kani-verifier/0.68.0/download" \
             -o /tmp/kani-verifier-0.68.0.crate
           sha256sum /tmp/kani-verifier-0.68.0.crate | cut -d" " -f1 > /tmp/kani-crate-sha256.txt
           test "$(cat /tmp/kani-crate-sha256.txt)" = "$(cat /tmp/kani-registry-checksum.txt)"
@@ -1558,11 +1563,11 @@ jobs:
           assert d["head_branch"]=="main"
           assert d["head_sha"]==os.environ["GITHUB_SHA"]
           PY
-          curl --fail-with-body --silent --show-error \\
-            -H "Authorization: Bearer $GITHUB_TOKEN" \\
-            -H "Accept: application/vnd.github+json" \\
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2026-03-10" \
-            "https://api.github.com/repos/$EXPECTED_HEAD_REPO/branches/main" \\
+            "https://api.github.com/repos/$EXPECTED_HEAD_REPO/branches/main" \
             -o /tmp/main-branch.json
           python3 - <<'PY'
           import json, os
@@ -1581,11 +1586,11 @@ jobs:
           assert main_verification.get("verified_at")
           print("default branch protection, signed tip, and tip binding verified")
           PY
-          curl --fail-with-body --silent --show-error \\
-            -H "Authorization: Bearer $GITHUB_TOKEN" \\
-            -H "Accept: application/vnd.github.raw+json" \\
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.raw+json" \
             -H "X-GitHub-Api-Version: 2026-03-10" \
-            "https://api.github.com/repos/$EXPECTED_HEAD_REPO/contents/$VERIFIER_WORKFLOW_PATH?ref=$GITHUB_SHA" \\
+            "https://api.github.com/repos/$EXPECTED_HEAD_REPO/contents/$VERIFIER_WORKFLOW_PATH?ref=$GITHUB_SHA" \
             -o /tmp/trusted-verifier-workflow.yml
           verifier_blob="$(git hash-object /tmp/trusted-verifier-workflow.yml)"
           printf '%s\\n' "$verifier_blob" > /tmp/verifier-workflow.blob
@@ -1723,11 +1728,11 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          curl --fail-with-body --silent --show-error \\
-            -H "Authorization: Bearer $GITHUB_TOKEN" \\
-            -H "Accept: application/vnd.github.raw+json" \\
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.raw+json" \
             -H "X-GitHub-Api-Version: 2026-03-10" \
-            "https://api.github.com/repos/$HEAD_REPO/contents/$EXPECTED_TRIGGER_WORKFLOW_PATH?ref=$HEAD_SHA" \\
+            "https://api.github.com/repos/$HEAD_REPO/contents/$EXPECTED_TRIGGER_WORKFLOW_PATH?ref=$HEAD_SHA" \
             -o /tmp/trigger-workflow.yml
           trigger_blob="$(git hash-object /tmp/trigger-workflow.yml)"
           printf '%s\\n' "$trigger_blob" > /tmp/trigger-workflow.blob
@@ -2245,9 +2250,9 @@ jobs:
         run: |
           set -euo pipefail
           # Verify the registry archive before compiling any of its code.
-          curl --fail-with-body --silent --show-error \\
-            -H "Accept: application/json" \\
-            "https://crates.io/api/v1/crates/kani-verifier/0.68.0" \\
+          curl --fail-with-body --silent --show-error \
+            -H "Accept: application/json" \
+            "https://crates.io/api/v1/crates/kani-verifier/0.68.0" \
             -o /tmp/kani-crates-io.json
           python3 - <<'PY'
           import json, os
@@ -2261,9 +2266,9 @@ jobs:
           assert checksum==os.environ["EXPECTED_KANI_CRATE_SHA256"]
           Path("/tmp/kani-registry-checksum.txt").write_text(checksum+"\n")
           PY
-          curl --fail-with-body --silent --show-error --location \\
-            -H "Accept: application/octet-stream" \\
-            "https://crates.io/api/v1/crates/kani-verifier/0.68.0/download" \\
+          curl --fail-with-body --silent --show-error --location \
+            -H "Accept: application/octet-stream" \
+            "https://crates.io/api/v1/crates/kani-verifier/0.68.0/download" \
             -o /tmp/kani-verifier-0.68.0.crate
           sha256sum /tmp/kani-verifier-0.68.0.crate | cut -d" " -f1 > /tmp/kani-crate-sha256.txt
           test "$(cat /tmp/kani-crate-sha256.txt)" = "$(cat /tmp/kani-registry-checksum.txt)"
@@ -2586,9 +2591,9 @@ jobs:
           while IFS= read -r harness; do
             echo "=== trusted reachability cover: $harness ==="
             set +e
-            cargo kani -Z unstable-options --tests --default-unwind 20 \\
-              --harness "$harness" \\
-              --export-json "/tmp/$harness.json" \\
+            cargo kani -Z unstable-options --tests --default-unwind 20 \
+              --harness "$harness" \
+              --export-json "/tmp/$harness.json" \
               > "/tmp/$harness.log" 2>&1
             status=$?
             set -e
@@ -2757,9 +2762,9 @@ jobs:
           PY
           test "$(git hash-object src/replay_kernel.rs)" != "$(cat /tmp/xen-kani-trusted/kernel.blob)"
           set +e
-          cargo kani -Z unstable-options --tests --default-unwind 20 \\
-            --harness cover_initialization_reachable \\
-            --export-json /tmp/cover-hostile.json \\
+          cargo kani -Z unstable-options --tests --default-unwind 20 \
+            --harness cover_initialization_reachable \
+            --export-json /tmp/cover-hostile.json \
             > /tmp/cover-hostile.log 2>&1
           status=$?
           set -e
@@ -3647,11 +3652,11 @@ jobs:
           ARTIFACT_DIGEST: ${{ steps.trusted-evidence-upload.outputs.artifact-digest }}
         run: |
           set -euo pipefail
-          curl --fail-with-body --silent --show-error \\
-            -H "Authorization: Bearer $GITHUB_TOKEN" \\
-            -H "Accept: application/vnd.github+json" \\
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2026-03-10" \
-            "https://api.github.com/repos/$EXPECTED_HEAD_REPO/pulls/$PR_NUMBER" \\
+            "https://api.github.com/repos/$EXPECTED_HEAD_REPO/pulls/$PR_NUMBER" \
             -o /tmp/terminal-pr.json
           python3 - <<'PY'
           import json, os
@@ -3668,11 +3673,11 @@ jobs:
           assert d["head"]["repo"]["full_name"]==os.environ["HEAD_REPO"]
           print("terminal PR freshness verified")
           PY
-          curl --fail-with-body --silent --show-error \\
-            -H "Authorization: Bearer $GITHUB_TOKEN" \\
-            -H "Accept: application/vnd.github+json" \\
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2026-03-10" \
-            "https://api.github.com/repos/$EXPECTED_HEAD_REPO/branches/main" \\
+            "https://api.github.com/repos/$EXPECTED_HEAD_REPO/branches/main" \
             -o /tmp/terminal-main-branch.json
           python3 - <<'PY'
           import json, os
