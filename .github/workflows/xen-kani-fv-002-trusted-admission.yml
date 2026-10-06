@@ -277,11 +277,27 @@ jobs:
           shell_lines=[line for line in lines if re.fullmatch(r" {8}shell:.*",line)]
           assert len(shell_lines)==38, f"expected 38 shell declarations, got {len(shell_lines)}"
           invalid_shell_lines=[repr(line) for line in shell_lines if line!="        shell: bash"]
-          github_api_run_blocks=[block for block in run_blocks if "https://api.github.com/" in block]
-          assert github_api_run_blocks, "expected GitHub API runtime blocks"
-          assert all("X-GitHub-Api-Version: 2026-03-10" in block for block in github_api_run_blocks), (
-              "every GitHub API runtime block must pin X-GitHub-Api-Version"
-          )
+          github_api_curl_commands=[]
+          for block in run_blocks:
+              block_lines=block.splitlines()
+              index=0
+              while index < len(block_lines):
+                  if re.match(r"^\s*curl\\b", block_lines[index]):
+                      command=block_lines[index]
+                      while command.rstrip().endswith("\\") and index+1 < len(block_lines):
+                          index+=1
+                          command+="\n"+block_lines[index]
+                      github_api_curl_commands.append(command)
+                  index+=1
+          github_api_curl_commands=[
+              command for command in github_api_curl_commands
+              if "https://api.github.com/" in command
+          ]
+          assert github_api_curl_commands, "expected GitHub API curl commands"
+          assert all(
+              "X-GitHub-Api-Version: 2026-03-10" in command
+              for command in github_api_curl_commands
+          ), "every GitHub API curl command must pin X-GitHub-Api-Version"
           assert not invalid_shell_lines, f"all executable steps must use shell: bash; invalid={invalid_shell_lines!r}"
           run_blocks=[]
           for idx,line in enumerate(lines):
@@ -1823,7 +1839,7 @@ jobs:
           set -euo pipefail
 
           curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github.raw+json"             -H "X-GitHub-Api-Version: 2026-03-10" "https://api.github.com/repos/$HEAD_REPO/contents/src/replay_kernel.rs?ref=$HEAD_SHA"             -o /tmp/xen-kani-trusted/src/replay_kernel.rs
-          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github.raw+json"             "https://api.github.com/repos/$HEAD_REPO/contents/src/replay_kernel_kani.rs?ref=$HEAD_SHA"             -o /tmp/xen-kani-trusted/src/replay_kernel_kani.rs
+          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github.raw+json"             -H "X-GitHub-Api-Version: 2026-03-10"             "https://api.github.com/repos/$HEAD_REPO/contents/src/replay_kernel_kani.rs?ref=$HEAD_SHA"             -o /tmp/xen-kani-trusted/src/replay_kernel_kani.rs
           curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github.raw+json"             -H "X-GitHub-Api-Version: 2026-03-10" "https://api.github.com/repos/$HEAD_REPO/contents/docs/formal/xen-kani-fv-002-replay-kernel-v1.json?ref=$HEAD_SHA"             -o /tmp/xen-kani-trusted/evidence.json
 
           cat > /tmp/xen-kani-trusted/src/lib.rs <<'EOF'
