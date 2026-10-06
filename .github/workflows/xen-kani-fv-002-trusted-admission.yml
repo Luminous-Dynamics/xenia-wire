@@ -497,7 +497,7 @@ jobs:
             "Retain non-authoritative self-test evidence"=>{
               "name"=>"xen-kani-fv-002-reachability-selftest-"+gexpr.call("github.event.pull_request.head.sha")+"-"+gexpr.call("github.run_id")+"-"+gexpr.call("github.run_attempt"),
               "if-no-files-found"=>"error",
-              "retention-days"=>30,
+              "retention-days"=>90,
               "overwrite"=>false,
               "include-hidden-files"=>false,
               "path"=>[
@@ -515,7 +515,7 @@ jobs:
             "Upload trusted evidence"=>{
               "name"=>"trusted-xen-kani-fv-002-"+gexpr.call("github.event.workflow_run.pull_requests[0].number")+"-"+gexpr.call("github.event.workflow_run.head_sha")+"-"+gexpr.call("github.run_id")+"-"+gexpr.call("github.run_attempt"),
               "if-no-files-found"=>"error",
-              "retention-days"=>30,
+              "retention-days"=>90,
               "overwrite"=>false,
               "include-hidden-files"=>false,
               "path"=>[
@@ -565,7 +565,7 @@ jobs:
             "Upload authority terminal"=>{
               "name"=>"trusted-xen-kani-fv-002-authority-terminal-"+gexpr.call("github.event.workflow_run.pull_requests[0].number")+"-"+gexpr.call("github.event.workflow_run.head_sha")+"-"+gexpr.call("github.run_id")+"-"+gexpr.call("github.run_attempt"),
               "if-no-files-found"=>"error",
-              "retention-days"=>30,
+              "retention-days"=>90,
               "overwrite"=>false,
               "include-hidden-files"=>false,
               "path"=>[
@@ -584,7 +584,7 @@ jobs:
             "Retain authority terminal transport attestation"=>{
               "name"=>"trusted-xen-kani-fv-002-authority-terminal-transport-"+gexpr.call("github.run_id")+"-"+gexpr.call("github.run_attempt"),
               "if-no-files-found"=>"error",
-              "retention-days"=>30,
+              "retention-days"=>90,
               "overwrite"=>false,
               "include-hidden-files"=>false,
               "path"=>[
@@ -1185,7 +1185,7 @@ jobs:
             /tmp/selftest-*.json
             /tmp/selftest-*.log
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90
           overwrite: false
           include-hidden-files: false
 
@@ -2926,7 +2926,7 @@ jobs:
             /tmp/hostile-mutant-kernel.blob
             /tmp/hostile-restored-kernel.blob
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90
           overwrite: false
           include-hidden-files: false
       - name: Verify trusted evidence upload identity
@@ -3159,7 +3159,7 @@ jobs:
             /tmp/authority-terminal-artifact-download.sha256
             /tmp/authority-terminal-artifact-members.txt
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90
           overwrite: false
           include-hidden-files: false
       - name: Verify authority terminal upload identity
@@ -3230,6 +3230,7 @@ jobs:
 
           transport={
               "schema":"xenia.formal.kani-replay-kernel.authority-terminal-transport.v1",
+              "authority_eligible":False,
               "verifier_run_id":int(os.environ["GITHUB_RUN_ID"]),
               "verifier_run_attempt":int(os.environ["GITHUB_RUN_ATTEMPT"]),
               "artifact_id":int(os.environ["ARTIFACT_ID"]),
@@ -3257,6 +3258,6 @@ jobs:
             /tmp/authority-terminal-artifact-download.sha256
             /tmp/authority-terminal-artifact-members.txt
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90
           overwrite: false
           include-hidden-files: false
