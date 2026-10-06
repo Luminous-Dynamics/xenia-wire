@@ -245,6 +245,7 @@ jobs:
               'cargo kani setup --use-local-bundle ' + '/tmp/kani-release-bundle.tar.gz',
               'x86_64-unknown-linux-gnu.tar.gz',
               'asset.get("digest")',
+              'assert len(names)==len(set(names))',
               'expected_path="/model-checking/kani/releases/download/"',
               'assert pull_requests[0]["base"]["ref"]=="main"',
               'assert pull_requests[0]["base"]["repo"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]',
@@ -1369,6 +1370,8 @@ jobs:
           with tarfile.open(archive,"r:gz") as tf:
               members=tf.getmembers()
           assert members
+          names=[member.name for member in members]
+          assert len(names)==len(set(names))
           for member in members:
               name=PurePosixPath(member.name)
               assert not name.is_absolute() and ".." not in name.parts
@@ -2342,6 +2345,8 @@ jobs:
           with tarfile.open(archive,"r:gz") as tf:
               members=tf.getmembers()
           assert members
+          names=[member.name for member in members]
+          assert len(names)==len(set(names))
           for member in members:
               name=PurePosixPath(member.name)
               assert not name.is_absolute() and ".." not in name.parts
