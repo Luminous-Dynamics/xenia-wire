@@ -113,7 +113,8 @@ jobs:
               "Upload authority terminal",
               "Verify authority terminal upload identity",
           ]
-          assert len(required_steps)==41, f"expected 41 required steps, got {len(required_steps)}"
+              "Retain authority terminal transport attestation",
+          assert len(required_steps)==42, f"expected 42 required steps, got {len(required_steps)}"
           required_step_lines=["      - name: "+name for name in required_steps]
           observed_step_lines=[line for line in workflow.splitlines() if line.startswith("      - name: ")]
           for needle in required_step_lines:
@@ -231,6 +232,7 @@ jobs:
               "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f",
               "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f",
               "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f",
+              "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f",
           ]
           assert uses==expected_uses, f"unexpected action references: {uses}"
           assert all(re.fullmatch(r"[^@]+@[0-9a-f]{40}",x) for x in uses)
@@ -301,8 +303,8 @@ jobs:
               expr("github.event.workflow_run.id"):1,
               expr("github.event.workflow_run.run_attempt"):1,
               expr("github.event.workflow_run.conclusion"):1,
-              expr("github.run_attempt"):5,
-              expr("github.run_id"):2,
+              expr("github.run_attempt"):6,
+              expr("github.run_id"):3,
               expr("steps.trusted-evidence-upload.outputs.artifact-id"):2,
               expr("steps.trusted-evidence-upload.outputs.artifact-digest"):2,
               expr("steps.authority-terminal-upload.outputs.artifact-id"):1,
@@ -571,6 +573,19 @@ jobs:
             },
           }
 
+            "Retain authority terminal transport attestation"=>{
+              "name"=>"trusted-xen-kani-fv-002-authority-terminal-transport-"+gexpr.call("github.run_id")+"-"+gexpr.call("github.run_attempt"),
+              "if-no-files-found"=>"error",
+              "retention-days"=>30,
+              "overwrite"=>false,
+              "include-hidden-files"=>false,
+              "path"=>[
+                "/tmp/authority-terminal-transport-attestation.json",
+                "/tmp/authority-terminal-artifact.json",
+                "/tmp/authority-terminal-artifact-download.sha256",
+                "/tmp/authority-terminal-artifact-members.txt",
+              ],
+            },
           expected_upload_keys=["name","path","if-no-files-found","retention-days","overwrite","include-hidden-files"]
           upload_steps.each do |step|
             with=step.fetch("with")
@@ -581,7 +596,7 @@ jobs:
             abort "upload path inventory mismatch in #{step["name"]}" unless observed_path == expected.fetch("path")
           end
           upload_steps=selftest.fetch("steps").select { |step| step["uses"] == "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f" } + trusted.fetch("steps").select { |step| step["uses"] == "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f" }
-          abort "artifact upload cardinality mismatch" unless upload_steps.length == 3
+          abort "artifact upload cardinality mismatch" unless upload_steps.length == 4
           abort "artifact overwrite must remain disabled" unless upload_steps.all? { |step| step.fetch("with").fetch("overwrite") == false }
           abort "artifact hidden-file inclusion must remain disabled" unless upload_steps.all? { |step| step.fetch("with").fetch("include-hidden-files") == false }
           authority_terminal_upload=trusted.fetch("steps").find { |step| step["name"] == "Upload authority terminal" }
@@ -653,6 +668,7 @@ jobs:
             "Build authority terminal receipt",
             "Upload authority terminal",
             "Verify authority terminal upload identity",
+            "Retain authority terminal transport attestation",
           ]
           observed_all_steps=jobs.values.flat_map { |job| job.fetch("steps").map { |step| step["name"] } }
           abort "semantic step inventory mismatch" unless observed_all_steps == expected_all_steps
@@ -701,16 +717,18 @@ jobs:
             "Build authority terminal receipt",
             "Upload authority terminal",
             "Verify authority terminal upload identity",
+            "Retain authority terminal transport attestation",
           ]
           selftest_observed=selftest.fetch("steps").map { |step| step["name"] }
           trusted_observed=trusted.fetch("steps").map { |step| step["name"] }
           abort "self-test step inventory mismatch" unless selftest_observed == expected_selftest_steps
           abort "trusted step inventory mismatch" unless trusted_observed == expected_trusted_steps
           abort "self-test step count mismatch" unless selftest_observed.length == 9
-          abort "trusted step count mismatch" unless trusted_observed.length == 32
+          abort "trusted step count mismatch" unless trusted_observed.length == 33
 
           expected_uses=[
             "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f",
             "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f",
             "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f",
             "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f",
@@ -754,6 +772,7 @@ jobs:
             "Build authority terminal receipt"=>"success()",
             "Upload authority terminal"=>"success()",
             "Verify authority terminal upload identity"=>"success()",
+            "Retain authority terminal transport attestation"=>"always()",
           }
           expected_step_id={
             "Fetch PR replay kernel as data"=>"fetch-subject",
@@ -3189,4 +3208,39 @@ jobs:
               assert required in member_basenames
           Path("/tmp/authority-terminal-artifact-members.txt").write_text("\n".join(sorted(members))+"\n")
           PY
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+
+          transport={
+              "schema":"xenia.formal.kani-replay-kernel.authority-terminal-transport.v1",
+              "verifier_run_id":int(os.environ["GITHUB_RUN_ID"]),
+              "verifier_run_attempt":int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "artifact_id":int(os.environ["ARTIFACT_ID"]),
+              "artifact_name":os.environ["EXPECTED_ARTIFACT_NAME"],
+              "artifact_digest":"sha256:"+os.environ["ARTIFACT_DIGEST"],
+              "downloaded_archive_sha256":Path("/tmp/authority-terminal-artifact-download.sha256").read_text().strip(),
+              "member_manifest_sha256":hashlib.sha256(Path("/tmp/authority-terminal-artifact-members.txt").read_bytes()).hexdigest(),
+              "member_manifest_path":"/tmp/authority-terminal-artifact-members.txt",
+          }
+          assert transport["downloaded_archive_sha256"]==os.environ["ARTIFACT_DIGEST"]
+          Path("/tmp/authority-terminal-transport-attestation.json").write_text(
+              json.dumps(transport,indent=2,sort_keys=True)+"\n"
+          )
+          PY
           printf 'authority terminal artifact verified: %s sha256:%s run_attempt=%s downloaded_sha256=%s\n' "$ARTIFACT_ID" "$ARTIFACT_DIGEST" "$GITHUB_RUN_ATTEMPT"
+
+      - name: Retain authority terminal transport attestation
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: trusted-xen-kani-fv-002-authority-terminal-transport-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            /tmp/authority-terminal-transport-attestation.json
+            /tmp/authority-terminal-artifact.json
+            /tmp/authority-terminal-artifact-download.sha256
+            /tmp/authority-terminal-artifact-members.txt
+          if-no-files-found: error
+          retention-days: 30
+          overwrite: false
+          include-hidden-files: false
