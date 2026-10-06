@@ -85,6 +85,7 @@ jobs:
               "Prepare trusted verifier workspace",
               "Verify trusted event envelope",
               "Verify trusted verifier workflow identity",
+            "Verify privileged artifact action provenance",
               "Verify triggering workflow identity and provenance",
               "Verify triggering workflow source identity",
               "Verify triggering PR identity",
@@ -183,6 +184,8 @@ jobs:
               'EXPECTED_KANI_RELEASE_ASSET_DIGEST',
               'assert digest==os.environ["EXPECTED_KANI_RELEASE_ASSET_DIGEST"]',
               'EXPECTED_KANI_CRATE_SHA256',
+              'https://api.github.com/repos/actions/upload-artifact/commits/b7c566a772e6b6bfb58ed0dc250532a479d7789f',
+              'privileged upload-artifact commit signature verified by GitHub',
               'self-test checkout credential persistence enabled',
               'artifact overwrite must remain disabled',
               'artifact hidden-file inclusion must remain disabled',
@@ -725,6 +728,7 @@ jobs:
                 "/tmp/trigger-workflow-tree.json",
                 "/tmp/trusted-workflow-run-event.json",
                 "/tmp/verifier-run.json",
+                "/tmp/upload-artifact-commit.json",
                 "/tmp/trigger-run.json",
                 "/tmp/pr.json",
                 "/tmp/base-tree-sha",
@@ -843,6 +847,7 @@ jobs:
             "Prepare trusted verifier workspace",
             "Verify trusted event envelope",
             "Verify trusted verifier workflow identity",
+            "Verify privileged artifact action provenance",
             "Verify triggering workflow identity and provenance",
             "Verify triggering workflow source identity",
             "Verify triggering PR identity",
@@ -892,6 +897,7 @@ jobs:
             "Prepare trusted verifier workspace",
             "Verify trusted event envelope",
             "Verify trusted verifier workflow identity",
+            "Verify privileged artifact action provenance",
             "Verify triggering workflow identity and provenance",
             "Verify triggering workflow source identity",
             "Verify triggering PR identity",
@@ -998,6 +1004,7 @@ jobs:
           expected_step_env["Execute all trusted cover witnesses as non-authoritative self-test"]={"CARGO_NET_OFFLINE"=>"true"}
           [
             "Verify trusted verifier workflow identity",
+            "Verify privileged artifact action provenance",
             "Verify triggering workflow identity and provenance",
             "Verify triggering workflow source identity",
             "Verify triggering PR identity",
@@ -1568,6 +1575,28 @@ jobs:
           print("verifier workflow raw bytes are bound to the signed commit tree")
           PY
 
+      - name: Verify privileged artifact action provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/actions/upload-artifact/commits/b7c566a772e6b6bfb58ed0dc250532a479d7789f" \
+            -o /tmp/upload-artifact-commit.json
+          python3 - <<\x27PY\x27
+          import json
+          from pathlib import Path
+
+          d=json.loads(Path("/tmp/upload-artifact-commit.json").read_text())
+          assert d["sha"]=="b7c566a772e6b6bfb58ed0dc250532a479d7789f"
+          assert d["repository"]["full_name"]=="actions/upload-artifact"
+          verification=d["commit"]["verification"]
+          assert verification["verified"] is True
+          assert verification["reason"]=="valid"
+          assert verification.get("signature")
+          assert verification.get("payload")
+          print("privileged upload-artifact commit signature verified by GitHub")
+          PY
       - name: Verify triggering workflow identity and provenance
         shell: bash
         env:
@@ -2861,6 +2890,13 @@ jobs:
               and json.loads(Path("/tmp/terminal-main-branch.json").read_text()).get("commit",{}).get("commit",{}).get("verification",{}).get("reason")=="valid"
           )
           tree_delta_ok=Path("/tmp/trusted-tree-delta.txt").exists()
+          upload_artifact_commit_signature_verified=(
+              Path("/tmp/upload-artifact-commit.json").exists()
+              and json.loads(Path("/tmp/upload-artifact-commit.json").read_text()).get("sha")=="b7c566a772e6b6bfb58ed0dc250532a479d7789f"
+              and json.loads(Path("/tmp/upload-artifact-commit.json").read_text()).get("repository",{}).get("full_name")=="actions/upload-artifact"
+              and json.loads(Path("/tmp/upload-artifact-commit.json").read_text()).get("commit",{}).get("verification",{}).get("verified") is True
+              and json.loads(Path("/tmp/upload-artifact-commit.json").read_text()).get("commit",{}).get("verification",{}).get("reason")=="valid"
+          )
 
           envelope_evidence_ok=all(
               Path(path).exists() and Path(path).stat().st_size > 0
@@ -2878,6 +2914,7 @@ jobs:
               and os.environ["HEAD_SHA"]==os.environ["EXPECTED_QUALIFIED_HEAD_SHA"]
               and read_optional("/tmp/final-pr-freshness.txt") is not None
               and workflow_identity_ok
+              and upload_artifact_commit_signature_verified
               and main_branch_protection_verified
               and final_main_branch_protection_verified
               and tree_delta_ok
@@ -2957,6 +2994,13 @@ jobs:
                   __import__("hashlib").sha256(Path("/tmp/verifier-run.json").read_bytes()).hexdigest()
                   if Path("/tmp/verifier-run.json").exists() else None
               ),
+              "upload_artifact_commit_payload_sha256":(
+                  __import__("hashlib").sha256(
+                      Path("/tmp/upload-artifact-commit.json").read_bytes()
+                  ).hexdigest()
+                  if Path("/tmp/upload-artifact-commit.json").exists() else None
+              ),
+              "upload_artifact_commit_signature_verified":upload_artifact_commit_signature_verified,
               "trigger_run_payload_sha256":(
                   __import__("hashlib").sha256(Path("/tmp/trigger-run.json").read_bytes()).hexdigest()
                   if Path("/tmp/trigger-run.json").exists() else None
@@ -3132,6 +3176,7 @@ jobs:
             /tmp/trigger-workflow-tree.json
             /tmp/trusted-workflow-run-event.json
             /tmp/verifier-run.json
+            /tmp/upload-artifact-commit.json
             /tmp/trigger-run.json
             /tmp/pr.json
             /tmp/base-tree-sha
@@ -3210,6 +3255,7 @@ jobs:
             /tmp/trigger-workflow-tree.json
             /tmp/trusted-workflow-run-event.json
             /tmp/verifier-run.json
+            /tmp/upload-artifact-commit.json
             /tmp/trigger-run.json
             /tmp/pr.json
             /tmp/base-tree-sha
