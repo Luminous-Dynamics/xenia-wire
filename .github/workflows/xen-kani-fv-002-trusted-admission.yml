@@ -2977,7 +2977,7 @@ jobs:
           assert archive_names
           assert len(archive_names) == len(set(archive_names))
           assert all(
-              name and "\x00" not in name
+              name and "\x00" not in name and "\\" not in name
               and not PurePosixPath(name).is_absolute()
               and ".." not in PurePosixPath(name).parts
               for name in archive_names
@@ -3214,7 +3214,7 @@ jobs:
           assert archive_names
           assert len(archive_names) == len(set(archive_names))
           assert all(
-              name and "\x00" not in name
+              name and "\x00" not in name and "\\" not in name
               and not PurePosixPath(name).is_absolute()
               and ".." not in PurePosixPath(name).parts
               for name in archive_names
