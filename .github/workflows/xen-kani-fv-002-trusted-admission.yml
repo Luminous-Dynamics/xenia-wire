@@ -3666,6 +3666,7 @@ jobs:
               "trusted-artifact-provenance.txt",
               "trusted-artifact-download.sha256",
               "trusted-artifact-members.txt",
+              "terminal-pr.json",
           }
           assert set(archive_names)==expected_members, (
               f"authority terminal archive member set mismatch: "
@@ -3680,6 +3681,7 @@ jobs:
               "trusted-artifact-provenance.txt":"/tmp/trusted-artifact-provenance.txt",
               "trusted-artifact-download.sha256":"/tmp/trusted-artifact-download.sha256",
               "trusted-artifact-members.txt":"/tmp/trusted-artifact-members.txt",
+              "terminal-pr.json":"/tmp/terminal-pr.json",
           }
           with zipfile.ZipFile("/tmp/authority-terminal-artifact-download.zip") as archive:
               for name, local_path in critical_members.items():
