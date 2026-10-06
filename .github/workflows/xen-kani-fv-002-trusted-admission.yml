@@ -2963,13 +2963,17 @@ jobs:
           downloaded_digest=Path("/tmp/trusted-artifact-download.sha256").read_text().strip()
           assert downloaded_digest == os.environ["ARTIFACT_DIGEST"]
           with zipfile.ZipFile("/tmp/trusted-artifact-download.zip") as archive:
-              members=[x for x in archive.namelist() if x and not x.endswith("/")]
-          assert members
-          assert len(members) == len(set(members))
+              archive_names=archive.namelist()
+              members=[x for x in archive_names if x and not x.endswith("/")]
+          assert archive_names
+          assert len(archive_names) == len(set(archive_names))
           assert all(
-              not PurePosixPath(name).is_absolute() and ".." not in PurePosixPath(name).parts
-              for name in members
+              name and "\x00" not in name
+              and not PurePosixPath(name).is_absolute()
+              and ".." not in PurePosixPath(name).parts
+              for name in archive_names
           )
+          assert members
           member_basenames={PurePosixPath(name).name for name in members}
           for required in {"trusted-admission.json","trusted-artifact.json","trusted-artifact-provenance.txt"}:
               assert required in member_basenames
@@ -3196,13 +3200,17 @@ jobs:
           downloaded_digest=Path("/tmp/authority-terminal-artifact-download.sha256").read_text().strip()
           assert downloaded_digest == os.environ["ARTIFACT_DIGEST"]
           with zipfile.ZipFile("/tmp/authority-terminal-artifact-download.zip") as archive:
-              members=[x for x in archive.namelist() if x and not x.endswith("/")]
-          assert members
-          assert len(members) == len(set(members))
+              archive_names=archive.namelist()
+              members=[x for x in archive_names if x and not x.endswith("/")]
+          assert archive_names
+          assert len(archive_names) == len(set(archive_names))
           assert all(
-              not PurePosixPath(name).is_absolute() and ".." not in PurePosixPath(name).parts
-              for name in members
+              name and "\x00" not in name
+              and not PurePosixPath(name).is_absolute()
+              and ".." not in PurePosixPath(name).parts
+              for name in archive_names
           )
+          assert members
           member_basenames={PurePosixPath(name).name for name in members}
           for required in {"authority-terminal.json","terminal-main-branch.json","terminal-main-commit.json"}:
               assert required in member_basenames
