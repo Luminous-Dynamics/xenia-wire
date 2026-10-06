@@ -277,6 +277,157 @@ jobs:
                   j+=1
               run_blocks.append("\n".join(body))
           assert len(run_blocks)==37
+
+          def step_run_body(step_name):
+              step_line="      - name: "+step_name
+              try:
+                  start=lines.index(step_line)
+              except ValueError as exc:
+                  raise AssertionError(f"missing step: {step_name}") from exc
+              end=start+1
+              while end < len(lines) and not lines[end].startswith("      - name: "):
+                  end+=1
+              body="\n".join(lines[start:end])
+              assert "        run: |" in body, f"step has no executable run block: {step_name}"
+              return body
+
+          critical_runtime_requirements={
+              "Verify trusted event envelope":[
+                  'test "$GITHUB_EVENT_NAME" = "workflow_run"',
+                  'test "$GITHUB_REF" = "refs/heads/main"',
+                  'test "$GITHUB_REF_PROTECTED" = "true"',
+                  'test "$GITHUB_REPOSITORY" = "$EXPECTED_HEAD_REPO"',
+                  'test "$GITHUB_REPOSITORY_ID" = "$EXPECTED_HEAD_REPO_ID"',
+                  'test "$GITHUB_WORKFLOW_REF" = "$GITHUB_REPOSITORY/$VERIFIER_WORKFLOW_PATH@refs/heads/main"',
+                  'test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"',
+                  'assert event["action"]=="completed"',
+                  'assert event["repository"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]',
+                  'assert event["repository"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])',
+                  'assert run["id"]==int(os.environ["TRIGGER_RUN_ID"])',
+                  'assert run["run_attempt"]==int(os.environ["TRIGGER_RUN_ATTEMPT"])',
+                  'assert run["name"]=="XEN-KANI-FV-002 Replay Kernel"',
+                  'assert run["path"]==os.environ["EXPECTED_TRIGGER_WORKFLOW_PATH"]',
+                  'assert run["workflow_id"]==int(os.environ["EXPECTED_TRIGGER_WORKFLOW_ID"])',
+                  'assert run["event"]=="pull_request"',
+                  'assert run["conclusion"]=="success"',
+                  'assert run["status"]=="completed"',
+                  'assert pull_requests[0]["head"]["sha"]==os.environ["HEAD_SHA"]',
+                  'assert pull_requests[0]["base"]["ref"]=="main"',
+              ],
+              "Verify trusted verifier workflow identity":[
+                  'test "$GITHUB_REF" = "refs/heads/main"',
+                  'assert d["id"]==int(os.environ["GITHUB_RUN_ID"])',
+                  'assert d["workflow_id"]==int(os.environ["EXPECTED_VERIFIER_WORKFLOW_ID"])',
+                  'assert d["name"]=="Trusted XEN-KANI-FV-002 Admission"',
+                  'assert d["path"]==os.environ["VERIFIER_WORKFLOW_PATH"]',
+                  'assert d["event"]=="workflow_run"',
+                  'assert d["head_branch"]=="main"',
+                  'assert d["head_sha"]==os.environ["GITHUB_SHA"]',
+                  'assert main_branch["protected"] is True',
+                  'assert main_branch["commit"]["sha"]==os.environ["GITHUB_SHA"]',
+                  'assert main_branch["commit"]["commit"]["verification"]["verified"] is True',
+                  'assert main_branch["commit"]["commit"]["verification"]["reason"]=="valid"',
+                  'verifier_blob="$(git hash-object /tmp/trusted-verifier-workflow.yml)"',
+                  'https://api.github.com/repos/$EXPECTED_HEAD_REPO/commits/$GITHUB_SHA',
+                  'https://api.github.com/repos/$EXPECTED_HEAD_REPO/git/trees/$verifier_tree_sha?recursive=1',
+                  'assert tree["truncated"] is False',
+                  'assert verifier_tree_entry["type"]=="blob"',
+                  'assert verifier_tree_entry["mode"]=="100644"',
+                  'assert verifier_tree_entry["sha"]==Path("/tmp/verifier-workflow.blob").read_text().strip()',
+              ],
+              "Verify triggering workflow identity and provenance":[
+                  'curl --fail-with-body --silent --show-error',
+                  'assert d["id"]==int(os.environ["TRIGGER_RUN_ID"])',
+                  'assert d["repository"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])',
+                  'assert d["run_attempt"]==int(os.environ["TRIGGER_RUN_ATTEMPT"])',
+                  'assert d["name"]=="XEN-KANI-FV-002 Replay Kernel"',
+                  'assert d["path"]==os.environ["EXPECTED_TRIGGER_WORKFLOW_PATH"]',
+                  'assert d["workflow_id"]==int(os.environ["EXPECTED_TRIGGER_WORKFLOW_ID"])',
+                  'assert d["head_branch"]==os.environ["EXPECTED_TRIGGER_BRANCH"]',
+                  'assert d["event"]=="pull_request"',
+                  'assert d["status"]=="completed"',
+                  'assert d["head_sha"]==os.environ["HEAD_SHA"]',
+                  'assert d["head_sha"]==os.environ["EXPECTED_QUALIFIED_HEAD_SHA"]',
+                  'assert d["head_repository"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])',
+                  'assert len(pull_requests)==1',
+                  'assert pull_requests[0]["number"]==int(os.environ["PR_NUMBER"])',
+                  'assert d["conclusion"]==os.environ["TRIGGER_CONCLUSION"]',
+              ],
+              "Verify triggering workflow source identity":[
+                  'https://api.github.com/repos/$HEAD_REPO/contents/$EXPECTED_TRIGGER_WORKFLOW_PATH?ref=$HEAD_SHA',
+                  'test "$trigger_blob" = "$EXPECTED_TRIGGER_WORKFLOW_BLOB"',
+                  'https://api.github.com/repos/$HEAD_REPO/commits/$HEAD_SHA',
+                  'https://api.github.com/repos/$HEAD_REPO/git/trees/$trigger_tree_sha?recursive=1',
+                  'assert tree["truncated"] is False',
+                  'assert trigger_tree_entry["type"]=="blob"',
+                  'assert trigger_tree_entry["mode"]=="100644"',
+                  'assert trigger_tree_entry["sha"]==os.environ["EXPECTED_TRIGGER_WORKFLOW_BLOB"]',
+                  'assert trigger_tree_entry["sha"]==Path("/tmp/trigger-workflow.blob").read_text().strip()',
+              ],
+              "Verify triggering PR identity":[
+                  'assert d["number"]==int(os.environ["PR_NUMBER"])',
+                  'assert d["base"]["repo"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])',
+                  'assert d["head"]["repo"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])',
+                  'assert d["state"]=="open"',
+                  'assert d["merged"] is False',
+                  'assert d["base"]["ref"]=="main"',
+                  'assert d["head"]["ref"]==os.environ["HEAD_BRANCH"]',
+                  'assert d["head"]["sha"]==os.environ["HEAD_SHA"]',
+                  'assert d["head"]["sha"]==os.environ["EXPECTED_QUALIFIED_HEAD_SHA"]',
+                  'assert d["head"]["repo"]["full_name"]==os.environ["HEAD_REPO"]',
+              ],
+              "Verify PR scope independently":[
+                  'assert d["status"]=="ahead"',
+                  'assert d["base_commit"]["sha"]=="057dd03043b8863d8f8280abf333331cc9ddf317"',
+                  'assert d["merge_base_commit"]["sha"]==os.environ["BASE_SHA"]',
+                  'assert observed==expected',
+              ],
+              "Verify complete tree delta independently":[
+                  'assert base["sha"]==os.environ["BASE_SHA"]',
+                  'assert head["sha"]==os.environ["HEAD_SHA"]',
+                  'assert base.get("truncated") is False',
+                  'assert head.get("truncated") is False',
+                  'assert changed==expected',
+                  'assert h[path][1]=="blob"',
+              ],
+              "Verify formal evidence contract independently":[
+                  'assert c["schema"]=="xenia.formal.kani-replay-kernel.v1"',
+                  'assert c["tracking_issue"]==84',
+                  'assert c["authority"]=="EvidenceOnly"',
+                  'assert c["evidence_class"]=="BoundedModelSafety"',
+                  'assert c["parent"]["commit"]=="057dd03043b8863d8f8280abf333331cc9ddf317"',
+              ],
+              "Verify independent harness manifest":[
+                  'assert discovered==expected',
+                  'assert source.count("#[kani::proof]")==14',
+              ],
+              "Build authority terminal receipt":[
+                  'assert receipt["pre_transport_authority_eligible"] is True',
+                  'assert receipt["authority_eligible"] is False',
+                  'terminal["authority_eligible"]=True',
+                  'terminal["terminal_main_branch_protection_verified"]=True',
+                  'terminal["terminal_main_branch_signed_tip_verified"]=(',
+                  'terminal["terminal_commit_signature_verified"]=(',
+              ],
+              "Verify authority terminal upload identity":[
+                  'assert d["id"] == int(os.environ["ARTIFACT_ID"])',
+                  'assert d["name"] == os.environ["EXPECTED_ARTIFACT_NAME"]',
+                  'assert d["digest"] == "sha256:"+os.environ["ARTIFACT_DIGEST"]',
+                  'assert d["workflow_run"]["id"] == int(os.environ["EXPECTED_RUN_ID"])',
+                  'assert d["workflow_run"]["head_sha"] == os.environ["GITHUB_SHA"]',
+                  'assert d["expired"] is False',
+                  'assert downloaded_digest == os.environ["ARTIFACT_DIGEST"]',
+                  'assert len(archive_names) == len(set(archive_names))',
+              ],
+          }
+
+          for step_name, required in critical_runtime_requirements.items():
+              body=step_run_body(step_name)
+              for needle in required:
+                  assert needle in body, (
+                      f"critical runtime guard missing from executable step {step_name}: {needle}"
+                  )
+
           set_plus_blocks=[]
           set_fail_open="set "+"+e"
           set_fail_closed="set "+"-e"
