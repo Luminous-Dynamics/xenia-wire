@@ -185,7 +185,11 @@ jobs:
               'assert digest==os.environ["EXPECTED_KANI_RELEASE_ASSET_DIGEST"]',
               'EXPECTED_KANI_CRATE_SHA256',
               'https://api.github.com/repos/actions/upload-artifact/commits/b7c566a772e6b6bfb58ed0dc250532a479d7789f',
-              'privileged upload-artifact commit signature verified by GitHub',
+              'https://api.github.com/repos/actions/upload-artifact/git/ref/tags/v6.0.0',
+              'assert tag["ref"]=="refs/tags/v6.0.0"',
+              'assert tag["object"]["type"]=="commit"',
+              'assert tag["object"]["sha"]=="b7c566a772e6b6bfb58ed0dc250532a479d7789f"',
+              'privileged upload-artifact v6.0.0 tag and commit signature verified by GitHub',
               'self-test checkout credential persistence enabled',
               'artifact overwrite must remain disabled',
               'artifact hidden-file inclusion must remain disabled',
@@ -201,6 +205,7 @@ jobs:
               'assert pull_requests[0]["base"]["ref"]=="main"',
               'assert pull_requests[0]["base"]["repo"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]',
               '"pre_transport_authority_eligible":pre_transport_authority_eligible',
+              '"upload_artifact_v6_tag_binding_verified":upload_artifact_v6_tag_binding_verified',
               '"authority_eligible":False',
               'assert receipt["pre_transport_authority_eligible"] is True',
               'assert receipt["authority_eligible"] is False',
@@ -690,6 +695,7 @@ jobs:
               "retention-days"=>90,
               "overwrite"=>false,
               "include-hidden-files"=>false,
+              "archive"=>true,
               "path"=>[
                 "/tmp/replay_kernel_cover.rs",
                 "/tmp/selftest-replay_kernel.rs",
@@ -708,6 +714,7 @@ jobs:
               "retention-days"=>90,
               "overwrite"=>false,
               "include-hidden-files"=>false,
+              "archive"=>true,
               "path"=>[
                 "/tmp/trusted-subject.txt",
                 "/tmp/verifier-workflow.txt",
@@ -769,6 +776,7 @@ jobs:
               "retention-days"=>90,
               "overwrite"=>false,
               "include-hidden-files"=>false,
+              "archive"=>true,
               "path"=>[
                 "/tmp/authority-terminal.json",
                 "/tmp/terminal-main-branch.json",
@@ -786,6 +794,7 @@ jobs:
               "retention-days"=>90,
               "overwrite"=>false,
               "include-hidden-files"=>false,
+              "archive"=>true,
               "path"=>[
                 "/tmp/authority-terminal-transport-attestation.json",
                 "/tmp/authority-terminal-artifact.json",
@@ -795,7 +804,7 @@ jobs:
             },
           }
           upload_steps=selftest.fetch("steps").select { |step| step["uses"] == "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f" } + trusted.fetch("steps").select { |step| step["uses"] == "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f" }
-          expected_upload_keys=["name","path","if-no-files-found","retention-days","overwrite","include-hidden-files"]
+          expected_upload_keys=["name","path","if-no-files-found","retention-days","overwrite","include-hidden-files","archive"]
           upload_steps.each do |step|
             with=step.fetch("with")
             expected=expected_upload_with.fetch(step.fetch("name")) { abort "unexpected upload artifact step: #{step["name"]}" }
@@ -1391,6 +1400,7 @@ jobs:
           retention-days: 90
           overwrite: false
           include-hidden-files: false
+          archive: true
 
   trusted-admission:
     if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.pull_requests[0].number != null && github.event.workflow_run.head_branch == 'formal/xen-kani-fv-002-replay-kernel' && github.event.workflow_run.conclusion == 'success'
@@ -1583,20 +1593,29 @@ jobs:
             -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/actions/upload-artifact/commits/b7c566a772e6b6bfb58ed0dc250532a479d7789f" \
             -o /tmp/upload-artifact-commit.json
+          curl --fail-with-body --silent --show-error \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "https://api.github.com/repos/actions/upload-artifact/git/ref/tags/v6.0.0" \
+            -o /tmp/upload-artifact-tag.json
           python3 - <<\x27PY\x27
           import json
           from pathlib import Path
 
           d=json.loads(Path("/tmp/upload-artifact-commit.json").read_text())
+          tag=json.loads(Path("/tmp/upload-artifact-tag.json").read_text())
           assert d["sha"]=="b7c566a772e6b6bfb58ed0dc250532a479d7789f"
           assert d["repository"]["full_name"]=="actions/upload-artifact"
+          assert tag["ref"]=="refs/tags/v6.0.0"
+          assert tag["object"]["type"]=="commit"
+          assert tag["object"]["sha"]=="b7c566a772e6b6bfb58ed0dc250532a479d7789f"
           verification=d["commit"]["verification"]
           assert verification["verified"] is True
           assert verification["reason"]=="valid"
           assert verification.get("signature")
           assert verification.get("payload")
           assert verification.get("verified_at")
-          print("privileged upload-artifact commit signature verified by GitHub")
+          print("privileged upload-artifact v6.0.0 tag and commit signature verified by GitHub")
           PY
       - name: Verify triggering workflow identity and provenance
         shell: bash
@@ -2898,6 +2917,12 @@ jobs:
               and json.loads(Path("/tmp/upload-artifact-commit.json").read_text()).get("commit",{}).get("verification",{}).get("verified") is True
               and json.loads(Path("/tmp/upload-artifact-commit.json").read_text()).get("commit",{}).get("verification",{}).get("reason")=="valid"
           )
+          upload_artifact_v6_tag_binding_verified=(
+              Path("/tmp/upload-artifact-tag.json").exists()
+              and json.loads(Path("/tmp/upload-artifact-tag.json").read_text()).get("ref")=="refs/tags/v6.0.0"
+              and json.loads(Path("/tmp/upload-artifact-tag.json").read_text()).get("object",{}).get("type")=="commit"
+              and json.loads(Path("/tmp/upload-artifact-tag.json").read_text()).get("object",{}).get("sha")=="b7c566a772e6b6bfb58ed0dc250532a479d7789f"
+          )
 
           envelope_evidence_ok=all(
               Path(path).exists() and Path(path).stat().st_size > 0
@@ -2916,6 +2941,7 @@ jobs:
               and read_optional("/tmp/final-pr-freshness.txt") is not None
               and workflow_identity_ok
               and upload_artifact_commit_signature_verified
+              and upload_artifact_v6_tag_binding_verified
               and main_branch_protection_verified
               and final_main_branch_protection_verified
               and tree_delta_ok
@@ -3001,7 +3027,14 @@ jobs:
                   ).hexdigest()
                   if Path("/tmp/upload-artifact-commit.json").exists() else None
               ),
+              "upload_artifact_v6_tag_payload_sha256":(
+                  __import__("hashlib").sha256(
+                      Path("/tmp/upload-artifact-tag.json").read_bytes()
+                  ).hexdigest()
+                  if Path("/tmp/upload-artifact-tag.json").exists() else None
+              ),
               "upload_artifact_commit_signature_verified":upload_artifact_commit_signature_verified,
+              "upload_artifact_v6_tag_binding_verified":upload_artifact_v6_tag_binding_verified,
               "trigger_run_payload_sha256":(
                   __import__("hashlib").sha256(Path("/tmp/trigger-run.json").read_bytes()).hexdigest()
                   if Path("/tmp/trigger-run.json").exists() else None
@@ -3293,6 +3326,7 @@ jobs:
           retention-days: 90
           overwrite: false
           include-hidden-files: false
+          archive: true
       - name: Verify trusted evidence upload identity
         if: always()
         shell: bash
@@ -3647,6 +3681,7 @@ jobs:
           retention-days: 90
           overwrite: false
           include-hidden-files: false
+          archive: true
       - name: Verify authority terminal upload identity
         if: success()
         shell: bash
@@ -3782,3 +3817,4 @@ jobs:
           retention-days: 90
           overwrite: false
           include-hidden-files: false
+          archive: true
