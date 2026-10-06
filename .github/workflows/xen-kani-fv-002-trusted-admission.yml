@@ -313,9 +313,9 @@ jobs:
           ]
           assert github_api_curl_commands, "expected GitHub API curl commands"
           assert all(
-              "X-GitHub-Api-Version: 2026-03-10" in command
+              command.count("X-GitHub-Api-Version: 2026-03-10")==1
               for command in github_api_curl_commands
-          ), "every GitHub API curl command must pin X-GitHub-Api-Version"
+          ), "every GitHub API curl command must pin exactly one X-GitHub-Api-Version"
           def step_run_body(step_name):
               step_line="      - name: "+step_name
               try:
@@ -1626,23 +1626,21 @@ jobs:
           curl --fail-with-body --silent --show-error \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2026-03-10" \
-            -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/actions/upload-artifact/commits/b7c566a772e6b6bfb58ed0dc250532a479d7789f" \
             -o /tmp/upload-artifact-commit.json
           curl --fail-with-body --silent --show-error \
             -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2026-03-10" \
             -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/actions/upload-artifact/git/ref/tags/v6.0.0" \
             -o /tmp/upload-artifact-tag.json
           curl --fail-with-body --silent --show-error \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2026-03-10" \
-            -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/actions/upload-artifact/contents/action.yml?ref=b7c566a772e6b6bfb58ed0dc250532a479d7789f" \
             -o /tmp/upload-artifact-action.json
           python3 - <<\x27PY\x27
           import json
+          import os
           from pathlib import Path
 
           d=json.loads(Path("/tmp/upload-artifact-commit.json").read_text())
