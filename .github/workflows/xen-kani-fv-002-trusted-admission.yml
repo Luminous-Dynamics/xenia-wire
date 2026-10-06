@@ -180,7 +180,12 @@ jobs:
               'assert len(members) == len(set(members))',
               'actions/artifacts/$ARTIFACT_ID/zip',
               'assert verification["verified"] is True',
-              'Kani release commit signature verified by GitHub',
+              'Kani release commit signature and verification metadata verified by GitHub',
+              'assert main_verification.get("signature")',
+              'assert final_main_verification.get("signature")',
+              'assert terminal_main_verification.get("signature")',
+              'assert terminal_commit_verification.get("signature")',
+              'assert verification.get("verified_at")',
               'EXPECTED_KANI_RELEASE_ASSET_ID',
               'EXPECTED_KANI_RELEASE_ASSET_NAME',
               'EXPECTED_KANI_RELEASE_ASSET_DIGEST',
@@ -1564,8 +1569,12 @@ jobs:
           assert main_branch["name"]=="main"
           assert main_branch["protected"] is True
           assert main_branch["commit"]["sha"]==os.environ["GITHUB_SHA"]
-          assert main_branch["commit"]["commit"]["verification"]["verified"] is True
-          assert main_branch["commit"]["commit"]["verification"]["reason"]=="valid"
+          main_verification=main_branch["commit"]["commit"]["verification"]
+          assert main_verification["verified"] is True
+          assert main_verification["reason"]=="valid"
+          assert main_verification.get("signature")
+          assert main_verification.get("payload")
+          assert main_verification.get("verified_at")
           print("default branch protection, signed tip, and tip binding verified")
           PY
           curl --fail-with-body --silent --show-error \\
@@ -2295,7 +2304,8 @@ jobs:
           assert verification["reason"]=="valid"
           assert verification.get("signature")
           assert verification.get("payload")
-          print("Kani release commit signature verified by GitHub")
+          assert verification.get("verified_at")
+          print("Kani release commit signature and verification metadata verified by GitHub")
           PY
           curl --fail-with-body --silent --show-error \
             -H "Accept: application/vnd.github+json" \
@@ -2828,8 +2838,12 @@ jobs:
           assert final_main_branch["name"]=="main"
           assert final_main_branch["protected"] is True
           assert final_main_branch["commit"]["sha"]==os.environ["GITHUB_SHA"]
-          assert final_main_branch["commit"]["commit"]["verification"]["verified"] is True
-          assert final_main_branch["commit"]["commit"]["verification"]["reason"]=="valid"
+          final_main_verification=final_main_branch["commit"]["commit"]["verification"]
+          assert final_main_verification["verified"] is True
+          assert final_main_verification["reason"]=="valid"
+          assert final_main_verification.get("signature")
+          assert final_main_verification.get("payload")
+          assert final_main_verification.get("verified_at")
           print("final default branch protection, signed tip, and tip binding verified")
           PY
 
@@ -3662,8 +3676,12 @@ jobs:
           assert terminal_main_branch["name"]=="main"
           assert terminal_main_branch["protected"] is True
           assert terminal_main_branch["commit"]["sha"]==os.environ["GITHUB_SHA"]
-          assert terminal_main_branch["commit"]["commit"]["verification"]["verified"] is True
-          assert terminal_main_branch["commit"]["commit"]["verification"]["reason"]=="valid"
+          terminal_main_verification=terminal_main_branch["commit"]["commit"]["verification"]
+          assert terminal_main_verification["verified"] is True
+          assert terminal_main_verification["reason"]=="valid"
+          assert terminal_main_verification.get("signature")
+          assert terminal_main_verification.get("payload")
+          assert terminal_main_verification.get("verified_at")
           print("terminal default branch protection, signed tip, and tip binding verified")
           PY
           test -n "$ARTIFACT_ID"
@@ -3684,9 +3702,13 @@ jobs:
           assert terminal_main_commit["sha"]==os.environ["GITHUB_SHA"]
           assert terminal_main_commit["repository"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])
           assert terminal_main_commit["repository"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]
-          assert terminal_main_commit["commit"]["verification"]["verified"] is True
-          assert terminal_main_commit["commit"]["verification"]["reason"]=="valid"
-          print("terminal verifier commit signature independently verified")
+          terminal_commit_verification=terminal_main_commit["commit"]["verification"]
+          assert terminal_commit_verification["verified"] is True
+          assert terminal_commit_verification["reason"]=="valid"
+          assert terminal_commit_verification.get("signature")
+          assert terminal_commit_verification.get("payload")
+          assert terminal_commit_verification.get("verified_at")
+          print("terminal verifier commit signature and verification metadata independently verified")
           PY
           python3 - <<'PY'
           import json, os, hashlib
