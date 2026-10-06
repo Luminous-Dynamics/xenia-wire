@@ -265,9 +265,14 @@ jobs:
           set_plus_blocks=[]
           set_fail_open="set "+"+e"
           set_fail_closed="set "+"-e"
+          allowed_set_statements={"set -euo pipefail",set_fail_open,set_fail_closed}
           for index, block in enumerate(run_blocks, start=1):
               nonempty=[line.strip() for line in block.splitlines() if line.strip()]
               assert nonempty and nonempty[0]=="set -euo pipefail", f"run block {index} must start fail-closed"
+              set_statements=[line.strip() for line in block.splitlines() if line.strip().startswith("set ")]
+              assert set_statements and all(statement in allowed_set_statements for statement in set_statements), (
+                  f"run block {index} contains an unapproved shell mode statement: {set_statements!r}"
+              )
               set_events=[line.strip() for line in block.splitlines() if line.strip() in {set_fail_open,set_fail_closed}]
               if set_fail_open in block:
                   assert set_events==[set_fail_open,set_fail_closed], f"unbalanced temporary fail-open mode in run block {index}"
