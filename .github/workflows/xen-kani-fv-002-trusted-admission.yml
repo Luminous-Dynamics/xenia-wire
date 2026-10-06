@@ -243,6 +243,7 @@ jobs:
               'self-test checkout fetch-depth mismatch',
               'self-test checkout ref mismatch',
               'assert checksum==os.environ["EXPECTED_KANI_CRATE_SHA256"]',
+              'grep -q "commit-hash: $EXPECTED_KANI_RUST_COMMIT_HASH" /tmp/kani-version.txt',
               'https://api.github.com/repos/model-checking/kani/releases/tags/$EXPECTED_KANI_RELEASE_TAG',
               'cargo kani setup --use-local-bundle ' + '/tmp/kani-release-bundle.tar.gz',
               'x86_64-unknown-linux-gnu.tar.gz',
@@ -1440,6 +1441,7 @@ jobs:
           cargo kani --version --verbose | tee /tmp/selftest-kani-version.txt
           grep -q "Kani Rust Verifier 0.68.0" /tmp/selftest-kani-version.txt
           grep -q "CBMC 6.11.0" /tmp/selftest-kani-version.txt
+          grep -q "commit-hash: $EXPECTED_KANI_RUST_COMMIT_HASH" /tmp/selftest-kani-version.txt
           rustup run "$EXPECTED_KANI_RUST_TOOLCHAIN" rustc -Vv | tee /tmp/selftest-kani-rustc.txt
           grep -q "commit-hash: $EXPECTED_KANI_RUST_COMMIT_HASH" /tmp/selftest-kani-rustc.txt
       - name: Execute all trusted cover witnesses as non-authoritative self-test
@@ -2434,6 +2436,7 @@ jobs:
           cargo kani --version --verbose | tee /tmp/kani-version.txt
           grep -q "Kani Rust Verifier 0.68.0" /tmp/kani-version.txt
           grep -q "CBMC 6.11.0" /tmp/kani-version.txt
+          grep -q "commit-hash: $EXPECTED_KANI_RUST_COMMIT_HASH" /tmp/kani-version.txt
           rustup run "$EXPECTED_KANI_RUST_TOOLCHAIN" rustc -Vv | tee /tmp/kani-rustc.txt
           grep -q "commit-hash: $EXPECTED_KANI_RUST_COMMIT_HASH" /tmp/kani-rustc.txt
       - name: Run all trusted clean proofs
