@@ -277,6 +277,11 @@ jobs:
           shell_lines=[line for line in lines if re.fullmatch(r" {8}shell:.*",line)]
           assert len(shell_lines)==38, f"expected 38 shell declarations, got {len(shell_lines)}"
           invalid_shell_lines=[repr(line) for line in shell_lines if line!="        shell: bash"]
+          github_api_run_blocks=[block for block in run_blocks if "https://api.github.com/" in block]
+          assert github_api_run_blocks, "expected GitHub API runtime blocks"
+          assert all("X-GitHub-Api-Version: 2026-03-10" in block for block in github_api_run_blocks), (
+              "every GitHub API runtime block must pin X-GitHub-Api-Version"
+          )
           assert not invalid_shell_lines, f"all executable steps must use shell: bash; invalid={invalid_shell_lines!r}"
           run_blocks=[]
           for idx,line in enumerate(lines):
@@ -1197,7 +1202,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github.raw+json"             "https://api.github.com/repos/$EXPECTED_HEAD_REPO/contents/src/replay_kernel.rs?ref=$EXPECTED_QUALIFIED_HEAD_SHA"             -o /tmp/selftest-replay_kernel.rs
+          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github.raw+json"             -H "X-GitHub-Api-Version: 2026-03-10" "https://api.github.com/repos/$EXPECTED_HEAD_REPO/contents/src/replay_kernel.rs?ref=$EXPECTED_QUALIFIED_HEAD_SHA"             -o /tmp/selftest-replay_kernel.rs
           blob="$(git hash-object /tmp/selftest-replay_kernel.rs)"
           echo "$blob" > /tmp/selftest-replay-kernel.blob
           test "$blob" = "$EXPECTED_KERNEL_BLOB"
@@ -1290,6 +1295,7 @@ jobs:
           cargo install --locked --path /tmp/kani-verifier-0.68.0
           curl --fail-with-body --silent --show-error \
             -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/model-checking/kani/releases/tags/$EXPECTED_KANI_RELEASE_TAG" \
             -o /tmp/kani-release.json
           python3 - <<'PY'
@@ -1503,6 +1509,7 @@ jobs:
           curl --fail-with-body --silent --show-error \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/$EXPECTED_HEAD_REPO/actions/runs/$GITHUB_RUN_ID" \
             -o /tmp/verifier-run.json
           python3 - <<'PY'
@@ -1525,6 +1532,7 @@ jobs:
           curl --fail-with-body --silent --show-error \\
             -H "Authorization: Bearer $GITHUB_TOKEN" \\
             -H "Accept: application/vnd.github+json" \\
+            -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/$EXPECTED_HEAD_REPO/branches/main" \\
             -o /tmp/main-branch.json
           python3 - <<'PY'
@@ -1543,6 +1551,7 @@ jobs:
           curl --fail-with-body --silent --show-error \\
             -H "Authorization: Bearer $GITHUB_TOKEN" \\
             -H "Accept: application/vnd.github.raw+json" \\
+            -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/$EXPECTED_HEAD_REPO/contents/$VERIFIER_WORKFLOW_PATH?ref=$GITHUB_SHA" \\
             -o /tmp/trusted-verifier-workflow.yml
           verifier_blob="$(git hash-object /tmp/trusted-verifier-workflow.yml)"
@@ -1554,6 +1563,7 @@ jobs:
           curl --fail-with-body --silent --show-error \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/$EXPECTED_HEAD_REPO/commits/$GITHUB_SHA" \
             -o /tmp/verifier-workflow-commit.json
           python3 - <<'PY'
@@ -1571,6 +1581,7 @@ jobs:
           curl --fail-with-body --silent --show-error \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/$EXPECTED_HEAD_REPO/git/trees/$verifier_tree_sha?recursive=1" \
             -o /tmp/verifier-workflow-tree.json
           python3 - <<'PY'
@@ -1595,15 +1606,18 @@ jobs:
           curl --fail-with-body --silent --show-error \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2026-03-10" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/actions/upload-artifact/commits/b7c566a772e6b6bfb58ed0dc250532a479d7789f" \
             -o /tmp/upload-artifact-commit.json
           curl --fail-with-body --silent --show-error \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2026-03-10" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/actions/upload-artifact/git/ref/tags/v6.0.0" \
             -o /tmp/upload-artifact-tag.json
           curl --fail-with-body --silent --show-error \
             -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
             -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/actions/upload-artifact/contents/action.yml?ref=b7c566a772e6b6bfb58ed0dc250532a479d7789f" \
             -o /tmp/upload-artifact-action.json
@@ -1646,7 +1660,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/actions/runs/$TRIGGER_RUN_ID"             -o /tmp/trigger-run.json
+          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2026-03-10" "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/actions/runs/$TRIGGER_RUN_ID"             -o /tmp/trigger-run.json
           python3 - <<'PY'
           import json, os
           from pathlib import Path
@@ -1680,6 +1694,7 @@ jobs:
           curl --fail-with-body --silent --show-error \\
             -H "Authorization: Bearer $GITHUB_TOKEN" \\
             -H "Accept: application/vnd.github.raw+json" \\
+            -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/$HEAD_REPO/contents/$EXPECTED_TRIGGER_WORKFLOW_PATH?ref=$HEAD_SHA" \\
             -o /tmp/trigger-workflow.yml
           trigger_blob="$(git hash-object /tmp/trigger-workflow.yml)"
@@ -1690,6 +1705,7 @@ jobs:
           curl --fail-with-body --silent --show-error \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/$HEAD_REPO/commits/$HEAD_SHA" \
             -o /tmp/trigger-workflow-commit.json
           python3 - <<'PY'
@@ -1707,6 +1723,7 @@ jobs:
           curl --fail-with-body --silent --show-error \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/$HEAD_REPO/git/trees/$trigger_tree_sha?recursive=1" \
             -o /tmp/trigger-workflow-tree.json
           python3 - <<'PY'
@@ -1732,7 +1749,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/pulls/$PR_NUMBER"             -o /tmp/pr.json
+          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2026-03-10" "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/pulls/$PR_NUMBER"             -o /tmp/pr.json
           python3 - <<'PY'
           import json, os
           from pathlib import Path
@@ -1767,7 +1784,7 @@ jobs:
               f"trusted self-modification scope requires 1..100 changed files, got {changed_files!r}"
           )
           PY
-          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/pulls/$PR_NUMBER/files?per_page=100&page=1"             -o /tmp/pr-files.json
+          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2026-03-10" "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/pulls/$PR_NUMBER/files?per_page=100&page=1"             -o /tmp/pr-files.json
           python3 - <<'PY'
           import json
           import os
@@ -1805,9 +1822,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github.raw+json"             "https://api.github.com/repos/$HEAD_REPO/contents/src/replay_kernel.rs?ref=$HEAD_SHA"             -o /tmp/xen-kani-trusted/src/replay_kernel.rs
+          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github.raw+json"             -H "X-GitHub-Api-Version: 2026-03-10" "https://api.github.com/repos/$HEAD_REPO/contents/src/replay_kernel.rs?ref=$HEAD_SHA"             -o /tmp/xen-kani-trusted/src/replay_kernel.rs
           curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github.raw+json"             "https://api.github.com/repos/$HEAD_REPO/contents/src/replay_kernel_kani.rs?ref=$HEAD_SHA"             -o /tmp/xen-kani-trusted/src/replay_kernel_kani.rs
-          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github.raw+json"             "https://api.github.com/repos/$HEAD_REPO/contents/docs/formal/xen-kani-fv-002-replay-kernel-v1.json?ref=$HEAD_SHA"             -o /tmp/xen-kani-trusted/evidence.json
+          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github.raw+json"             -H "X-GitHub-Api-Version: 2026-03-10" "https://api.github.com/repos/$HEAD_REPO/contents/docs/formal/xen-kani-fv-002-replay-kernel-v1.json?ref=$HEAD_SHA"             -o /tmp/xen-kani-trusted/evidence.json
 
           cat > /tmp/xen-kani-trusted/src/lib.rs <<'EOF'
           #![forbid(unsafe_code)]
@@ -1920,7 +1937,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/compare/$BASE_SHA...$HEAD_SHA"             -o /tmp/compare.json
+          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2026-03-10" "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/compare/$BASE_SHA...$HEAD_SHA"             -o /tmp/compare.json
 
           python3 - <<'PY'
           import json, os
@@ -1955,12 +1972,14 @@ jobs:
           curl --fail-with-body --silent --show-error \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/commits/$BASE_SHA" \
             -o /tmp/base-commit.json
 
           curl --fail-with-body --silent --show-error \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/$HEAD_REPO/commits/$HEAD_SHA" \
             -o /tmp/head-commit.json
 
@@ -1981,12 +2000,14 @@ jobs:
           curl --fail-with-body --silent --show-error \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/git/trees/$BASE_TREE?recursive=1" \
             -o /tmp/base-tree.json
 
           curl --fail-with-body --silent --show-error \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/$HEAD_REPO/git/trees/$HEAD_TREE?recursive=1" \
             -o /tmp/head-tree.json
 
@@ -2241,6 +2262,7 @@ jobs:
           test "$release_commit" = "$EXPECTED_KANI_RELEASE_COMMIT_SHA"
           curl --fail-with-body --silent --show-error \
             -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/model-checking/kani/commits/$EXPECTED_KANI_RELEASE_COMMIT_SHA" \
             -o /tmp/kani-release-commit.json
           python3 - <<'PY'
@@ -2258,6 +2280,7 @@ jobs:
           PY
           curl --fail-with-body --silent --show-error \
             -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/model-checking/kani/releases/tags/$EXPECTED_KANI_RELEASE_TAG" \
             -o /tmp/kani-release.json
           python3 - <<'PY'
@@ -2744,6 +2767,7 @@ jobs:
           curl --fail-with-body --silent --show-error \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/$EXPECTED_HEAD_REPO/pulls/$PR_NUMBER" \
             -o /tmp/final-pr.json
           python3 - <<'PY'
@@ -2773,6 +2797,7 @@ jobs:
           curl --fail-with-body --silent --show-error \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/$EXPECTED_HEAD_REPO/branches/main" \
             -o /tmp/final-main-branch.json
           python3 - <<'PY'
@@ -3384,10 +3409,11 @@ jobs:
           test -n "$ARTIFACT_ID"
           test "$ARTIFACT_ID" != "0"
           [[ "$ARTIFACT_DIGEST" =~ ^[0-9a-f]{64}$ ]]
-          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/actions/artifacts/$ARTIFACT_ID"             -o /tmp/trusted-artifact.json
+          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2026-03-10" "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/actions/artifacts/$ARTIFACT_ID"             -o /tmp/trusted-artifact.json
           curl --fail-with-body --silent --show-error --location \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/actions/artifacts/$ARTIFACT_ID/zip" \
             -o /tmp/trusted-artifact-download.zip
           sha256sum /tmp/trusted-artifact-download.zip | cut -d" " -f1 > /tmp/trusted-artifact-download.sha256
@@ -3580,6 +3606,7 @@ jobs:
           curl --fail-with-body --silent --show-error \\
             -H "Authorization: Bearer $GITHUB_TOKEN" \\
             -H "Accept: application/vnd.github+json" \\
+            -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/$EXPECTED_HEAD_REPO/pulls/$PR_NUMBER" \\
             -o /tmp/terminal-pr.json
           python3 - <<'PY'
@@ -3600,6 +3627,7 @@ jobs:
           curl --fail-with-body --silent --show-error \\
             -H "Authorization: Bearer $GITHUB_TOKEN" \\
             -H "Accept: application/vnd.github+json" \\
+            -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/$EXPECTED_HEAD_REPO/branches/main" \\
             -o /tmp/terminal-main-branch.json
           python3 - <<'PY'
@@ -3621,6 +3649,7 @@ jobs:
           curl --fail-with-body --silent --show-error \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/$EXPECTED_HEAD_REPO/commits/$GITHUB_SHA" \
             -o /tmp/terminal-main-commit.json
           python3 - <<'PY'
@@ -3741,11 +3770,13 @@ jobs:
           curl --fail-with-body --silent --show-error \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/actions/artifacts/$ARTIFACT_ID" \
             -o /tmp/authority-terminal-artifact.json
           curl --fail-with-body --silent --show-error --location \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/actions/artifacts/$ARTIFACT_ID/zip" \
             -o /tmp/authority-terminal-artifact-download.zip
           sha256sum /tmp/authority-terminal-artifact-download.zip | cut -d" " -f1 > /tmp/authority-terminal-artifact-download.sha256
