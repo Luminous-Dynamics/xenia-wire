@@ -45,6 +45,7 @@ env:
   EXPECTED_KANI_CRATE_SHA256: 842fabd2ba8b13babab862e21fef2946b581d493f23062d5ce86266630f1d1ae
   EXPECTED_KANI_RUST_TOOLCHAIN: nightly-2026-08-21
   EXPECTED_KANI_RUST_COMMIT_HASH: 8925ea358a0f265ca61026aadc7ecc506c545cbe
+  EXPECTED_UPLOAD_ARTIFACT_ACTION_BLOB: 28f04cc696830ad0609506e0888d8b3b83d5d616
 
 jobs:
   non-authoritative-selftest:
@@ -186,6 +187,12 @@ jobs:
               'EXPECTED_KANI_CRATE_SHA256',
               'https://api.github.com/repos/actions/upload-artifact/commits/b7c566a772e6b6bfb58ed0dc250532a479d7789f',
               'https://api.github.com/repos/actions/upload-artifact/git/ref/tags/v6.0.0',
+              'https://api.github.com/repos/actions/upload-artifact/contents/action.yml?ref=b7c566a772e6b6bfb58ed0dc250532a479d7789f',
+              'assert action["sha"]==os.environ["EXPECTED_UPLOAD_ARTIFACT_ACTION_BLOB"]',
+              'assert action["path"]=="action.yml"',
+              'assert action["name"]=="action.yml"',
+              'assert "\\ninputs:\\n" in action_text',
+              'assert "\\nruns:\\n  using: \'node24\'\\n  main: \'dist/upload/index.js\'\\n" in action_text',
               'assert tag["ref"]=="refs/tags/v6.0.0"',
               'assert tag["object"]["type"]=="commit"',
               'assert tag["object"]["sha"]=="b7c566a772e6b6bfb58ed0dc250532a479d7789f"',
@@ -695,7 +702,6 @@ jobs:
               "retention-days"=>90,
               "overwrite"=>false,
               "include-hidden-files"=>false,
-              "archive"=>true,
               "path"=>[
                 "/tmp/replay_kernel_cover.rs",
                 "/tmp/selftest-replay_kernel.rs",
@@ -714,7 +720,6 @@ jobs:
               "retention-days"=>90,
               "overwrite"=>false,
               "include-hidden-files"=>false,
-              "archive"=>true,
               "path"=>[
                 "/tmp/trusted-subject.txt",
                 "/tmp/verifier-workflow.txt",
@@ -736,6 +741,8 @@ jobs:
                 "/tmp/trusted-workflow-run-event.json",
                 "/tmp/verifier-run.json",
                 "/tmp/upload-artifact-commit.json",
+                "/tmp/upload-artifact-tag.json",
+                "/tmp/upload-artifact-action.json",
                 "/tmp/trigger-run.json",
                 "/tmp/pr.json",
                 "/tmp/base-tree-sha",
@@ -776,7 +783,6 @@ jobs:
               "retention-days"=>90,
               "overwrite"=>false,
               "include-hidden-files"=>false,
-              "archive"=>true,
               "path"=>[
                 "/tmp/authority-terminal.json",
                 "/tmp/terminal-main-branch.json",
@@ -794,7 +800,6 @@ jobs:
               "retention-days"=>90,
               "overwrite"=>false,
               "include-hidden-files"=>false,
-              "archive"=>true,
               "path"=>[
                 "/tmp/authority-terminal-transport-attestation.json",
                 "/tmp/authority-terminal-artifact.json",
@@ -804,7 +809,7 @@ jobs:
             },
           }
           upload_steps=selftest.fetch("steps").select { |step| step["uses"] == "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f" } + trusted.fetch("steps").select { |step| step["uses"] == "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f" }
-          expected_upload_keys=["name","path","if-no-files-found","retention-days","overwrite","include-hidden-files","archive"]
+          expected_upload_keys=["name","path","if-no-files-found","retention-days","overwrite","include-hidden-files"]
           upload_steps.each do |step|
             with=step.fetch("with")
             expected=expected_upload_with.fetch(step.fetch("name")) { abort "unexpected upload artifact step: #{step["name"]}" }
@@ -1400,7 +1405,6 @@ jobs:
           retention-days: 90
           overwrite: false
           include-hidden-files: false
-          archive: true
 
   trusted-admission:
     if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.pull_requests[0].number != null && github.event.workflow_run.head_branch == 'formal/xen-kani-fv-002-replay-kernel' && github.event.workflow_run.conclusion == 'success'
@@ -1598,24 +1602,43 @@ jobs:
             -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/actions/upload-artifact/git/ref/tags/v6.0.0" \
             -o /tmp/upload-artifact-tag.json
+          curl --fail-with-body --silent --show-error \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "https://api.github.com/repos/actions/upload-artifact/contents/action.yml?ref=b7c566a772e6b6bfb58ed0dc250532a479d7789f" \
+            -o /tmp/upload-artifact-action.json
           python3 - <<\x27PY\x27
           import json
           from pathlib import Path
 
           d=json.loads(Path("/tmp/upload-artifact-commit.json").read_text())
           tag=json.loads(Path("/tmp/upload-artifact-tag.json").read_text())
+          action=json.loads(Path("/tmp/upload-artifact-action.json").read_text())
+          import base64
+          action_text=base64.b64decode(action["content"]).decode()
           assert d["sha"]=="b7c566a772e6b6bfb58ed0dc250532a479d7789f"
           assert d["repository"]["full_name"]=="actions/upload-artifact"
           assert tag["ref"]=="refs/tags/v6.0.0"
           assert tag["object"]["type"]=="commit"
           assert tag["object"]["sha"]=="b7c566a772e6b6bfb58ed0dc250532a479d7789f"
+          assert action["sha"]==os.environ["EXPECTED_UPLOAD_ARTIFACT_ACTION_BLOB"]
+          assert action["path"]=="action.yml"
+          assert action["name"]=="action.yml"
+          assert action_text.startswith("name: 'Upload a Build Artifact'")
+          assert "\ninputs:\n" in action_text
+          assert all(needle in action_text for needle in (
+              "\n  name:\n", "\n  path:\n", "\n  if-no-files-found:\n",
+              "\n  retention-days:\n", "\n  compression-level:\n",
+              "\n  overwrite:\n", "\n  include-hidden-files:\n",
+          ))
+          assert "\nruns:\n  using: 'node24'\n  main: 'dist/upload/index.js'\n" in action_text
           verification=d["commit"]["verification"]
           assert verification["verified"] is True
           assert verification["reason"]=="valid"
           assert verification.get("signature")
           assert verification.get("payload")
           assert verification.get("verified_at")
-          print("privileged upload-artifact v6.0.0 tag and commit signature verified by GitHub")
+          print("privileged upload-artifact v6.0.0 tag, action metadata, and commit signature verified by GitHub")
           PY
       - name: Verify triggering workflow identity and provenance
         shell: bash
@@ -2923,6 +2946,12 @@ jobs:
               and json.loads(Path("/tmp/upload-artifact-tag.json").read_text()).get("object",{}).get("type")=="commit"
               and json.loads(Path("/tmp/upload-artifact-tag.json").read_text()).get("object",{}).get("sha")=="b7c566a772e6b6bfb58ed0dc250532a479d7789f"
           )
+          upload_artifact_action_contract_verified=(
+              Path("/tmp/upload-artifact-action.json").exists()
+              and json.loads(Path("/tmp/upload-artifact-action.json").read_text()).get("sha")==os.environ["EXPECTED_UPLOAD_ARTIFACT_ACTION_BLOB"]
+              and json.loads(Path("/tmp/upload-artifact-action.json").read_text()).get("path")=="action.yml"
+              and json.loads(Path("/tmp/upload-artifact-action.json").read_text()).get("name")=="action.yml"
+          )
 
           envelope_evidence_ok=all(
               Path(path).exists() and Path(path).stat().st_size > 0
@@ -2942,6 +2971,7 @@ jobs:
               and workflow_identity_ok
               and upload_artifact_commit_signature_verified
               and upload_artifact_v6_tag_binding_verified
+              and upload_artifact_action_contract_verified
               and main_branch_protection_verified
               and final_main_branch_protection_verified
               and tree_delta_ok
@@ -3033,7 +3063,19 @@ jobs:
                   ).hexdigest()
                   if Path("/tmp/upload-artifact-tag.json").exists() else None
               ),
+              "upload_artifact_action_payload_sha256":(
+                  __import__("hashlib").sha256(
+                      Path("/tmp/upload-artifact-action.json").read_bytes()
+                  ).hexdigest()
+                  if Path("/tmp/upload-artifact-action.json").exists() else None
+              ),
+              "upload_artifact_action_blob":(
+                  json.loads(Path("/tmp/upload-artifact-action.json").read_text()).get("sha")
+                  if Path("/tmp/upload-artifact-action.json").exists() else None
+              ),
               "upload_artifact_commit_signature_verified":upload_artifact_commit_signature_verified,
+              "upload_artifact_v6_tag_binding_verified":upload_artifact_v6_tag_binding_verified,
+              "upload_artifact_action_contract_verified":upload_artifact_action_contract_verified,
               "upload_artifact_v6_tag_binding_verified":upload_artifact_v6_tag_binding_verified,
               "trigger_run_payload_sha256":(
                   __import__("hashlib").sha256(Path("/tmp/trigger-run.json").read_bytes()).hexdigest()
@@ -3211,6 +3253,8 @@ jobs:
             /tmp/trusted-workflow-run-event.json
             /tmp/verifier-run.json
             /tmp/upload-artifact-commit.json
+            /tmp/upload-artifact-tag.json
+            /tmp/upload-artifact-action.json
             /tmp/trigger-run.json
             /tmp/pr.json
             /tmp/base-tree-sha
@@ -3326,7 +3370,6 @@ jobs:
           retention-days: 90
           overwrite: false
           include-hidden-files: false
-          archive: true
       - name: Verify trusted evidence upload identity
         if: always()
         shell: bash
@@ -3681,7 +3724,6 @@ jobs:
           retention-days: 90
           overwrite: false
           include-hidden-files: false
-          archive: true
       - name: Verify authority terminal upload identity
         if: success()
         shell: bash
@@ -3817,4 +3859,3 @@ jobs:
           retention-days: 90
           overwrite: false
           include-hidden-files: false
-          archive: true
