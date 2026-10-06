@@ -15,6 +15,8 @@ permissions:
   contents: read
   pull-requests: read
 
+cache-mode: none
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.run_id }}
   cancel-in-progress: true
@@ -432,7 +434,7 @@ jobs:
           workflow=YAML.safe_load(File.read(".github/workflows/xen-kani-fv-002-trusted-admission.yml"), aliases: false)
           abort "workflow root must be a mapping" unless workflow.is_a?(Hash)
           top_level_keys=workflow.keys.map { |key| key == true ? "on" : key.to_s }.sort
-          abort "unexpected top-level workflow keys" unless top_level_keys == ["concurrency","env","jobs","name","on","permissions"]
+          abort "unexpected top-level workflow keys" unless top_level_keys == ["cache-mode","concurrency","env","jobs","name","on","permissions"]
           abort "workflow name mismatch" unless workflow["name"] == "Trusted XEN-KANI-FV-002 Admission"
           expected_env={
             "BASE_SHA"=>"057dd03043b8863d8f8280abf333331cc9ddf317",
@@ -887,6 +889,7 @@ jobs:
             "contents"=>"read",
             "pull-requests"=>"read",
           }
+          abort "workflow cache mode is not none" unless workflow.fetch("cache-mode") == "none"
 
           concurrency=workflow.fetch("concurrency")
           expected_group="$"+"{{ github.workflow }}"+"-"+"{{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.run_id }}"
