@@ -85,7 +85,7 @@ jobs:
               "Prepare trusted verifier workspace",
               "Verify trusted event envelope",
               "Verify trusted verifier workflow identity",
-            "Verify privileged artifact action provenance",
+              "Verify privileged artifact action provenance",
               "Verify triggering workflow identity and provenance",
               "Verify triggering workflow source identity",
               "Verify triggering PR identity",
@@ -1004,7 +1004,6 @@ jobs:
           expected_step_env["Execute all trusted cover witnesses as non-authoritative self-test"]={"CARGO_NET_OFFLINE"=>"true"}
           [
             "Verify trusted verifier workflow identity",
-            "Verify privileged artifact action provenance",
             "Verify triggering workflow identity and provenance",
             "Verify triggering workflow source identity",
             "Verify triggering PR identity",
