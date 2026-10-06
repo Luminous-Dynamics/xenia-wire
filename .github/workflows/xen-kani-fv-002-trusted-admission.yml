@@ -225,6 +225,9 @@ jobs:
           )
           for surface in forbidden_surfaces:
               assert surface not in workflow, f"forbidden workflow surface: {surface}"
+          forbidden_runner_state_files=tuple("GITHUB_"+suffix for suffix in ("ENV","PATH","OUTPUT","STATE"))
+          for surface in forbidden_runner_state_files:
+              assert surface not in workflow, f"forbidden runner state injection channel: {surface}"
 
           uses=re.findall(r"^\s+uses:\s+([^\s#]+)",workflow,re.MULTILINE)
           expected_uses=[
