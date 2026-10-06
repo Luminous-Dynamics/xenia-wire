@@ -279,6 +279,22 @@ jobs:
           shell_lines=[line for line in lines if re.fullmatch(r" {8}shell:.*",line)]
           assert len(shell_lines)==38, f"expected 38 shell declarations, got {len(shell_lines)}"
           invalid_shell_lines=[repr(line) for line in shell_lines if line!="        shell: bash"]
+          assert not invalid_shell_lines, f"all executable steps must use shell: bash; invalid={invalid_shell_lines!r}"
+          run_blocks=[]
+          for idx,line in enumerate(lines):
+              if not re.fullmatch(r" {8}run: \|",line):
+                  continue
+              body=[]
+              j=idx+1
+              while j < len(lines):
+                  candidate=lines[j]
+                  if candidate and len(candidate)-len(candidate.lstrip(" ")) <= 8:
+                      break
+                  body.append(candidate)
+                  j+=1
+              run_blocks.append("\n".join(body))
+          assert len(run_blocks)==38
+
           github_api_curl_commands=[]
           for block in run_blocks:
               block_lines=block.splitlines()
@@ -300,22 +316,6 @@ jobs:
               "X-GitHub-Api-Version: 2026-03-10" in command
               for command in github_api_curl_commands
           ), "every GitHub API curl command must pin X-GitHub-Api-Version"
-          assert not invalid_shell_lines, f"all executable steps must use shell: bash; invalid={invalid_shell_lines!r}"
-          run_blocks=[]
-          for idx,line in enumerate(lines):
-              if not re.fullmatch(r" {8}run: \|",line):
-                  continue
-              body=[]
-              j=idx+1
-              while j < len(lines):
-                  candidate=lines[j]
-                  if candidate and len(candidate)-len(candidate.lstrip(" ")) <= 8:
-                      break
-                  body.append(candidate)
-                  j+=1
-              run_blocks.append("\n".join(body))
-          assert len(run_blocks)==38
-
           def step_run_body(step_name):
               step_line="      - name: "+step_name
               try:
