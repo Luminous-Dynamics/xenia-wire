@@ -19,7 +19,7 @@ cache-mode: none
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.run_id }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   BASE_SHA: 057dd03043b8863d8f8280abf333331cc9ddf317
@@ -130,7 +130,7 @@ jobs:
           assert workflow.count("  workflow_run:\n")==1
           assert workflow.count("  pull_request:\n")==1
           assert "permissions:\n  actions: read\n  contents: read\n  pull-requests: read" in workflow
-          assert "cancel-in-progress: true" in workflow
+          assert "cancel-in-progress: false" in workflow
           for required_literal in (
               'test "$GITHUB_EVENT_NAME" = "workflow_run"',
               'test -f "$GITHUB_EVENT_PATH"',
@@ -1053,7 +1053,7 @@ jobs:
 
           concurrency=workflow.fetch("concurrency")
           expected_group="$"+"{{ github.workflow }}"+"-"+"{{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.run_id }}"
-          abort "concurrency contract mismatch" unless concurrency["cancel-in-progress"] == true && concurrency["group"] == expected_group
+          abort "concurrency contract mismatch" unless concurrency["cancel-in-progress"] == false && concurrency["group"] == expected_group
           puts "YAML semantic workflow guard passed"
           RUBY
 
