@@ -71,6 +71,7 @@ jobs:
           python3 - <<'PY'
           import ast
           import re
+          import subprocess
           import textwrap
           from pathlib import Path
 
@@ -207,6 +208,8 @@ jobs:
               'assert tag["object"]["type"]=="commit"',
               'assert tag["object"]["sha"]=="b7c566a772e6b6bfb58ed0dc250532a479d7789f"',
               'privileged upload-artifact v6.0.0 tag and commit signature verified by GitHub',
+              'subprocess.run',
+              '["bash","-n"]',
               'self-test checkout credential persistence enabled',
               'artifact overwrite must remain disabled',
               'artifact hidden-file inclusion must remain disabled',
@@ -479,6 +482,19 @@ jobs:
                   line.rstrip().endswith(chr(92)*2)
                   for line in block.splitlines()
               ), f"run block {index} contains a doubled shell continuation backslash"
+              shell_script="\n".join(
+                  line[10:] if line.startswith("          ") else line
+                  for line in block.splitlines()
+              )+"\n"
+              syntax=subprocess.run(
+                  ["bash","-n"],
+                  input=shell_script,
+                  text=True,
+                  capture_output=True,
+              )
+              assert syntax.returncode==0, (
+                  f"run block {index} fails bash -n: {syntax.stderr.strip()}"
+              )
           set_plus_blocks=[]
           set_fail_open="set "+"+e"
           set_fail_closed="set "+"-e"
