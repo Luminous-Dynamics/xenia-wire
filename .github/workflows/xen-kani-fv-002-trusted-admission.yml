@@ -567,6 +567,8 @@ jobs:
           ruby_source=ruby_blocks[0]
           assert ruby_source.count('expr=lambda { |value| expr_start+" "+value+" "+expr_end }')==1
           assert ruby_source.count('expr.call("github.')==8
+          assert ruby_source.index('"Retain authority terminal transport attestation"=>{') < ruby_source.index('expected_upload_keys=[')
+          assert ruby_source.index('upload_steps=selftest.fetch("steps")') < ruby_source.index('upload_steps.each do |step|')
           trusted_assignment='trusted=jobs.fetch("trusted-admission")'
           assert ruby_source.count(trusted_assignment)==1
           assert ruby_source.index(trusted_assignment) < ruby_source.index('upload_steps=selftest.fetch("steps")')
