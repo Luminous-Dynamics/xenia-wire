@@ -543,11 +543,8 @@ jobs:
                 "/tmp/kani-version.txt",
                 "/tmp/kani-rustc.txt",
                 "/tmp/trusted-admission.json",
-                "/tmp/trusted-artifact.json",
-                "/tmp/trusted-artifact-provenance.txt",
                 "/tmp/final-pr.json",
                 "/tmp/final-pr-freshness.txt",
-                "/tmp/terminal-pr.json",
                 "/tmp/hostile.json",
                 "/tmp/hostile.log",
                 "/tmp/hostile.exit",
@@ -569,8 +566,7 @@ jobs:
                 "/tmp/trusted-artifact-provenance.txt",
                 "/tmp/trusted-artifact-download.sha256",
                 "/tmp/trusted-artifact-members.txt",
-                "/tmp/authority-terminal-artifact-download.sha256",
-                "/tmp/authority-terminal-artifact-members.txt",
+                "/tmp/terminal-pr.json",
               ],
             },
           }
@@ -2835,7 +2831,6 @@ jobs:
             /tmp/trusted-admission.json
             /tmp/final-pr.json
             /tmp/final-pr-freshness.txt
-            /tmp/terminal-pr.json
             /tmp/hostile.json
             /tmp/hostile.log
             /tmp/hostile.exit
