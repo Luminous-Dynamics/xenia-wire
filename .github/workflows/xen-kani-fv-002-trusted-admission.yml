@@ -749,8 +749,6 @@ jobs:
                 "/tmp/terminal-pr.json",
               ],
             },
-          }
-
             "Retain authority terminal transport attestation"=>{
               "name"=>"trusted-xen-kani-fv-002-authority-terminal-transport-"+gexpr.call("github.run_id")+"-"+gexpr.call("github.run_attempt"),
               "if-no-files-found"=>"error",
@@ -764,6 +762,7 @@ jobs:
                 "/tmp/authority-terminal-artifact-members.txt",
               ],
             },
+          }
           expected_upload_keys=["name","path","if-no-files-found","retention-days","overwrite","include-hidden-files"]
           upload_steps.each do |step|
             with=step.fetch("with")
