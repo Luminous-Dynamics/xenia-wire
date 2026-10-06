@@ -2621,8 +2621,6 @@ jobs:
             /tmp/kani-release-asset.txt
             /tmp/kani-release-bundle-sha256.txt
             /tmp/trusted-admission.json
-            /tmp/trusted-artifact-download.sha256
-            /tmp/trusted-artifact-members.txt
             /tmp/final-pr.json
             /tmp/final-pr-freshness.txt
             /tmp/terminal-pr.json
