@@ -623,10 +623,119 @@ jobs:
           }
           abort "action inventory mismatch" unless observed_uses == expected_uses
 
+          expected_job_keys={
+            "non-authoritative-selftest"=>["if","permissions","runs-on","steps","timeout-minutes"],
+            "trusted-admission"=>["env","if","runs-on","steps","timeout-minutes"],
+          }
+          expected_job_if={
+            "non-authoritative-selftest"=>"github.event_name == 'pull_request'",
+            "trusted-admission"=>"github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.pull_requests[0].number != null && github.event.workflow_run.head_branch == 'formal/xen-kani-fv-002-replay-kernel' && github.event.workflow_run.conclusion == 'success'",
+          }
+          expected_job_permissions={
+            "non-authoritative-selftest"=>{"contents"=>"read"},
+          }
+          gexpr=lambda { |value| "$"+"{{ "+value+" }}" }
+          expected_trusted_job_env={
+            "PR_NUMBER"=>gexpr.call("github.event.workflow_run.pull_requests[0].number"),
+            "HEAD_SHA"=>gexpr.call("github.event.workflow_run.head_sha"),
+            "HEAD_REPO"=>gexpr.call("github.event.workflow_run.head_repository.full_name"),
+            "HEAD_BRANCH"=>gexpr.call("github.event.workflow_run.head_branch"),
+            "TRIGGER_RUN_ID"=>gexpr.call("github.event.workflow_run.id"),
+            "TRIGGER_RUN_ATTEMPT"=>gexpr.call("github.event.workflow_run.run_attempt"),
+            "TRIGGER_CONCLUSION"=>gexpr.call("github.event.workflow_run.conclusion"),
+          }
+          expected_step_if={
+            "Retain non-authoritative self-test evidence"=>"always()",
+            "Restore trusted clean source identity"=>"always()",
+            "Restore trusted clean source identity after reachability control"=>"always()",
+            "Retain trusted receipt"=>"always()",
+            "Verify trusted evidence inventory"=>"always()",
+            "Upload trusted evidence"=>"always()",
+            "Verify trusted evidence upload identity"=>"always()",
+            "Build authority terminal receipt"=>"success()",
+            "Upload authority terminal"=>"success()",
+            "Verify authority terminal upload identity"=>"success()",
+          }
+          expected_step_id={
+            "Fetch PR replay kernel as data"=>"fetch-subject",
+            "Upload trusted evidence"=>"trusted-evidence-upload",
+            "Upload authority terminal"=>"authority-terminal-upload",
+          }
+          expected_step_working_directory={
+            "Execute all trusted cover witnesses as non-authoritative self-test"=>"/tmp/xen-kani-selftest",
+            "Verify minimal trusted crate is locked and dependency-free"=>"/tmp/xen-kani-trusted",
+            "Run all trusted clean proofs"=>"/tmp/xen-kani-trusted",
+            "Run trusted reachability covers"=>"/tmp/xen-kani-trusted",
+            "Run trusted hostile control"=>"/tmp/xen-kani-trusted",
+            "Restore trusted clean source identity"=>"/tmp/xen-kani-trusted",
+            "Run hostile reachability control"=>"/tmp/xen-kani-trusted",
+            "Restore trusted clean source identity after reachability control"=>"/tmp/xen-kani-trusted",
+          }
+          expected_step_env={}
+          expected_step_env["Fetch frozen replay kernel for self-test"]={"GITHUB_TOKEN"=>gexpr.call("github.token")}
+          expected_step_env["Execute all trusted cover witnesses as non-authoritative self-test"]={"CARGO_NET_OFFLINE"=>"true"}
+          [
+            "Verify trusted verifier workflow identity",
+            "Verify triggering workflow identity and provenance",
+            "Verify triggering workflow source identity",
+            "Verify triggering PR identity",
+            "Reject trusted-verifier self-modification",
+            "Fetch PR replay kernel as data",
+            "Verify PR scope independently",
+            "Verify complete tree delta independently",
+            "Verify formal evidence contract independently",
+            "Re-verify triggering PR freshness before receipt",
+          ].each { |name| expected_step_env[name]={"GITHUB_TOKEN"=>gexpr.call("github.token")} }
+          [
+            "Verify minimal trusted crate is locked and dependency-free",
+            "Run all trusted clean proofs",
+            "Run trusted reachability covers",
+            "Run trusted hostile control",
+            "Run hostile reachability control",
+          ].each { |name| expected_step_env[name]={"CARGO_NET_OFFLINE"=>"true"} }
+          expected_step_env["Verify trusted evidence upload identity"]={
+            "GITHUB_TOKEN"=>gexpr.call("github.token"),
+            "ARTIFACT_ID"=>gexpr.call("steps.trusted-evidence-upload.outputs.artifact-id"),
+            "ARTIFACT_DIGEST"=>gexpr.call("steps.trusted-evidence-upload.outputs.artifact-digest"),
+            "EXPECTED_ARTIFACT_NAME"=>"trusted-xen-kani-fv-002-"+gexpr.call("github.event.workflow_run.pull_requests[0].number")+"-"+gexpr.call("github.event.workflow_run.head_sha")+"-"+gexpr.call("github.run_attempt"),
+            "EXPECTED_RUN_ID"=>gexpr.call("github.run_id"),
+          }
+          expected_step_env["Build authority terminal receipt"]={
+            "GITHUB_TOKEN"=>gexpr.call("github.token"),
+            "ARTIFACT_ID"=>gexpr.call("steps.trusted-evidence-upload.outputs.artifact-id"),
+            "ARTIFACT_DIGEST"=>gexpr.call("steps.trusted-evidence-upload.outputs.artifact-digest"),
+          }
+          expected_step_env["Verify authority terminal upload identity"]={
+            "GITHUB_TOKEN"=>gexpr.call("github.token"),
+            "ARTIFACT_ID"=>gexpr.call("steps.authority-terminal-upload.outputs.artifact-id"),
+            "ARTIFACT_DIGEST"=>gexpr.call("steps.authority-terminal-upload.outputs.artifact-digest"),
+            "EXPECTED_ARTIFACT_NAME"=>"trusted-xen-kani-fv-002-authority-terminal-"+gexpr.call("github.event.workflow_run.pull_requests[0].number")+"-"+gexpr.call("github.event.workflow_run.head_sha")+"-"+gexpr.call("github.run_attempt"),
+            "EXPECTED_RUN_ID"=>gexpr.call("github.run_id"),
+          }
+
           jobs.each do |job_id, job|
+            expected_keys=expected_job_keys.fetch(job_id) { abort "unexpected job id: #{job_id}" }
+            abort "job #{job_id} key surface mismatch" unless job.keys.map(&:to_s).sort == expected_keys.sort
+            abort "job #{job_id} if mismatch" unless job.fetch("if") == expected_job_if.fetch(job_id)
             abort "job #{job_id} must use ubuntu-24.04" unless job["runs-on"] == "ubuntu-24.04"
+            expected_timeout=(job_id == "non-authoritative-selftest" ? 30 : 60)
+            abort "job #{job_id} timeout mismatch" unless job["timeout-minutes"] == expected_timeout
+            if job_id == "non-authoritative-selftest"
+              abort "self-test job permissions mismatch" unless job.fetch("permissions") == expected_job_permissions.fetch(job_id)
+              abort "self-test job env must be absent" if job.key?("env")
+            else
+              abort "trusted job permissions must be absent" if job.key?("permissions")
+              abort "trusted job env mismatch" unless job.fetch("env") == expected_trusted_job_env
+            end
             job.fetch("steps").each do |step|
               keys=step.keys.map(&:to_s)
+              expected_if=expected_step_if.fetch(step.fetch("name"), nil)
+              abort "step if mismatch in #{step["name"]}" unless step["if"] == expected_if
+              expected_id=expected_step_id.fetch(step.fetch("name"), nil)
+              abort "step id mismatch in #{step["name"]}" unless step["id"] == expected_id
+              expected_wd=expected_step_working_directory.fetch(step.fetch("name"), nil)
+              abort "step working-directory mismatch in #{step["name"]}" unless step["working-directory"] == expected_wd
+              abort "step env mismatch in #{step["name"]}" unless step.fetch("env", {}) == expected_step_env.fetch(step.fetch("name"), {})
               abort "step has both run and uses: #{step["name"]}" if step.key?("run") && step.key?("uses")
               if step.key?("run")
                 abort "run step must use bash: #{step["name"]}" unless step["shell"] == "bash"
