@@ -45,6 +45,7 @@ env:
   EXPECTED_KANI_CRATE_SHA256: 842fabd2ba8b13babab862e21fef2946b581d493f23062d5ce86266630f1d1ae
   EXPECTED_KANI_RUST_TOOLCHAIN: nightly-2026-08-21
   EXPECTED_KANI_RUST_COMMIT_HASH: 8925ea358a0f265ca61026aadc7ecc506c545cbe
+  EXPECTED_UPLOAD_ARTIFACT_REPO_ID: 192625955
   EXPECTED_UPLOAD_ARTIFACT_ACTION_BLOB: 28f04cc696830ad0609506e0888d8b3b83d5d616
 
 jobs:
@@ -188,6 +189,7 @@ jobs:
               'https://api.github.com/repos/actions/upload-artifact/commits/b7c566a772e6b6bfb58ed0dc250532a479d7789f',
               'https://api.github.com/repos/actions/upload-artifact/git/ref/tags/v6.0.0',
               'https://api.github.com/repos/actions/upload-artifact/contents/action.yml?ref=b7c566a772e6b6bfb58ed0dc250532a479d7789f',
+              'assert d["repository"]["id"]==int(os.environ["EXPECTED_UPLOAD_ARTIFACT_REPO_ID"])',
               'assert action["sha"]==os.environ["EXPECTED_UPLOAD_ARTIFACT_ACTION_BLOB"]',
               'assert action["path"]=="action.yml"',
               'assert action["name"]=="action.yml"',
@@ -1648,6 +1650,7 @@ jobs:
           action_text=base64.b64decode(action["content"]).decode()
           assert d["sha"]=="b7c566a772e6b6bfb58ed0dc250532a479d7789f"
           assert d["repository"]["full_name"]=="actions/upload-artifact"
+          assert d["repository"]["id"]==int(os.environ["EXPECTED_UPLOAD_ARTIFACT_REPO_ID"])
           assert tag["ref"]=="refs/tags/v6.0.0"
           assert tag["object"]["type"]=="commit"
           assert tag["object"]["sha"]=="b7c566a772e6b6bfb58ed0dc250532a479d7789f"
@@ -2989,6 +2992,7 @@ jobs:
           )
           upload_artifact_action_contract_verified=(
               Path("/tmp/upload-artifact-action.json").exists()
+              and json.loads(Path("/tmp/upload-artifact-commit.json").read_text()).get("repository",{}).get("id")==int(os.environ["EXPECTED_UPLOAD_ARTIFACT_REPO_ID"])
               and json.loads(Path("/tmp/upload-artifact-action.json").read_text()).get("sha")==os.environ["EXPECTED_UPLOAD_ARTIFACT_ACTION_BLOB"]
               and json.loads(Path("/tmp/upload-artifact-action.json").read_text()).get("path")=="action.yml"
               and json.loads(Path("/tmp/upload-artifact-action.json").read_text()).get("name")=="action.yml"
@@ -3113,6 +3117,10 @@ jobs:
               "upload_artifact_action_blob":(
                   json.loads(Path("/tmp/upload-artifact-action.json").read_text()).get("sha")
                   if Path("/tmp/upload-artifact-action.json").exists() else None
+              ),
+              "upload_artifact_repository_id":(
+                  json.loads(Path("/tmp/upload-artifact-commit.json").read_text()).get("repository",{}).get("id")
+                  if Path("/tmp/upload-artifact-commit.json").exists() else None
               ),
               "upload_artifact_commit_signature_verified":upload_artifact_commit_signature_verified,
               "upload_artifact_v6_tag_binding_verified":upload_artifact_v6_tag_binding_verified,
