@@ -481,6 +481,109 @@ jobs:
           abort "self-test checkout ref mismatch" unless checkout_with["ref"] == expected_checkout_ref
           abort "self-test checkout fetch-depth mismatch" unless checkout_with["fetch-depth"] == 1
           abort "self-test checkout credential persistence enabled" unless checkout_with["persist-credentials"] == false
+          abort "self-test checkout key surface mismatch" unless checkout_with.keys.map(&:to_s).sort == ["fetch-depth","persist-credentials","ref"].sort
+
+          expected_upload_with={
+            "Retain non-authoritative self-test evidence"=>{
+              "name"=>"xen-kani-fv-002-reachability-selftest-"+gexpr.call("github.event.pull_request.head.sha")+"-"+gexpr.call("github.run_attempt"),
+              "if-no-files-found"=>"error",
+              "retention-days"=>30,
+              "overwrite"=>false,
+              "include-hidden-files"=>false,
+              "path"=>[
+                "/tmp/replay_kernel_cover.rs",
+                "/tmp/selftest-replay_kernel.rs",
+                "/tmp/selftest-replay-kernel.blob",
+                "/tmp/selftest-covers.txt",
+                "/tmp/selftest-kani-version.txt",
+                "/tmp/selftest-kani-rustc.txt",
+                "/tmp/kani-verifier-0.68.0.crate",
+                "/tmp/selftest-*.json",
+                "/tmp/selftest-*.log",
+              ],
+            },
+            "Upload trusted evidence"=>{
+              "name"=>"trusted-xen-kani-fv-002-"+gexpr.call("github.event.workflow_run.pull_requests[0].number")+"-"+gexpr.call("github.event.workflow_run.head_sha")+"-"+gexpr.call("github.run_attempt"),
+              "if-no-files-found"=>"error",
+              "retention-days"=>30,
+              "overwrite"=>false,
+              "include-hidden-files"=>false,
+              "path"=>[
+                "/tmp/trusted-subject.txt",
+                "/tmp/verifier-workflow.txt",
+                "/tmp/verifier-workflow.blob",
+                "/tmp/main-branch.json",
+                "/tmp/final-main-branch.json",
+                "/tmp/trigger-workflow.txt",
+                "/tmp/trigger-workflow.blob",
+                "/tmp/trusted-workflow-run-event.json",
+                "/tmp/verifier-run.json",
+                "/tmp/trigger-run.json",
+                "/tmp/pr.json",
+                "/tmp/base-tree-sha",
+                "/tmp/head-tree-sha",
+                "/tmp/trusted-tree-delta.txt",
+                "/tmp/trusted-reachability-manifest.json",
+                "/tmp/cover_*.json",
+                "/tmp/cover_*.log",
+                "/tmp/cover_*.exit",
+                "/tmp/cover-hostile.json",
+                "/tmp/cover-hostile.log",
+                "/tmp/cover-hostile.exit",
+                "/tmp/hostile-cover-mutant-kernel.blob",
+                "/tmp/hostile-cover-restored-kernel.blob",
+                "/tmp/xen-kani-trusted/src/replay_kernel_cover.rs",
+                "/tmp/cover-harnesses.txt",
+                "/tmp/trusted-clean-manifest.json",
+                "/tmp/kernel_*.json",
+                "/tmp/xen-kani-trusted/kernel.blob",
+                "/tmp/xen-kani-trusted/proof.blob",
+                "/tmp/xen-kani-trusted/evidence.blob",
+                "/tmp/xen-kani-trusted/evidence.json",
+                "/tmp/kani-version.txt",
+                "/tmp/kani-rustc.txt",
+                "/tmp/trusted-admission.json",
+                "/tmp/trusted-artifact.json",
+                "/tmp/trusted-artifact-provenance.txt",
+                "/tmp/final-pr.json",
+                "/tmp/final-pr-freshness.txt",
+                "/tmp/terminal-pr.json",
+                "/tmp/hostile.json",
+                "/tmp/hostile.log",
+                "/tmp/hostile.exit",
+                "/tmp/hostile-mutant-kernel.blob",
+                "/tmp/hostile-restored-kernel.blob",
+              ],
+            },
+            "Upload authority terminal"=>{
+              "name"=>"trusted-xen-kani-fv-002-authority-terminal-"+gexpr.call("github.event.workflow_run.pull_requests[0].number")+"-"+gexpr.call("github.event.workflow_run.head_sha")+"-"+gexpr.call("github.run_attempt"),
+              "if-no-files-found"=>"error",
+              "retention-days"=>30,
+              "overwrite"=>false,
+              "include-hidden-files"=>false,
+              "path"=>[
+                "/tmp/authority-terminal.json",
+                "/tmp/terminal-main-branch.json",
+                "/tmp/terminal-main-commit.json",
+                "/tmp/trusted-artifact.json",
+                "/tmp/trusted-artifact-provenance.txt",
+                "/tmp/trusted-artifact-download.sha256",
+                "/tmp/trusted-artifact-members.txt",
+                "/tmp/authority-terminal-artifact-download.sha256",
+                "/tmp/authority-terminal-artifact-members.txt",
+              ],
+            },
+          }
+
+          expected_upload_keys=["name","path","if-no-files-found","retention-days","overwrite","include-hidden-files"]
+          upload_steps.each do |step|
+            with=step.fetch("with")
+            expected=expected_upload_with.fetch(step.fetch("name")) { abort "unexpected upload artifact step: #{step["name"]}" }
+            abort "upload with-key surface mismatch in #{step["name"]}" unless with.keys.map(&:to_s).sort == expected_upload_keys.sort
+            abort "upload scalar metadata mismatch in #{step["name"]}" unless with.reject { |key,_| key.to_s == "path" } == expected.reject { |key,_| key.to_s == "path" }
+            observed_path=with.fetch("path").lines.map(&:strip).reject(&:empty?)
+            abort "upload path inventory mismatch in #{step["name"]}" unless observed_path == expected.fetch("path")
+          end
           upload_steps=selftest.fetch("steps").select { |step| step["uses"] == "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f" } + trusted.fetch("steps").select { |step| step["uses"] == "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f" }
           abort "artifact upload cardinality mismatch" unless upload_steps.length == 3
           abort "artifact overwrite must remain disabled" unless upload_steps.all? { |step| step.fetch("with").fetch("overwrite") == false }
