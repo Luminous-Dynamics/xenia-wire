@@ -183,6 +183,7 @@ jobs:
               'assert run["conclusion"]=="success"',
               'assert run["status"]=="completed"',
               'test "$HEAD_SHA" = "$EXPECTED_QUALIFIED_HEAD_SHA"',
+              'test "$RUSTUP_TOOLCHAIN" = "$EXPECTED_KANI_RUST_TOOLCHAIN"',
               'assert run["head_sha"]==os.environ["HEAD_SHA"]',
               'assert run["head_sha"]==os.environ["EXPECTED_QUALIFIED_HEAD_SHA"]',
               'assert run["head_commit"]["id"]==os.environ["HEAD_SHA"]',
@@ -1558,6 +1559,7 @@ jobs:
           test "$HEAD_BRANCH" = "$EXPECTED_TRIGGER_BRANCH"
           test "$HEAD_SHA" = "$EXPECTED_QUALIFIED_HEAD_SHA"
           test "$TRIGGER_CONCLUSION" = "success"
+          test "$RUSTUP_TOOLCHAIN" = "$EXPECTED_KANI_RUST_TOOLCHAIN"
           test -f "$GITHUB_EVENT_PATH"
           python3 - <<'PY'
           import json, os
@@ -3107,6 +3109,7 @@ jobs:
           pre_transport_authority_eligible=(
               envelope_evidence_ok
               and os.environ["HEAD_SHA"]==os.environ["EXPECTED_QUALIFIED_HEAD_SHA"]
+              and os.environ["RUSTUP_TOOLCHAIN"]==os.environ["EXPECTED_KANI_RUST_TOOLCHAIN"]
               and read_optional("/tmp/final-pr-freshness.txt") is not None
               and workflow_identity_ok
               and upload_artifact_commit_signature_verified
@@ -3348,6 +3351,7 @@ jobs:
               "kani_extraction_binding":read_optional("/tmp/kani-extraction-binding.txt"),
               "kani_registry_checksum":read_optional("/tmp/kani-registry-checksum.txt"),
               "kani_registry_checksum_verified":Path("/tmp/kani-crate-sha256.txt").exists() and Path("/tmp/kani-registry-checksum.txt").exists() and read_optional("/tmp/kani-crate-sha256.txt")==read_optional("/tmp/kani-registry-checksum.txt"),
+              "kani_rust_toolchain_env":os.environ.get("RUSTUP_TOOLCHAIN"),
               "kani_rust_binding_verified":(
                   ("commit-hash: "+os.environ["EXPECTED_KANI_RUST_COMMIT_HASH"])
                   in read_optional("/tmp/kani-rustc.txt","")
