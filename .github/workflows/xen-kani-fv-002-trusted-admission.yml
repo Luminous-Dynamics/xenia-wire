@@ -566,7 +566,8 @@ jobs:
           assert len(ruby_blocks)==1, f"unexpected Ruby heredoc count: {len(ruby_blocks)}"
           ruby_source=ruby_blocks[0]
           assert ruby_source.count('expr=lambda { |value| expr_start+" "+value+" "+expr_end }')==1
-          assert ruby_source.count('expr.call("github.')==8
+          assert len(re.findall(r'(?<!g)expr\.call\("github\.', ruby_source))==8
+          assert len(re.findall(r'gexpr\.call\("github\.', ruby_source))==35
           assert ruby_source.index('"Retain authority terminal transport attestation"=>{') < ruby_source.index('expected_upload_keys=[')
           assert ruby_source.index('upload_steps=selftest.fetch("steps")') < ruby_source.index('upload_steps.each do |step|')
           trusted_assignment='trusted=jobs.fetch("trusted-admission")'
