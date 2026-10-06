@@ -75,7 +75,24 @@ jobs:
           import textwrap
           from pathlib import Path
 
-          workflow=Path(".github/workflows/xen-kani-fv-002-trusted-admission.yml").read_text()
+          workflow_path=Path(".github/workflows/xen-kani-fv-002-trusted-admission.yml")
+          workflow=workflow_path.read_text()
+          event=json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
+          checked_out_sha=subprocess.check_output(["git","rev-parse","HEAD"], text=True).strip()
+          expected_checkout_sha=event["pull_request"]["head"]["sha"]
+          assert checked_out_sha==expected_checkout_sha, (
+              f"checkout HEAD mismatch: expected={expected_checkout_sha} observed={checked_out_sha}"
+          )
+          local_workflow_blob=subprocess.check_output(
+              ["git","hash-object",str(workflow_path)], text=True
+          ).strip()
+          tracked_workflow_blob=subprocess.check_output(
+              ["git","rev-parse",f"HEAD:{workflow_path.as_posix()}"], text=True
+          ).strip()
+          assert local_workflow_blob==tracked_workflow_blob, (
+              f"checked-out verifier workflow blob mismatch: "
+              f"tree={tracked_workflow_blob} local={local_workflow_blob}"
+          )
           required_steps=[
               "Checkout exact PR subject",
               "Verify trusted workflow structure and Python syntax",
@@ -137,6 +154,9 @@ jobs:
           assert "permissions:\n  actions: read\n  contents: read\n  pull-requests: read" in workflow
           assert "cancel-in-progress: false" in workflow
           for required_literal in (
+              'expected_checkout_sha=event["pull_request"]["head"]["sha"]',
+              'assert checked_out_sha==expected_checkout_sha',
+              'assert local_workflow_blob==tracked_workflow_blob',
               'test "$GITHUB_EVENT_NAME" = "workflow_run"',
               'test -f "$GITHUB_EVENT_PATH"',
               'test "$GITHUB_WORKFLOW_REF" = "$GITHUB_REPOSITORY/$VERIFIER_WORKFLOW_PATH@refs/heads/main"',
