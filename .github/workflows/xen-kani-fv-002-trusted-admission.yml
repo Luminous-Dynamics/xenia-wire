@@ -265,10 +265,10 @@ jobs:
 
           lines=workflow.splitlines()
           run_lines=[line for line in lines if re.fullmatch(r" {8}run:.*",line)]
-          assert len(run_lines)==37, f"expected 37 run steps, got {len(run_lines)}"
+          assert len(run_lines)==38, f"expected 38 run steps, got {len(run_lines)}"
           assert all(line=="        run: |" for line in run_lines), "all executable blocks must use literal run: |"
           shell_lines=[line for line in lines if re.fullmatch(r" {8}shell:.*",line)]
-          assert len(shell_lines)==37, f"expected 37 shell declarations, got {len(shell_lines)}"
+          assert len(shell_lines)==38, f"expected 38 shell declarations, got {len(shell_lines)}"
           invalid_shell_lines=[repr(line) for line in shell_lines if line!="        shell: bash"]
           assert not invalid_shell_lines, f"all executable steps must use shell: bash; invalid={invalid_shell_lines!r}"
           run_blocks=[]
@@ -284,7 +284,7 @@ jobs:
                   body.append(candidate)
                   j+=1
               run_blocks.append("\n".join(body))
-          assert len(run_blocks)==37
+          assert len(run_blocks)==38
 
           def step_run_body(step_name):
               step_line="      - name: "+step_name
