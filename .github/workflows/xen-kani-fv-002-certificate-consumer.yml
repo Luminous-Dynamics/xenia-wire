@@ -171,6 +171,34 @@ jobs:
           def parse_time(value):
               return datetime.fromisoformat(value.replace("Z","+00:00")).astimezone(timezone.utc)
 
+          def assert_certificate_canonicalization_selftest():
+              sample=canonical_certificate_bytes({
+                  "z":["é",None],
+                  "b":1,
+                  "a":True,
+              })
+              assert sample==b'{"a":true,"b":1,"z":["é",null]}'
+              duplicate_rejected=False
+              try:
+                  strict_json(b'{"a":1,"a":2}',"duplicate-vector")
+              except AssertionError:
+                  duplicate_rejected=True
+              assert duplicate_rejected
+              float_rejected=False
+              try:
+                  canonical_certificate_bytes({"x":1.0})
+              except AssertionError:
+                  float_rejected=True
+              assert float_rejected
+              surrogate_rejected=False
+              try:
+                  canonical_certificate_bytes({"x":"\ud800"})
+              except AssertionError:
+                  surrogate_rejected=True
+              assert surrogate_rejected
+
+          assert_certificate_canonicalization_selftest()
+
           def verify_repo(obj, key):
               repo=obj.get(key,{})
               assert repo.get("id")==REPO_ID, f"{key}.id mismatch"
@@ -539,6 +567,7 @@ jobs:
               "authority_terminal_artifact_digest":artifact_digest,
               "promotion_certificate_payload_digest":promotion_certificate_payload_digest,
               "promotion_certificate_canonicalization":os.environ["PROMOTION_CERTIFICATE_CANONICALIZATION"],
+              "promotion_certificate_canonicalization_selftest_verified":True,
               "verifier_run_candidates_observed":len(verifier_candidates),
               "authority_terminal_candidates":len(producer_candidates),
               "certificate_verifier_workflow_id":VERIFIER_WORKFLOW_ID,
