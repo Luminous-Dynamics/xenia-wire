@@ -602,6 +602,8 @@ jobs:
                   'assert receipt["promotion_eligible"] is False',
                   'terminal["promotion_eligible"]=True',
                   'terminal["terminal_main_branch_protection_verified"]=True',
+                  'Path("/tmp/trusted-curl-version.txt").read_text().strip()',
+                  'curl_parts >= (7,58,0)',
                   'terminal["curl_redirect_credential_safety_verified"]=True',
                   'terminal["curl_version"]=curl_version',
                   'terminal["terminal_main_branch_signed_tip_verified"]=(',
@@ -1677,6 +1679,7 @@ jobs:
         run: |
           set -euo pipefail
           curl_version="$(curl --version | awk 'NR==1 {print $2}')"
+          printf '%s\n' "$curl_version" > /tmp/trusted-curl-version.txt
           python3 - "$curl_version" <<'PY'
           import sys
           parts=tuple(int(part) for part in sys.argv[1].split(".")[:3])
@@ -4423,6 +4426,10 @@ jobs:
           assert terminal_pr["head"]["repo"]["full_name"] == os.environ["HEAD_REPO"]
           assert receipt["pre_transport_promotion_eligible"] is True
           assert receipt["promotion_eligible"] is False
+          curl_version=Path("/tmp/trusted-curl-version.txt").read_text().strip()
+          assert curl_version
+          curl_parts=tuple(int(part) for part in curl_version.split(".")[:3])
+          assert curl_parts >= (7,58,0)
           assert artifact["id"] == int(os.environ["ARTIFACT_ID"])
           assert artifact["digest"] == "sha256:"+os.environ["ARTIFACT_DIGEST"]
           assert artifact["workflow_run"]["id"] == int(os.environ["GITHUB_RUN_ID"])
