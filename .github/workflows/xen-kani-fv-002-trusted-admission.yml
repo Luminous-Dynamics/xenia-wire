@@ -137,10 +137,10 @@ jobs:
               "Verify trusted evidence inventory",
               "Upload trusted evidence",
               "Verify trusted evidence upload identity",
-              "Build authority terminal receipt",
-              "Upload authority terminal",
-              "Verify authority terminal upload identity",
-              "Retain authority terminal transport attestation",
+              "Build promotion terminal receipt",
+              "Upload promotion terminal",
+              "Verify promotion terminal upload identity",
+              "Retain promotion terminal transport attestation",
           ]
           assert len(required_steps)==43, f"expected 43 required steps, got {len(required_steps)}"
           required_step_lines=["      - name: "+name for name in required_steps]
@@ -204,7 +204,7 @@ jobs:
               'trigger_tree_entry["type"]=="blob"',
               'trigger_tree_entry["mode"]=="100644"',
               'trigger_tree_entry["sha"]==os.environ["EXPECTED_TRIGGER_WORKFLOW_BLOB"]',
-              'sha256sum /tmp/authority-terminal-artifact-download.zip',
+              'sha256sum /tmp/promotion-terminal-artifact-download.zip',
               'zipfile.ZipFile',
               'assert len(members) == len(set(members))',
               'actions/artifacts/$ARTIFACT_ID/zip',
@@ -240,7 +240,7 @@ jobs:
               'self-test checkout credential persistence enabled',
               'artifact overwrite must remain disabled',
               'artifact hidden-file inclusion must remain disabled',
-              'authority terminal must retain trusted transport evidence:',
+              'promotion terminal must retain trusted transport evidence:',
               'self-test checkout fetch-depth mismatch',
               'self-test checkout ref mismatch',
               'assert checksum==os.environ["EXPECTED_KANI_CRATE_SHA256"]',
@@ -294,7 +294,7 @@ jobs:
               'terminal["terminal_main_branch_protection_sha256"]',
               'terminal["terminal_main_branch_signed_tip_verified"] is True',
               'terminal_commit_signature_verified',
-              'authority terminal must retain terminal main branch evidence',
+              'promotion terminal must retain terminal main branch evidence',
               'assert concurrency["group"] == expected_group',
           ):
               assert required_literal in workflow, f"missing event envelope guard: {required_literal}"
@@ -595,7 +595,7 @@ jobs:
                   '"final_trigger_job_steps_verified":final_trigger_job_steps_ok',
                   '"final_trigger_job_steps_schema":critical_step_attestation_schema',
               ],
-              "Build authority terminal receipt":[
+              "Build promotion terminal receipt":[
                   'assert d["base"]["repo"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])',
                   'assert d["head"]["repo"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])',
                   'assert receipt["pre_transport_promotion_eligible"] is True',
@@ -607,7 +607,7 @@ jobs:
                   'terminal["terminal_main_branch_signed_tip_verified"]=(',
                   'terminal["terminal_commit_signature_verified"]=(',
               ],
-              "Verify authority terminal upload identity":[
+              "Verify promotion terminal upload identity":[
                   'assert d["id"] == int(os.environ["ARTIFACT_ID"])',
                   'assert d["name"] == os.environ["EXPECTED_ARTIFACT_NAME"]',
                   'assert d["digest"] == "sha256:"+os.environ["ARTIFACT_DIGEST"]',
@@ -700,8 +700,8 @@ jobs:
               expr("github.run_id"):8,
               expr("steps.trusted-evidence-upload.outputs.artifact-id"):2,
               expr("steps.trusted-evidence-upload.outputs.artifact-digest"):2,
-              expr("steps.authority-terminal-upload.outputs.artifact-id"):1,
-              expr("steps.authority-terminal-upload.outputs.artifact-digest"):1,
+              expr("steps.promotion-terminal-upload.outputs.artifact-id"):1,
+              expr("steps.promotion-terminal-upload.outputs.artifact-digest"):1,
           }
           assert expressions==Counter(expected_expression_counts)
           for block in run_blocks:
@@ -805,7 +805,7 @@ jobs:
           observed_gexpr_calls=re.findall(r'gexpr\.call\("([^"]+)"\)',ruby_source)
           assert len(observed_gexpr_calls)==35
           assert all(call.startswith("github.") for call in observed_gexpr_calls)
-          assert ruby_source.index('"Retain authority terminal transport attestation"=>{') < ruby_source.index('expected_upload_keys=[')
+          assert ruby_source.index('"Retain promotion terminal transport attestation"=>{') < ruby_source.index('expected_upload_keys=[')
           assert ruby_source.index('upload_steps=selftest.fetch("steps")') < ruby_source.index('upload_steps.each do |step|')
           trusted_assignment='trusted=jobs.fetch("trusted-admission")'
           assert ruby_source.count(trusted_assignment)==1
@@ -1013,14 +1013,14 @@ jobs:
                 "/tmp/hostile-restored-kernel.blob",
               ],
             },
-            "Upload authority terminal"=>{
-              "name"=>"trusted-xen-kani-fv-002-authority-terminal-"+gexpr.call("github.event.workflow_run.pull_requests[0].number")+"-"+gexpr.call("github.event.workflow_run.head_sha")+"-"+gexpr.call("github.run_id")+"-"+gexpr.call("github.run_attempt"),
+            "Upload promotion terminal"=>{
+              "name"=>"trusted-xen-kani-fv-002-promotion-terminal-"+gexpr.call("github.event.workflow_run.pull_requests[0].number")+"-"+gexpr.call("github.event.workflow_run.head_sha")+"-"+gexpr.call("github.run_id")+"-"+gexpr.call("github.run_attempt"),
               "if-no-files-found"=>"error",
               "retention-days"=>90,
               "overwrite"=>false,
               "include-hidden-files"=>false,
               "path"=>[
-                "/tmp/authority-terminal.json",
+                "/tmp/promotion-terminal.json",
                 "/tmp/terminal-main-branch.json",
                 "/tmp/terminal-main-commit.json",
                 "/tmp/trusted-artifact.json",
@@ -1030,17 +1030,17 @@ jobs:
                 "/tmp/terminal-pr.json",
               ],
             },
-            "Retain authority terminal transport attestation"=>{
-              "name"=>"trusted-xen-kani-fv-002-authority-terminal-transport-"+gexpr.call("github.run_id")+"-"+gexpr.call("github.run_attempt"),
+            "Retain promotion terminal transport attestation"=>{
+              "name"=>"trusted-xen-kani-fv-002-promotion-terminal-transport-"+gexpr.call("github.run_id")+"-"+gexpr.call("github.run_attempt"),
               "if-no-files-found"=>"error",
               "retention-days"=>90,
               "overwrite"=>false,
               "include-hidden-files"=>false,
               "path"=>[
-                "/tmp/authority-terminal-transport-attestation.json",
-                "/tmp/authority-terminal-artifact.json",
-                "/tmp/authority-terminal-artifact-download.sha256",
-                "/tmp/authority-terminal-artifact-members.txt",
+                "/tmp/promotion-terminal-transport-attestation.json",
+                "/tmp/promotion-terminal-artifact.json",
+                "/tmp/promotion-terminal-artifact-download.sha256",
+                "/tmp/promotion-terminal-artifact-members.txt",
               ],
             },
           }
@@ -1057,11 +1057,11 @@ jobs:
           abort "artifact upload cardinality mismatch" unless upload_steps.length == 4
           abort "artifact overwrite must remain disabled" unless upload_steps.all? { |step| step.fetch("with").fetch("overwrite") == false }
           abort "artifact hidden-file inclusion must remain disabled" unless upload_steps.all? { |step| step.fetch("with").fetch("include-hidden-files") == false }
-          authority_terminal_upload=trusted.fetch("steps").find { |step| step["name"] == "Upload authority terminal" }
-          abort "authority terminal upload step missing" unless authority_terminal_upload
+          authority_terminal_upload=trusted.fetch("steps").find { |step| step["name"] == "Upload promotion terminal" }
+          abort "promotion terminal upload step missing" unless authority_terminal_upload
           authority_terminal_paths=authority_terminal_upload.fetch("with").fetch("path")
           %w[/tmp/trusted-artifact.json /tmp/trusted-artifact-provenance.txt /tmp/trusted-artifact-download.sha256 /tmp/trusted-artifact-members.txt].each do |required_path|
-            abort "authority terminal must retain trusted transport evidence: #{required_path}" unless authority_terminal_paths.include?(required_path)
+            abort "promotion terminal must retain trusted transport evidence: #{required_path}" unless authority_terminal_paths.include?(required_path)
           end
           abort "self-test runner mismatch" unless selftest["runs-on"] == "ubuntu-24.04" && selftest["timeout-minutes"] == 30
           abort "self-test permissions mismatch" unless selftest["permissions"] == {"contents"=>"read"}
@@ -1124,10 +1124,10 @@ jobs:
             "Verify trusted evidence inventory",
             "Upload trusted evidence",
             "Verify trusted evidence upload identity",
-            "Build authority terminal receipt",
-            "Upload authority terminal",
-            "Verify authority terminal upload identity",
-            "Retain authority terminal transport attestation",
+            "Build promotion terminal receipt",
+            "Upload promotion terminal",
+            "Verify promotion terminal upload identity",
+            "Retain promotion terminal transport attestation",
           ]
           observed_all_steps=jobs.values.flat_map { |job| job.fetch("steps").map { |step| step["name"] } }
           abort "semantic step inventory mismatch" unless observed_all_steps == expected_all_steps
@@ -1174,10 +1174,10 @@ jobs:
             "Verify trusted evidence inventory",
             "Upload trusted evidence",
             "Verify trusted evidence upload identity",
-            "Build authority terminal receipt",
-            "Upload authority terminal",
-            "Verify authority terminal upload identity",
-            "Retain authority terminal transport attestation",
+            "Build promotion terminal receipt",
+            "Upload promotion terminal",
+            "Verify promotion terminal upload identity",
+            "Retain promotion terminal transport attestation",
           ]
           selftest_observed=selftest.fetch("steps").map { |step| step["name"] }
           trusted_observed=trusted.fetch("steps").map { |step| step["name"] }
@@ -1229,15 +1229,15 @@ jobs:
             "Verify trusted evidence inventory"=>"always()",
             "Upload trusted evidence"=>"always()",
             "Verify trusted evidence upload identity"=>"always()",
-            "Build authority terminal receipt"=>"success()",
-            "Upload authority terminal"=>"success()",
-            "Verify authority terminal upload identity"=>"success()",
-            "Retain authority terminal transport attestation"=>"always()",
+            "Build promotion terminal receipt"=>"success()",
+            "Upload promotion terminal"=>"success()",
+            "Verify promotion terminal upload identity"=>"success()",
+            "Retain promotion terminal transport attestation"=>"always()",
           }
           expected_step_id={
             "Fetch PR replay kernel as data"=>"fetch-subject",
             "Upload trusted evidence"=>"trusted-evidence-upload",
-            "Upload authority terminal"=>"authority-terminal-upload",
+            "Upload promotion terminal"=>"promotion-terminal-upload",
           }
           expected_step_working_directory={
             "Execute all trusted cover witnesses as non-authoritative self-test"=>"/tmp/xen-kani-selftest",
@@ -1278,16 +1278,16 @@ jobs:
             "EXPECTED_ARTIFACT_NAME"=>"trusted-xen-kani-fv-002-"+gexpr.call("github.event.workflow_run.pull_requests[0].number")+"-"+gexpr.call("github.event.workflow_run.head_sha")+"-"+gexpr.call("github.run_id")+"-"+gexpr.call("github.run_attempt"),
             "EXPECTED_RUN_ID"=>gexpr.call("github.run_id"),
           }
-          expected_step_env["Build authority terminal receipt"]={
+          expected_step_env["Build promotion terminal receipt"]={
             "GITHUB_TOKEN"=>gexpr.call("github.token"),
             "ARTIFACT_ID"=>gexpr.call("steps.trusted-evidence-upload.outputs.artifact-id"),
             "ARTIFACT_DIGEST"=>gexpr.call("steps.trusted-evidence-upload.outputs.artifact-digest"),
           }
-          expected_step_env["Verify authority terminal upload identity"]={
+          expected_step_env["Verify promotion terminal upload identity"]={
             "GITHUB_TOKEN"=>gexpr.call("github.token"),
-            "ARTIFACT_ID"=>gexpr.call("steps.authority-terminal-upload.outputs.artifact-id"),
-            "ARTIFACT_DIGEST"=>gexpr.call("steps.authority-terminal-upload.outputs.artifact-digest"),
-            "EXPECTED_ARTIFACT_NAME"=>"trusted-xen-kani-fv-002-authority-terminal-"+gexpr.call("github.event.workflow_run.pull_requests[0].number")+"-"+gexpr.call("github.event.workflow_run.head_sha")+"-"+gexpr.call("github.run_id")+"-"+gexpr.call("github.run_attempt"),
+            "ARTIFACT_ID"=>gexpr.call("steps.promotion-terminal-upload.outputs.artifact-id"),
+            "ARTIFACT_DIGEST"=>gexpr.call("steps.promotion-terminal-upload.outputs.artifact-digest"),
+            "EXPECTED_ARTIFACT_NAME"=>"trusted-xen-kani-fv-002-promotion-terminal-"+gexpr.call("github.event.workflow_run.pull_requests[0].number")+"-"+gexpr.call("github.event.workflow_run.head_sha")+"-"+gexpr.call("github.run_id")+"-"+gexpr.call("github.run_attempt"),
             "EXPECTED_RUN_ID"=>gexpr.call("github.run_id"),
           }
 
@@ -4313,7 +4313,7 @@ jobs:
           cat /tmp/trusted-artifact-provenance.txt
 
 
-      - name: Build authority terminal receipt
+      - name: Build promotion terminal receipt
         if: success()
         shell: bash
         env:
@@ -4460,20 +4460,20 @@ jobs:
           terminal["pre_transport_receipt_sha256"]=hashlib.sha256(
               Path("/tmp/trusted-admission.json").read_bytes()
           ).hexdigest()
-          Path("/tmp/authority-terminal.json").write_text(
+          Path("/tmp/promotion-terminal.json").write_text(
               json.dumps(terminal,indent=2,sort_keys=True)+"\n"
           )
           PY
-          cat /tmp/authority-terminal.json
+          cat /tmp/promotion-terminal.json
 
-      - name: Upload authority terminal
+      - name: Upload promotion terminal
         if: success()
-        id: authority-terminal-upload
+        id: promotion-terminal-upload
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: trusted-xen-kani-fv-002-authority-terminal-${{ github.event.workflow_run.pull_requests[0].number }}-${{ github.event.workflow_run.head_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: trusted-xen-kani-fv-002-promotion-terminal-${{ github.event.workflow_run.pull_requests[0].number }}-${{ github.event.workflow_run.head_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            /tmp/authority-terminal.json
+            /tmp/promotion-terminal.json
             /tmp/terminal-main-branch.json
             /tmp/terminal-main-commit.json
             /tmp/trusted-artifact.json
@@ -4484,14 +4484,14 @@ jobs:
           retention-days: 90
           overwrite: false
           include-hidden-files: false
-      - name: Verify authority terminal upload identity
+      - name: Verify promotion terminal upload identity
         if: success()
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          ARTIFACT_ID: ${{ steps.authority-terminal-upload.outputs.artifact-id }}
-          ARTIFACT_DIGEST: ${{ steps.authority-terminal-upload.outputs.artifact-digest }}
-          EXPECTED_ARTIFACT_NAME: trusted-xen-kani-fv-002-authority-terminal-${{ github.event.workflow_run.pull_requests[0].number }}-${{ github.event.workflow_run.head_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          ARTIFACT_ID: ${{ steps.promotion-terminal-upload.outputs.artifact-id }}
+          ARTIFACT_DIGEST: ${{ steps.promotion-terminal-upload.outputs.artifact-digest }}
+          EXPECTED_ARTIFACT_NAME: trusted-xen-kani-fv-002-promotion-terminal-${{ github.event.workflow_run.pull_requests[0].number }}-${{ github.event.workflow_run.head_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           EXPECTED_RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
@@ -4503,19 +4503,19 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/actions/artifacts/$ARTIFACT_ID" \
-            -o /tmp/authority-terminal-artifact.json
+            -o /tmp/promotion-terminal-artifact.json
           curl --fail-with-body --silent --show-error --location \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/actions/artifacts/$ARTIFACT_ID/zip" \
-            -o /tmp/authority-terminal-artifact-download.zip
-          sha256sum /tmp/authority-terminal-artifact-download.zip | cut -d" " -f1 > /tmp/authority-terminal-artifact-download.sha256
+            -o /tmp/promotion-terminal-artifact-download.zip
+          sha256sum /tmp/promotion-terminal-artifact-download.zip | cut -d" " -f1 > /tmp/promotion-terminal-artifact-download.sha256
           python3 - <<'PY'
           import json, os, zipfile
           from pathlib import Path, PurePosixPath
 
-          d=json.loads(Path("/tmp/authority-terminal-artifact.json").read_text())
+          d=json.loads(Path("/tmp/promotion-terminal-artifact.json").read_text())
           verifier_run=json.loads(Path("/tmp/verifier-run.json").read_text())
           assert d["id"] == int(os.environ["ARTIFACT_ID"])
           assert d["name"] == os.environ["EXPECTED_ARTIFACT_NAME"]
@@ -4529,9 +4529,9 @@ jobs:
           assert verifier_run["run_attempt"] == int(os.environ["GITHUB_RUN_ATTEMPT"])
           assert d["workflow_run"]["head_sha"] == os.environ["GITHUB_SHA"]
           assert d["expired"] is False
-          downloaded_digest=Path("/tmp/authority-terminal-artifact-download.sha256").read_text().strip()
+          downloaded_digest=Path("/tmp/promotion-terminal-artifact-download.sha256").read_text().strip()
           assert downloaded_digest == os.environ["ARTIFACT_DIGEST"]
-          with zipfile.ZipFile("/tmp/authority-terminal-artifact-download.zip") as archive:
+          with zipfile.ZipFile("/tmp/promotion-terminal-artifact-download.zip") as archive:
               archive_names=archive.namelist()
               members=[x for x in archive_names if x and not x.endswith("/")]
           assert archive_names
@@ -4545,7 +4545,7 @@ jobs:
           assert members
           member_basenames={PurePosixPath(name).name for name in members}
           expected_members={
-              "authority-terminal.json",
+              "promotion-terminal.json",
               "terminal-main-branch.json",
               "terminal-main-commit.json",
               "trusted-artifact.json",
@@ -4555,12 +4555,12 @@ jobs:
               "terminal-pr.json",
           }
           assert set(archive_names)==expected_members, (
-              f"authority terminal archive member set mismatch: "
+              f"promotion terminal archive member set mismatch: "
               f"unexpected={sorted(set(archive_names)-expected_members)} "
               f"missing={sorted(expected_members-set(archive_names))}"
           )
           critical_members={
-              "authority-terminal.json":"/tmp/authority-terminal.json",
+              "promotion-terminal.json":"/tmp/promotion-terminal.json",
               "terminal-main-branch.json":"/tmp/terminal-main-branch.json",
               "terminal-main-commit.json":"/tmp/terminal-main-commit.json",
               "trusted-artifact.json":"/tmp/trusted-artifact.json",
@@ -4569,19 +4569,19 @@ jobs:
               "trusted-artifact-members.txt":"/tmp/trusted-artifact-members.txt",
               "terminal-pr.json":"/tmp/terminal-pr.json",
           }
-          with zipfile.ZipFile("/tmp/authority-terminal-artifact-download.zip") as archive:
+          with zipfile.ZipFile("/tmp/promotion-terminal-artifact-download.zip") as archive:
               for name, local_path in critical_members.items():
                   assert archive.read(name)==Path(local_path).read_bytes(), (
-                      f"authority terminal member content mismatch: {name}"
+                      f"promotion terminal member content mismatch: {name}"
                   )
-          Path("/tmp/authority-terminal-artifact-members.txt").write_text("\n".join(sorted(members))+"\n")
+          Path("/tmp/promotion-terminal-artifact-members.txt").write_text("\n".join(sorted(members))+"\n")
           PY
           python3 - <<'PY'
           import hashlib, json, os
           from pathlib import Path
 
-          with __import__("zipfile").ZipFile("/tmp/authority-terminal-artifact-download.zip") as archive:
-              assert archive.read("authority-terminal.json")==Path("/tmp/authority-terminal.json").read_bytes()
+          with __import__("zipfile").ZipFile("/tmp/promotion-terminal-artifact-download.zip") as archive:
+              assert archive.read("promotion-terminal.json")==Path("/tmp/promotion-terminal.json").read_bytes()
               assert archive.read("terminal-main-branch.json")==Path("/tmp/terminal-main-branch.json").read_bytes()
               assert archive.read("terminal-main-commit.json")==Path("/tmp/terminal-main-commit.json").read_bytes()
               assert archive.read("trusted-artifact.json")==Path("/tmp/trusted-artifact.json").read_bytes()
@@ -4589,34 +4589,34 @@ jobs:
               assert archive.read("trusted-artifact-download.sha256")==Path("/tmp/trusted-artifact-download.sha256").read_bytes()
               assert archive.read("trusted-artifact-members.txt")==Path("/tmp/trusted-artifact-members.txt").read_bytes()
           transport={
-              "schema":"xenia.formal.kani-replay-kernel.authority-terminal-transport.v1",
+              "schema":"xenia.formal.kani-replay-kernel.promotion-terminal-transport.v1",
               "promotion_eligible":False,
               "verifier_run_id":int(os.environ["GITHUB_RUN_ID"]),
               "verifier_run_attempt":int(os.environ["GITHUB_RUN_ATTEMPT"]),
               "artifact_id":int(os.environ["ARTIFACT_ID"]),
               "artifact_name":os.environ["EXPECTED_ARTIFACT_NAME"],
               "artifact_digest":"sha256:"+os.environ["ARTIFACT_DIGEST"],
-              "downloaded_archive_sha256":Path("/tmp/authority-terminal-artifact-download.sha256").read_text().strip(),
-              "member_manifest_sha256":hashlib.sha256(Path("/tmp/authority-terminal-artifact-members.txt").read_bytes()).hexdigest(),
-              "member_manifest_path":"/tmp/authority-terminal-artifact-members.txt",
+              "downloaded_archive_sha256":Path("/tmp/promotion-terminal-artifact-download.sha256").read_text().strip(),
+              "member_manifest_sha256":hashlib.sha256(Path("/tmp/promotion-terminal-artifact-members.txt").read_bytes()).hexdigest(),
+              "member_manifest_path":"/tmp/promotion-terminal-artifact-members.txt",
           }
           assert transport["downloaded_archive_sha256"]==os.environ["ARTIFACT_DIGEST"]
-          Path("/tmp/authority-terminal-transport-attestation.json").write_text(
+          Path("/tmp/promotion-terminal-transport-attestation.json").write_text(
               json.dumps(transport,indent=2,sort_keys=True)+"\n"
           )
           PY
-          printf 'authority terminal artifact verified: %s sha256:%s run_attempt=%s downloaded_sha256=%s\n' "$ARTIFACT_ID" "$ARTIFACT_DIGEST" "$GITHUB_RUN_ATTEMPT"
+          printf 'promotion terminal artifact verified: %s sha256:%s run_attempt=%s downloaded_sha256=%s\n' "$ARTIFACT_ID" "$ARTIFACT_DIGEST" "$GITHUB_RUN_ATTEMPT"
 
-      - name: Retain authority terminal transport attestation
+      - name: Retain promotion terminal transport attestation
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: trusted-xen-kani-fv-002-authority-terminal-transport-${{ github.run_id }}-${{ github.run_attempt }}
+          name: trusted-xen-kani-fv-002-promotion-terminal-transport-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            /tmp/authority-terminal-transport-attestation.json
-            /tmp/authority-terminal-artifact.json
-            /tmp/authority-terminal-artifact-download.sha256
-            /tmp/authority-terminal-artifact-members.txt
+            /tmp/promotion-terminal-transport-attestation.json
+            /tmp/promotion-terminal-artifact.json
+            /tmp/promotion-terminal-artifact-download.sha256
+            /tmp/promotion-terminal-artifact-members.txt
           if-no-files-found: error
           retention-days: 90
           overwrite: false
