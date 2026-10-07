@@ -2977,6 +2977,24 @@ jobs:
             -H "X-GitHub-Api-Version: 2026-03-10" \
             "https://api.github.com/repos/$EXPECTED_HEAD_REPO/pulls/$PR_NUMBER" \
             -o /tmp/final-pr.json
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "https://api.github.com/repos/$EXPECTED_HEAD_REPO/actions/runs/$TRIGGER_RUN_ID" \
+            -o /tmp/final-trigger-run.json
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "https://api.github.com/repos/$EXPECTED_HEAD_REPO/actions/runs/$TRIGGER_RUN_ID/attempts/$TRIGGER_RUN_ATTEMPT" \
+            -o /tmp/final-trigger-run-attempt.json
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "https://api.github.com/repos/$EXPECTED_HEAD_REPO/actions/runs/$TRIGGER_RUN_ID/attempts/$TRIGGER_RUN_ATTEMPT/jobs?per_page=100" \
+            -o /tmp/final-trigger-run-jobs.json
           python3 - <<'PY'
           import json, os
           from pathlib import Path
@@ -2994,6 +3012,73 @@ jobs:
           assert d["head"]["repo"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]
           assert d["head"]["repo"]["full_name"]==os.environ["HEAD_REPO"]
 
+          final_run=json.loads(Path("/tmp/final-trigger-run.json").read_text())
+          assert final_run["id"]==int(os.environ["TRIGGER_RUN_ID"])
+          assert final_run["run_attempt"]==int(os.environ["TRIGGER_RUN_ATTEMPT"])
+          assert final_run["name"]=="XEN-KANI-FV-002 Replay Kernel"
+          assert final_run["path"]==os.environ["EXPECTED_TRIGGER_WORKFLOW_PATH"]
+          assert final_run["workflow_id"]==int(os.environ["EXPECTED_TRIGGER_WORKFLOW_ID"])
+          assert final_run["head_branch"]==os.environ["EXPECTED_TRIGGER_BRANCH"]
+          assert final_run["event"]=="pull_request"
+          assert final_run["status"]=="completed"
+          assert final_run["conclusion"]=="success"
+          assert final_run["head_sha"]==os.environ["HEAD_SHA"]
+          assert final_run["head_repository"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])
+          assert final_run["head_repository"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]
+          final_run_prs=final_run.get("pull_requests",[])
+          assert len(final_run_prs)==1
+          assert final_run_prs[0]["number"]==int(os.environ["PR_NUMBER"])
+          assert final_run_prs[0]["head"]["sha"]==os.environ["HEAD_SHA"]
+          assert final_run_prs[0]["head"]["repo"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])
+          assert final_run_prs[0]["head"]["repo"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]
+          assert final_run_prs[0]["base"]["ref"]=="main"
+          assert final_run_prs[0]["base"]["repo"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])
+          assert final_run_prs[0]["base"]["repo"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]
+
+          final_attempt=json.loads(Path("/tmp/final-trigger-run-attempt.json").read_text())
+          assert final_attempt["id"]==int(os.environ["TRIGGER_RUN_ID"])
+          assert final_attempt["run_attempt"]==int(os.environ["TRIGGER_RUN_ATTEMPT"])
+          assert final_attempt["name"]=="XEN-KANI-FV-002 Replay Kernel"
+          assert final_attempt["path"]==os.environ["EXPECTED_TRIGGER_WORKFLOW_PATH"]
+          assert final_attempt["workflow_id"]==int(os.environ["EXPECTED_TRIGGER_WORKFLOW_ID"])
+          assert final_attempt["head_branch"]==os.environ["EXPECTED_TRIGGER_BRANCH"]
+          assert final_attempt["event"]=="pull_request"
+          assert final_attempt["status"]=="completed"
+          assert final_attempt["conclusion"]=="success"
+          assert final_attempt["head_sha"]==os.environ["HEAD_SHA"]
+          assert final_attempt["head_repository"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])
+          assert final_attempt["head_repository"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]
+          final_attempt_prs=final_attempt.get("pull_requests",[])
+          assert len(final_attempt_prs)==1
+          assert final_attempt_prs[0]["number"]==int(os.environ["PR_NUMBER"])
+          assert final_attempt_prs[0]["head"]["sha"]==os.environ["HEAD_SHA"]
+          assert final_attempt_prs[0]["head"]["repo"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])
+          assert final_attempt_prs[0]["head"]["repo"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]
+          assert final_attempt_prs[0]["base"]["ref"]=="main"
+          assert final_attempt_prs[0]["base"]["repo"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])
+          assert final_attempt_prs[0]["base"]["repo"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]
+
+          final_jobs_doc=json.loads(Path("/tmp/final-trigger-run-jobs.json").read_text())
+          final_jobs=final_jobs_doc.get("jobs",[])
+          expected_job_names={"preflight","clean","hostile","admission"}
+          assert final_jobs_doc.get("total_count")==4
+          assert len(final_jobs)==4
+          assert {job.get("name") for job in final_jobs}==expected_job_names
+          for job in final_jobs:
+              assert job["run_id"]==int(os.environ["TRIGGER_RUN_ID"])
+              assert job["head_sha"]==os.environ["HEAD_SHA"]
+              assert job["workflow_name"]=="XEN-KANI-FV-002 Replay Kernel"
+              assert job["head_branch"]==os.environ["EXPECTED_TRIGGER_BRANCH"]
+              assert job["status"]=="completed"
+              assert job["conclusion"]=="success"
+
+          Path("/tmp/final-trigger-freshness.txt").write_text(
+              "verified\n"
+              "run_id="+str(final_run["id"])+"\n"
+              "run_attempt="+str(final_run["run_attempt"])+"\n"
+              "head_sha="+final_run["head_sha"]+"\n"
+              "job_count="+str(len(final_jobs))+"\n"
+          )
           Path("/tmp/final-pr-freshness.txt").write_text(
               "pr_number="+str(d["number"])+"\n"
               "state="+d["state"]+"\n"
