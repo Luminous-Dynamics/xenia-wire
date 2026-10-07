@@ -19,7 +19,7 @@ env:
   VERIFIER_WORKFLOW_ID: "373418900"
   VERIFIER_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-trusted-admission.yml
   VERIFIER_WORKFLOW_NAME: Trusted XEN-KANI-FV-002 Admission
-  EXPECTED_VERIFIER_WORKFLOW_BLOB: f1d6b29df1f1e26d978ebccca6212d84e0df6abc
+  EXPECTED_VERIFIER_WORKFLOW_BLOB: 2548786570530578a5f064f86c45b2503d4b19f7
   AUTHORITY_TERMINAL_PREFIX: trusted-xen-kani-fv-002-authority-terminal-
   AUTHORITY_TERMINAL_SCHEMA: xenia.formal.kani-replay-kernel.authority-terminal.v1
   MAX_AUTHORITY_TERMINAL_BYTES: "5242880"
