@@ -667,7 +667,7 @@ jobs:
               "promotion_certificate_canonicalization_vectors_verified":True,
               "promotion_certificate_canonicalization_vectors_blob":os.environ["EXPECTED_CANONICALIZATION_VECTORS_BLOB"],
               "verifier_run_candidates_observed":len(verifier_candidates),
-              "authority_terminal_candidates":len(producer_candidates),
+              "promotion_terminal_candidates":len(producer_candidates),
               "certificate_verifier_workflow_id":VERIFIER_WORKFLOW_ID,
               "certificate_verifier_workflow_blob":os.environ["EXPECTED_VERIFIER_WORKFLOW_BLOB"],
               "certificate_subject_qualified_head_sha":os.environ["EXPECTED_QUALIFIED_HEAD_SHA"],
