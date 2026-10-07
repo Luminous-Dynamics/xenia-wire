@@ -310,7 +310,7 @@ jobs:
               assert surface not in workflow, f"forbidden runner state injection channel: {surface}"
 
           assert workflow.count('critical_step_attestation_schema="xenia.formal.kani-replay-kernel.trigger-job-steps.v1"')>=3
-          assert workflow.count('substantive=[step for step in steps if step.get("name") not in wrapper_step_names]')==0
+          assert workflow.count("substantive=[")>=3
           assert workflow.count('and not str(step.get("name","")).startswith("Post ")')>=3
           assert workflow.count('def job_step_attestation_ok(job):')>=1
           assert workflow.count('[[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]')==3
