@@ -453,6 +453,8 @@ jobs:
                   'assert attempt["head_sha"]==os.environ["HEAD_SHA"]',
                   'assert attempt["head_branch"]==os.environ["EXPECTED_TRIGGER_BRANCH"]',
                   'assert attempt["conclusion"]==os.environ["TRIGGER_CONCLUSION"]',
+                  'assert attempt_prs[0]["head"]["repo"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])',
+                  'assert attempt_prs[0]["base"]["repo"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])',
                   'assert d.get("total_count")==4',
                   'assert len(jobs)==len(expected_names)==4',
                   'assert observed_names==expected_names',
@@ -1862,7 +1864,11 @@ jobs:
           assert len(attempt_prs)==1
           assert attempt_prs[0]["number"]==int(os.environ["PR_NUMBER"])
           assert attempt_prs[0]["head"]["sha"]==os.environ["HEAD_SHA"]
+          assert attempt_prs[0]["head"]["repo"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])
+          assert attempt_prs[0]["head"]["repo"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]
           assert attempt_prs[0]["base"]["ref"]=="main"
+          assert attempt_prs[0]["base"]["repo"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])
+          assert attempt_prs[0]["base"]["repo"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]
           d=json.loads(Path("/tmp/trigger-run-jobs.json").read_text())
           jobs=d.get("jobs",[])
           expected_names={"preflight","clean","hostile","admission"}
