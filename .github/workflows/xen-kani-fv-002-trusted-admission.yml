@@ -446,10 +446,13 @@ jobs:
                   'assert pull_requests[0]["number"]==int(os.environ["PR_NUMBER"])',
                   'assert d["conclusion"]==os.environ["TRIGGER_CONCLUSION"]',
                   'actions/runs/$TRIGGER_RUN_ID/attempts/$TRIGGER_RUN_ATTEMPT/jobs?per_page=100',
+                  'assert d.get("total_count")==4',
                   'assert len(jobs)==len(expected_names)==4',
                   'assert observed_names==expected_names',
                   'assert job["run_id"]==int(os.environ["TRIGGER_RUN_ID"])',
                   'assert job["head_sha"]==os.environ["HEAD_SHA"]',
+                  'assert job["workflow_name"]=="XEN-KANI-FV-002 Replay Kernel"',
+                  'assert job["head_branch"]==os.environ["EXPECTED_TRIGGER_BRANCH"]',
                   'assert job["status"]=="completed"',
                   'assert job["conclusion"]=="success"',
               ],
@@ -1805,12 +1808,15 @@ jobs:
           d=json.loads(Path("/tmp/trigger-run-jobs.json").read_text())
           jobs=d.get("jobs",[])
           expected_names={"preflight","clean","hostile","admission"}
+          assert d.get("total_count")==4
           assert len(jobs)==len(expected_names)==4
           observed_names={job["name"] for job in jobs}
           assert observed_names==expected_names
           for job in jobs:
               assert job["run_id"]==int(os.environ["TRIGGER_RUN_ID"])
               assert job["head_sha"]==os.environ["HEAD_SHA"]
+              assert job["workflow_name"]=="XEN-KANI-FV-002 Replay Kernel"
+              assert job["head_branch"]==os.environ["EXPECTED_TRIGGER_BRANCH"]
               assert job["status"]=="completed"
               assert job["conclusion"]=="success"
           print("all qualifying workflow jobs completed successfully; no required job was skipped")
