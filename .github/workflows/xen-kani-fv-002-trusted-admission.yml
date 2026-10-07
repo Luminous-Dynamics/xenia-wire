@@ -445,7 +445,7 @@ jobs:
                   'assert len(pull_requests)==1',
                   'assert pull_requests[0]["number"]==int(os.environ["PR_NUMBER"])',
                   'assert d["conclusion"]==os.environ["TRIGGER_CONCLUSION"]',
-                  'actions/runs/$TRIGGER_RUN_ID/jobs?per_page=100',
+                  'actions/runs/$TRIGGER_RUN_ID/attempts/$TRIGGER_RUN_ATTEMPT/jobs?per_page=100',
                   'assert len(jobs)==len(expected_names)==4',
                   'assert observed_names==expected_names',
                   'assert job["run_id"]==int(os.environ["TRIGGER_RUN_ID"])',
@@ -1797,7 +1797,7 @@ jobs:
           assert len(pull_requests)==1, f"unexpected triggering PR cardinality: {len(pull_requests)}"
           assert pull_requests[0]["number"]==int(os.environ["PR_NUMBER"])
           assert d["conclusion"]==os.environ["TRIGGER_CONCLUSION"]
-          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2026-03-10"             "https://api.github.com/repos/$EXPECTED_HEAD_REPO/actions/runs/$TRIGGER_RUN_ID/jobs?per_page=100"             -o /tmp/trigger-run-jobs.json
+          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2026-03-10"             "https://api.github.com/repos/$EXPECTED_HEAD_REPO/actions/runs/$TRIGGER_RUN_ID/attempts/$TRIGGER_RUN_ATTEMPT/jobs?per_page=100"             -o /tmp/trigger-run-jobs.json
           python3 - <<'PY'
           import json
           from pathlib import Path
