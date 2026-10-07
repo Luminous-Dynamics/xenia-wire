@@ -21,7 +21,7 @@ All vectors share:
 
 | Parameter | Value |
 |-----------|-------|
-| `source_id` | `58454e494154535420` (ASCII "XENIATST", 8 bytes) |
+| `source_id` | **wire value:** `58454e494154` (6 bytes; first 6 bytes of fixture label `"XENIATST"`) |
 | `epoch` | `0x42` |
 | `key` | `78656e69612d776972652d746573742d766563746f722d6b65792d3230323621` (ASCII "xenia-wire-test-vector-key-2026!", 32 bytes) |
 
