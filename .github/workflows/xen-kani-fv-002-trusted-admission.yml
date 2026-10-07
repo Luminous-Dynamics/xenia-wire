@@ -163,6 +163,7 @@ jobs:
               'assert checked_out_sha==expected_checkout_sha',
               'assert local_workflow_blob==tracked_workflow_blob',
               'test "$GITHUB_EVENT_NAME" = "workflow_run"',
+              'parts >= (7,58,0)',
               'test -f "$GITHUB_EVENT_PATH"',
               'test "$GITHUB_WORKFLOW_REF" = "$GITHUB_REPOSITORY/$VERIFIER_WORKFLOW_PATH@refs/heads/main"',
               'test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"',
@@ -601,6 +602,8 @@ jobs:
                   'assert receipt["promotion_eligible"] is False',
                   'terminal["promotion_eligible"]=True',
                   'terminal["terminal_main_branch_protection_verified"]=True',
+                  'terminal["curl_redirect_credential_safety_verified"]=True',
+                  'terminal["curl_version"]=curl_version',
                   'terminal["terminal_main_branch_signed_tip_verified"]=(',
                   'terminal["terminal_commit_signature_verified"]=(',
               ],
@@ -1673,6 +1676,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          curl_version="$(curl --version | awk 'NR==1 {print $2}')"
+          python3 - "$curl_version" <<'PY'
+          import sys
+          parts=tuple(int(part) for part in sys.argv[1].split(".")[:3])
+          assert parts >= (7,58,0), f"curl too old for cross-host authorization redirect protection: {parts!r}"
+          PY
           test "$GITHUB_EVENT_NAME" = "workflow_run"
           test "$GITHUB_REF" = "refs/heads/main"
           test "$GITHUB_REF_PROTECTED" = "true"
@@ -4428,6 +4437,8 @@ jobs:
           terminal["evidence_artifact_verified"]=True
           terminal["terminal_pr_freshness_verified"]=True
           terminal["terminal_main_branch_protection_verified"]=True
+          terminal["curl_redirect_credential_safety_verified"]=True
+          terminal["curl_version"]=curl_version
           terminal["github_ref_protected"]=os.environ["GITHUB_REF_PROTECTED"]=="true"
           terminal["terminal_main_branch_signed_tip_verified"]=(
               terminal_main_branch["commit"]["commit"]["verification"]["verified"] is True
