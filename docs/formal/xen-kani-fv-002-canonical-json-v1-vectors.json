@@ -1,0 +1,90 @@
+{
+  "schema": "xenia.formal.kani-replay-kernel.canonical-json-v1-vectors",
+  "algorithm": "xenia.canonical-json.utf8.sort-keys.no-floats.v1",
+  "vectors": [
+    {
+      "id": "ascii-object-key-order",
+      "kind": "accept_value",
+      "value": {
+        "z": [
+          "é",
+          null
+        ],
+        "b": 1,
+        "a": true
+      },
+      "canonical_utf8_hex": "7b2261223a747275652c2262223a312c227a223a5b22c3a9222c6e756c6c5d7d"
+    },
+    {
+      "id": "nested-unicode-and-escapes",
+      "kind": "accept_value",
+      "value": {
+        "outer": {
+          "z": "line\nbreak",
+          "a": "\"quoted\"",
+          "m": [
+            "é",
+            "\\"
+          ]
+        },
+        "n": 0
+      },
+      "canonical_utf8_hex": "7b226e223a302c226f75746572223a7b2261223a225c2271756f7465645c22222c226d223a5b22c3a9222c225c5c225d2c227a223a226c696e655c6e627265616b227d7d"
+    },
+    {
+      "id": "large-integer-preserved",
+      "kind": "accept_value",
+      "value": {
+        "n": 9007199254740992,
+        "negative": -1.2345678901234568e+29
+      },
+      "canonical_utf8_hex": "7b226e223a393030373139393235343734303939332c226e65676174697665223a2d3132333435363738393031323334353637383930313233343536373839307d"
+    },
+    {
+      "id": "unicode-code-point-key-order",
+      "kind": "accept_value",
+      "value": {
+        "é": 1,
+        "é": 2,
+        "a": 0
+      },
+      "canonical_utf8_hex": "7b2261223a302c2265cc81223a322c22c3a9223a317d"
+    },
+    {
+      "id": "whitespace-and-negative-zero",
+      "kind": "accept_raw_json",
+      "raw_utf8_hex": "207b20226222203a202d302c20226122203a2031207d20",
+      "canonical_utf8_hex": "7b2261223a312c2262223a307d"
+    },
+    {
+      "id": "duplicate-keys-rejected",
+      "kind": "reject_raw_json",
+      "raw_utf8_hex": "7b2261223a312c2261223a327d",
+      "expected_failure": "duplicate_json_key"
+    },
+    {
+      "id": "invalid-utf8-rejected",
+      "kind": "reject_raw_json",
+      "raw_utf8_hex": "7b2261223a22c3",
+      "expected_failure": "invalid_utf8"
+    },
+    {
+      "id": "float-rejected",
+      "kind": "reject_raw_json",
+      "raw_utf8_hex": "7b2278223a312e307d",
+      "expected_failure": "floating_point"
+    },
+    {
+      "id": "surrogate-rejected",
+      "kind": "reject_raw_json",
+      "raw_utf8_hex": "7b2278223a225c7564383030227d",
+      "expected_failure": "surrogate"
+    },
+    {
+      "id": "nonfinite-rejected",
+      "kind": "reject_raw_json",
+      "raw_utf8_hex": "7b2278223a4e614e7d",
+      "expected_failure": "nonfinite_or_float"
+    }
+  ]
+}

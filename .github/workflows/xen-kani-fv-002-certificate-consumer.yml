@@ -24,6 +24,8 @@ env:
   PROMOTION_TERMINAL_PREFIX: trusted-xen-kani-fv-002-promotion-terminal-
   PROMOTION_TERMINAL_SCHEMA: xenia.formal.kani-replay-kernel.promotion-terminal.v1
   PROMOTION_CERTIFICATE_CANONICALIZATION: xenia.canonical-json.utf8.sort-keys.no-floats.v1
+  CANONICALIZATION_VECTORS_PATH: docs/formal/xen-kani-fv-002-canonical-json-v1-vectors.json
+  EXPECTED_CANONICALIZATION_VECTORS_BLOB: 32bb3f60e5f7c60c806fc5d3b374967eb575b40f
   MAX_PROMOTION_TERMINAL_BYTES: "5242880"
   MAX_CERTIFICATE_MEMBER_BYTES: "1048576"
   MAX_CERTIFICATE_TOTAL_UNCOMPRESSED_BYTES: "4194304"
@@ -50,6 +52,7 @@ jobs:
           [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
 
           python3 - <<'PY'
+          import base64
           import hashlib
           import io
           import json
@@ -198,6 +201,61 @@ jobs:
               assert surrogate_rejected
 
           assert_certificate_canonicalization_selftest()
+
+          def verify_canonicalization_vectors(document):
+              assert document["schema"]=="xenia.formal.kani-replay-kernel.canonical-json-v1-vectors"
+              assert document["algorithm"]==os.environ["PROMOTION_CERTIFICATE_CANONICALIZATION"]
+              vectors=document.get("vectors")
+              assert isinstance(vectors,list)
+              expected_ids={
+                  "ascii-object-key-order",
+                  "nested-unicode-and-escapes",
+                  "large-integer-preserved",
+                  "unicode-code-point-key-order",
+                  "whitespace-and-negative-zero",
+                  "duplicate-keys-rejected",
+                  "invalid-utf8-rejected",
+                  "float-rejected",
+                  "surrogate-rejected",
+                  "nonfinite-rejected",
+              }
+              observed_ids=[v.get("id") for v in vectors if isinstance(v,dict)]
+              assert len(vectors)==len(expected_ids)
+              assert len(observed_ids)==len(set(observed_ids))
+              assert set(observed_ids)==expected_ids
+              for vector in vectors:
+                  assert isinstance(vector,dict)
+                  vector_id=vector["id"]
+                  kind=vector["kind"]
+                  raw=bytes.fromhex(vector["raw_utf8_hex"]) if "raw_utf8_hex" in vector else None
+                  if kind=="accept_value":
+                      assert isinstance(vector.get("canonical_utf8_hex"),str)
+                      assert canonical_certificate_bytes(vector["value"]).hex()==vector["canonical_utf8_hex"], vector_id
+                  elif kind=="accept_raw_json":
+                      assert raw is not None
+                      parsed=strict_json(raw,vector_id)
+                      assert canonical_certificate_bytes(parsed).hex()==vector["canonical_utf8_hex"], vector_id
+                  elif kind=="reject_raw_json":
+                      assert raw is not None
+                      try:
+                          parsed=strict_json(raw,vector_id)
+                          canonical_certificate_bytes(parsed)
+                      except AssertionError:
+                          continue
+                      raise AssertionError(f"canonicalization rejection vector unexpectedly accepted: {vector_id}")
+                  else:
+                      raise AssertionError(f"unsupported canonicalization vector kind: {kind}")
+
+          canonicalization_vectors=get(
+              f"/contents/{urllib.parse.quote(os.environ["CANONICALIZATION_VECTORS_PATH"],safe="/")}",
+              ref=os.environ["GITHUB_WORKFLOW_SHA"],
+          )
+          assert canonicalization_vectors["type"]=="file"
+          assert canonicalization_vectors["path"]==os.environ["CANONICALIZATION_VECTORS_PATH"]
+          assert canonicalization_vectors["sha"]==os.environ["EXPECTED_CANONICALIZATION_VECTORS_BLOB"]
+          canonicalization_vector_bytes=base64.b64decode(canonicalization_vectors["content"])
+          canonicalization_vector_document=strict_json(canonicalization_vector_bytes,"canonicalization-vectors")
+          verify_canonicalization_vectors(canonicalization_vector_document)
 
           def verify_repo(obj, key):
               repo=obj.get(key,{})
@@ -568,6 +626,8 @@ jobs:
               "promotion_certificate_payload_digest":promotion_certificate_payload_digest,
               "promotion_certificate_canonicalization":os.environ["PROMOTION_CERTIFICATE_CANONICALIZATION"],
               "promotion_certificate_canonicalization_selftest_verified":True,
+              "promotion_certificate_canonicalization_vectors_verified":True,
+              "promotion_certificate_canonicalization_vectors_blob":os.environ["EXPECTED_CANONICALIZATION_VECTORS_BLOB"],
               "verifier_run_candidates_observed":len(verifier_candidates),
               "authority_terminal_candidates":len(producer_candidates),
               "certificate_verifier_workflow_id":VERIFIER_WORKFLOW_ID,
