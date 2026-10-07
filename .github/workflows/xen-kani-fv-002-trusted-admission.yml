@@ -313,7 +313,7 @@ jobs:
           assert workflow.count("substantive=[")>=3
           assert workflow.count('and not str(step.get("name","")).startswith("Post ")')>=3
           assert workflow.count('def job_step_attestation_ok(job):')>=1
-          assert workflow.count('[[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]')==3
+          assert sum(1 for line in workflow.splitlines() if line.strip()=='[[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]] '.rstrip())==3
           uses=re.findall(r"^\s+uses:\s+([^\s#]+)",workflow,re.MULTILINE)
           expected_uses=[
               "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
