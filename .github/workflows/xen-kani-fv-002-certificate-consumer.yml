@@ -23,6 +23,7 @@ env:
   CONSUMER_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-certificate-consumer.yml
   PROMOTION_TERMINAL_PREFIX: trusted-xen-kani-fv-002-promotion-terminal-
   PROMOTION_TERMINAL_SCHEMA: xenia.formal.kani-replay-kernel.promotion-terminal.v1
+  PROMOTION_CERTIFICATE_CANONICALIZATION: xenia.canonical-json.utf8.sort-keys.no-floats.v1
   MAX_PROMOTION_TERMINAL_BYTES: "5242880"
   MAX_CERTIFICATE_MEMBER_BYTES: "1048576"
   MAX_CERTIFICATE_TOTAL_UNCOMPRESSED_BYTES: "4194304"
@@ -129,6 +130,43 @@ jobs:
               except UnicodeDecodeError as exc:
                   raise AssertionError(f"{label}: invalid UTF-8: {exc}") from exc
               return json.loads(text_value, object_pairs_hook=unique_pairs)
+
+          def validate_canonical_value(value, label):
+              if isinstance(value,bool) or value is None:
+                  return
+              if isinstance(value,int):
+                  return
+              if isinstance(value,float):
+                  raise AssertionError(f"{label}: floating-point JSON values are forbidden by the certificate identity algorithm")
+              if isinstance(value,str):
+                  assert all(not (0xD800 <= ord(ch) <= 0xDFFF) for ch in value), (
+                      f"{label}: surrogate code points are forbidden"
+                  )
+                  return
+              if isinstance(value,list):
+                  for index,item in enumerate(value):
+                      validate_canonical_value(item,f"{label}[{index}]")
+                  return
+              if isinstance(value,dict):
+                  for key,item in value.items():
+                      assert isinstance(key,str), f"{label}: object key is not a string"
+                      assert all(not (0xD800 <= ord(ch) <= 0xDFFF) for ch in key), (
+                          f"{label}: surrogate code point in object key"
+                      )
+                      validate_canonical_value(item,f"{label}.{key}")
+                  return
+              raise AssertionError(f"{label}: unsupported JSON value type: {type(value).__name__}")
+
+          def canonical_certificate_bytes(value):
+              validate_canonical_value(value,"promotion-terminal")
+              return json.dumps(
+                  value,
+                  ensure_ascii=False,
+                  sort_keys=True,
+                  separators=(",",":"),
+                  allow_nan=False,
+              ).encode("utf-8")
+
 
           def parse_time(value):
               return datetime.fromisoformat(value.replace("Z","+00:00")).astimezone(timezone.utc)
@@ -388,11 +426,7 @@ jobs:
               evidence_members=read_member("trusted-artifact-members.txt").decode("utf-8").splitlines()
 
           assert terminal["schema"]==os.environ["PROMOTION_TERMINAL_SCHEMA"]
-          canonical_terminal=json.dumps(
-              terminal,
-              sort_keys=True,
-              separators=(",",":"),
-          ).encode("utf-8")
+          canonical_terminal=canonical_certificate_bytes(terminal)
           promotion_certificate_payload_digest="sha256:"+sha256_bytes(canonical_terminal)
           assert re.fullmatch(r"sha256:[0-9a-f]{64}",promotion_certificate_payload_digest)
           assert terminal["promotion_eligible"] is True
@@ -504,6 +538,7 @@ jobs:
               "authority_terminal_artifact_id":artifact_id,
               "authority_terminal_artifact_digest":artifact_digest,
               "promotion_certificate_payload_digest":promotion_certificate_payload_digest,
+              "promotion_certificate_canonicalization":os.environ["PROMOTION_CERTIFICATE_CANONICALIZATION"],
               "verifier_run_candidates_observed":len(verifier_candidates),
               "authority_terminal_candidates":len(producer_candidates),
               "certificate_verifier_workflow_id":VERIFIER_WORKFLOW_ID,
@@ -533,6 +568,7 @@ jobs:
               f"Producer run: {producer_run_id} attempt {producer_run['run_attempt']}\n"
               f"Promotion terminal artifact: {artifact_id} / {artifact_digest}\n"
               f"Promotion certificate payload: {promotion_certificate_payload_digest}\n"
+              f"Promotion certificate canonicalization: {os.environ["PROMOTION_CERTIFICATE_CANONICALIZATION"]}\n"
               f"Verifier runs observed for current main: {len(verifier_candidates)}\n"
               f"Certificate artifacts observed in selected verifier run: {len(producer_candidates)}\n"
               "Main protection: verified\n"
