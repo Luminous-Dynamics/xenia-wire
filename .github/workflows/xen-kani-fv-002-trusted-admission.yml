@@ -476,9 +476,6 @@ jobs:
                   'observed_steps=[step.get("name") for step in substantive]',
                   'step.get("status")=="completed"',
                   'step.get("conclusion")=="success"',
-                  'def job_step_attestation_ok(job):',
-                  'def trigger_job_steps_attestation_ok(doc):',
-                  'def trigger_jobs_identity_ok(doc):',
               ],
               "Re-verify triggering PR freshness before receipt":[
                   'https://api.github.com/repos/$EXPECTED_HEAD_REPO/pulls/$PR_NUMBER',
