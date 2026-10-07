@@ -78,6 +78,20 @@ jobs:
               with urllib.request.urlopen(request, timeout=30) as response:
                   return json.loads(response.read())
 
+          class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  redirected=super().redirect_request(req,fp,code,msg,headers,newurl)
+                  if redirected is None:
+                      return None
+                  old_host=urllib.parse.urlsplit(req.full_url).netloc
+                  new_host=urllib.parse.urlsplit(newurl).netloc
+                  if old_host != new_host:
+                      redirected.headers.pop("Authorization",None)
+                      redirected.headers.pop("authorization",None)
+                  return redirected
+
+          HTTP_OPENER=urllib.request.build_opener(SafeRedirectHandler)
+
           def download(url, max_bytes):
               request=urllib.request.Request(
                   url,
@@ -87,7 +101,7 @@ jobs:
                       "X-GitHub-Api-Version":"2026-03-10",
                   },
               )
-              with urllib.request.urlopen(request, timeout=60) as response:
+              with HTTP_OPENER.open(request, timeout=60) as response:
                   data=response.read(max_bytes+1)
               assert len(data)<=max_bytes, f"download exceeded bounded size: {len(data)}"
               return data
@@ -278,6 +292,47 @@ jobs:
           assert artifact_run_meta["repository_id"]==REPO_ID
           assert artifact_run_meta["head_repository_id"]==REPO_ID
           assert artifact_run_meta["head_sha"]==current_main_sha
+
+          archive_url=f"{API_BASE}/actions/artifacts/{artifact_id}/zip"
+          archive=download(archive_url,MAX_BYTES)
+          assert sha256_bytes(archive)==artifact_digest.removeprefix("sha256:")
+
+          with zipfile.ZipFile(io.BytesIO(archive)) as z:
+              names=z.namelist()
+              assert names
+              assert len(names)==len(set(names))
+              assert all(
+                  name
+                  and "\x00" not in name
+                  and "\\" not in name
+                  and not name.startswith("/")
+                  and ".." not in name.split("/")
+                  for name in names
+              )
+              expected_members={
+                  "authority-terminal.json",
+                  "terminal-main-branch.json",
+                  "terminal-main-commit.json",
+                  "trusted-artifact.json",
+                  "trusted-artifact-provenance.txt",
+                  "trusted-artifact-download.sha256",
+                  "trusted-artifact-members.txt",
+                  "terminal-pr.json",
+              }
+              assert set(names)==expected_members, (
+                  f"authority-terminal member mismatch: "
+                  f"unexpected={sorted(set(names)-expected_members)} "
+                  f"missing={sorted(expected_members-set(names))}"
+              )
+              terminal=json.loads(z.read("authority-terminal.json"))
+              terminal_main_branch=json.loads(z.read("terminal-main-branch.json"))
+              terminal_main_commit=json.loads(z.read("terminal-main-commit.json"))
+              trusted_artifact=json.loads(z.read("trusted-artifact.json"))
+              terminal_pr=json.loads(z.read("terminal-pr.json"))
+              provenance=z.read("trusted-artifact-provenance.txt").decode()
+              evidence_zip_digest=z.read("trusted-artifact-download.sha256").decode().strip()
+              evidence_members=z.read("trusted-artifact-members.txt").decode().splitlines()
+
           assert terminal["schema"]==os.environ["AUTHORITY_TERMINAL_SCHEMA"]
           assert terminal["authority_eligible"] is True
           assert terminal["verifier_workflow_id"]==VERIFIER_WORKFLOW_ID
