@@ -445,6 +445,11 @@ jobs:
                   'assert len(pull_requests)==1',
                   'assert pull_requests[0]["number"]==int(os.environ["PR_NUMBER"])',
                   'assert d["conclusion"]==os.environ["TRIGGER_CONCLUSION"]',
+                  'actions/runs/$TRIGGER_RUN_ID/jobs?per_page=100',
+                  'assert len(jobs)==len(expected_names)==4',
+                  'assert observed_names==expected_names',
+                  'assert job["status"]=="completed"',
+                  'assert job["conclusion"]=="success"',
               ],
               "Verify triggering workflow source identity":[
                   'https://api.github.com/repos/$HEAD_REPO/contents/$EXPECTED_TRIGGER_WORKFLOW_PATH?ref=$HEAD_SHA',
@@ -1793,6 +1798,22 @@ jobs:
           assert len(pull_requests)==1, f"unexpected triggering PR cardinality: {len(pull_requests)}"
           assert pull_requests[0]["number"]==int(os.environ["PR_NUMBER"])
           assert d["conclusion"]==os.environ["TRIGGER_CONCLUSION"]
+          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2026-03-10"             "https://api.github.com/repos/$EXPECTED_HEAD_REPO/actions/runs/$TRIGGER_RUN_ID/jobs?per_page=100"             -o /tmp/trigger-run-jobs.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          d=json.loads(Path("/tmp/trigger-run-jobs.json").read_text())
+          jobs=d.get("jobs",[])
+          expected_names={"preflight","clean","hostile","admission"}
+          assert len(jobs)==len(expected_names)==4
+          observed_names={job["name"] for job in jobs}
+          assert observed_names==expected_names
+          for job in jobs:
+              assert job["status"]=="completed"
+              assert job["conclusion"]=="success"
+          print("all qualifying workflow jobs completed successfully; no required job was skipped")
+          PY
           PY
 
       - name: Verify triggering workflow source identity
@@ -3052,6 +3073,19 @@ jobs:
               )
 
           workflow_identity_ok=(
+          triggering_jobs_ok=(
+              Path("/tmp/trigger-run-jobs.json").exists()
+              and (
+                  (lambda d: (
+                      len(d.get("jobs",[]))==4
+                      and {job.get("name") for job in d.get("jobs",[])}=={"preflight","clean","hostile","admission"}
+                      and all(
+                          job.get("status")=="completed" and job.get("conclusion")=="success"
+                          for job in d.get("jobs",[])
+                      )
+                  ))(__import__("json").loads(Path("/tmp/trigger-run-jobs.json").read_text()))
+              )
+          )
               read_optional("/tmp/verifier-workflow.blob") is not None
               and read_optional("/tmp/trigger-workflow.blob")==os.environ["EXPECTED_TRIGGER_WORKFLOW_BLOB"]
           )
@@ -3118,6 +3152,7 @@ jobs:
               and os.environ["RUSTUP_TOOLCHAIN"]==os.environ["EXPECTED_KANI_RUST_TOOLCHAIN"]
               and read_optional("/tmp/final-pr-freshness.txt") is not None
               and workflow_identity_ok
+              and triggering_jobs_ok
               and upload_artifact_commit_signature_verified
               and upload_artifact_v6_tag_binding_verified
               and upload_artifact_action_contract_verified
@@ -3156,6 +3191,7 @@ jobs:
               "schema":"xenia.formal.kani-replay-kernel.trusted-admission.v1",
               "verifier_workflow_path":os.environ["VERIFIER_WORKFLOW_PATH"],
               "verifier_workflow_commit":os.environ["GITHUB_SHA"],
+              "triggering_jobs_verified":triggering_jobs_ok,
               "verifier_workflow_id":int(os.environ["EXPECTED_VERIFIER_WORKFLOW_ID"]),
               "verifier_workflow_blob":read_optional("/tmp/verifier-workflow.blob"),
               "verifier_workflow_sha256":read_optional("/tmp/verifier-workflow.sha256"),
