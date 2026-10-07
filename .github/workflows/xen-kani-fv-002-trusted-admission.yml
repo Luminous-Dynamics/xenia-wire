@@ -471,7 +471,7 @@ jobs:
                   'critical_step_attestation_schema="xenia.formal.kani-replay-kernel.trigger-job-steps.v1"',
                   'expected_critical_steps={',
                   'wrapper_step_names={"Set up job","Complete job"}',
-                  'substantive=[step for step in steps',
+                  'substantive=[\n                  step for step in steps',
                   'not str(step.get("name","")).startswith("Post ")',
                   'observed_steps=[step.get("name") for step in substantive]',
                   'step.get("status")=="completed"',
