@@ -309,6 +309,7 @@ jobs:
           for surface in forbidden_runner_state_files:
               assert surface not in workflow, f"forbidden runner state injection channel: {surface}"
 
+          assert workflow.count('[[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]')==3
           uses=re.findall(r"^\s+uses:\s+([^\s#]+)",workflow,re.MULTILINE)
           expected_uses=[
               "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
@@ -3584,7 +3585,7 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$ARTIFACT_ID"
-          test "$ARTIFACT_ID" != "0"
+          [[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
           [[ "$ARTIFACT_DIGEST" =~ ^[0-9a-f]{64}$ ]]
           curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2026-03-10" "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/actions/artifacts/$ARTIFACT_ID"             -o /tmp/trusted-artifact.json
           curl --fail-with-body --silent --show-error --location \
@@ -3826,7 +3827,7 @@ jobs:
           print("terminal default branch protection, signed tip, and tip binding verified")
           PY
           test -n "$ARTIFACT_ID"
-          test "$ARTIFACT_ID" != "0"
+          [[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
           [[ "$ARTIFACT_DIGEST" =~ ^[0-9a-f]{64}$ ]]
           test -s /tmp/trusted-artifact.json
           curl --fail-with-body --silent --show-error \
@@ -3952,7 +3953,7 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$ARTIFACT_ID"
-          test "$ARTIFACT_ID" != "0"
+          [[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
           [[ "$ARTIFACT_DIGEST" =~ ^[0-9a-f]{64}$ ]]
           curl --fail-with-body --silent --show-error \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
