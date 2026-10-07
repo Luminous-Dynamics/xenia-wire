@@ -348,6 +348,13 @@ jobs:
               evidence_members=z.read("trusted-artifact-members.txt").decode().splitlines()
 
           assert terminal["schema"]==os.environ["AUTHORITY_TERMINAL_SCHEMA"]
+          canonical_terminal=json.dumps(
+              terminal,
+              sort_keys=True,
+              separators=(",",":"),
+          ).encode("utf-8")
+          promotion_certificate_payload_digest="sha256:"+sha256_bytes(canonical_terminal)
+          assert re.fullmatch(r"sha256:[0-9a-f]{64}",promotion_certificate_payload_digest)
           assert terminal["promotion_eligible"] is True
           assert terminal["verifier_workflow_id"]==VERIFIER_WORKFLOW_ID
           assert terminal["verifier_workflow_path"]==VERIFIER_WORKFLOW_PATH
@@ -456,6 +463,7 @@ jobs:
               "producer_run_attempt":producer_run["run_attempt"],
               "authority_terminal_artifact_id":artifact_id,
               "authority_terminal_artifact_digest":artifact_digest,
+              "promotion_certificate_payload_digest":promotion_certificate_payload_digest,
               "verifier_run_candidates_observed":len(verifier_candidates),
               "authority_terminal_candidates":len(producer_candidates),
               "certificate_verifier_workflow_id":VERIFIER_WORKFLOW_ID,
@@ -484,6 +492,7 @@ jobs:
               f"Qualification paths changed: {', '.join(applicable_files)}\n"
               f"Producer run: {producer_run_id} attempt {producer_run['run_attempt']}\n"
               f"Authority terminal artifact: {artifact_id} / {artifact_digest}\n"
+              f"Promotion certificate payload: {promotion_certificate_payload_digest}\n"
               f"Verifier runs observed for current main: {len(verifier_candidates)}\n"
               f"Certificate artifacts observed in selected verifier run: {len(producer_candidates)}\n"
               "Main protection: verified\n"
