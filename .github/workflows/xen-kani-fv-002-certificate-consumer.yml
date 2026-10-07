@@ -19,6 +19,7 @@ env:
   VERIFIER_WORKFLOW_ID: "373418900"
   VERIFIER_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-trusted-admission.yml
   VERIFIER_WORKFLOW_NAME: Trusted XEN-KANI-FV-002 Admission
+  EXPECTED_VERIFIER_WORKFLOW_BLOB: c73fcb597e3207756e29e100cd0868840a9ae7c6
   AUTHORITY_TERMINAL_PREFIX: trusted-xen-kani-fv-002-authority-terminal-
   AUTHORITY_TERMINAL_SCHEMA: xenia.formal.kani-replay-kernel.authority-terminal.v1
   MAX_AUTHORITY_TERMINAL_BYTES: "5242880"
@@ -192,6 +193,15 @@ jobs:
           assert verification.get("payload")
           assert verification.get("verified_at")
 
+          verifier_source=get(
+              f"/contents/{urllib.parse.quote(VERIFIER_WORKFLOW_PATH,safe='/')}",
+              ref=current_main_sha,
+          )
+          assert verifier_source["type"]=="file"
+          assert verifier_source["name"]=="xen-kani-fv-002-trusted-admission.yml"
+          assert verifier_source["path"]==VERIFIER_WORKFLOW_PATH
+          assert verifier_source["sha"]==os.environ["EXPECTED_VERIFIER_WORKFLOW_BLOB"]
+
           verifier_runs=get(
               f"/actions/workflows/{VERIFIER_WORKFLOW_ID}/runs",
               head_sha=current_main_sha,
@@ -246,6 +256,7 @@ jobs:
               per_page=100,
               page=1,
           )
+          assert len(producer_artifacts.get("artifacts",[]))<=100
           producer_candidates=[
               artifact for artifact in producer_artifacts.get("artifacts",[])
               if isinstance(artifact,dict)
@@ -376,8 +387,10 @@ jobs:
               "producer_run_attempt":producer_run["run_attempt"],
               "authority_terminal_artifact_id":artifact_id,
               "authority_terminal_artifact_digest":artifact_digest,
-              "authority_terminal_candidates":len(candidates),
+              "verifier_run_candidates_observed":len(verifier_candidates),
+              "authority_terminal_candidates":len(producer_candidates),
               "certificate_verifier_workflow_id":VERIFIER_WORKFLOW_ID,
+              "certificate_verifier_workflow_blob":os.environ["EXPECTED_VERIFIER_WORKFLOW_BLOB"],
               "certificate_verifier_workflow_commit":producer_run["head_sha"],
               "scope":"IN_SCOPE",
               "qualification_files_observed":applicable_files,
