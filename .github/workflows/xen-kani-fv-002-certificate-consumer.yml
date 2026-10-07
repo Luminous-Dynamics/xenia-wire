@@ -20,6 +20,8 @@ env:
   VERIFIER_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-trusted-admission.yml
   VERIFIER_WORKFLOW_NAME: Trusted XEN-KANI-FV-002 Admission
   EXPECTED_VERIFIER_WORKFLOW_BLOB: 10bcd8ff3f682c29f0aeaf90f5072f92a93d0dbb
+  CONSUMER_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-certificate-consumer.yml
+  EXPECTED_CONSUMER_WORKFLOW_BLOB: 9c9fb34233f86e8e9eadc186a5c040ff6a7b2e83
   AUTHORITY_TERMINAL_PREFIX: trusted-xen-kani-fv-002-authority-terminal-
   AUTHORITY_TERMINAL_SCHEMA: xenia.formal.kani-replay-kernel.promotion-terminal.v1
   MAX_AUTHORITY_TERMINAL_BYTES: "5242880"
@@ -37,6 +39,11 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_EVENT_NAME" = "pull_request_target"
+          test "$GITHUB_REPOSITORY" = "$REPOSITORY"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$GITHUB_WORKFLOW" = "XEN-KANI-FV-002 Certificate Consumer"
+          test "$GITHUB_WORKFLOW_REF" = "$REPOSITORY/$CONSUMER_WORKFLOW_PATH@refs/heads/main"
+          test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
           test -n "$PR_NUMBER"
           [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
 
@@ -116,6 +123,14 @@ jobs:
               repo=obj.get(key,{})
               assert repo.get("id")==REPO_ID, f"{key}.id mismatch"
               assert repo.get("full_name")==REPO, f"{key}.full_name mismatch"
+
+          consumer_workflow=get(
+              f"/contents/{urllib.parse.quote(os.environ["CONSUMER_WORKFLOW_PATH"],safe="/")}",
+              ref=os.environ["GITHUB_WORKFLOW_SHA"],
+          )
+          assert consumer_workflow["type"]=="file"
+          assert consumer_workflow["path"]==os.environ["CONSUMER_WORKFLOW_PATH"]
+          assert consumer_workflow["sha"]==os.environ["EXPECTED_CONSUMER_WORKFLOW_BLOB"]
 
           pr=get(f"/pulls/{PR_NUMBER}")
           assert pr["number"]==PR_NUMBER
