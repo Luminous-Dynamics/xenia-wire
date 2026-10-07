@@ -805,8 +805,52 @@ jobs:
               f"Ruby expr.call manifest mismatch: {observed_ruby_expr_calls!r}"
           )
           observed_gexpr_calls=re.findall(r'gexpr\.call\("([^"]+)"\)',ruby_source)
-          assert len(observed_gexpr_calls)==35
-          assert all(call.startswith("github.") for call in observed_gexpr_calls)
+          expected_gexpr_calls=[
+              "github.event.pull_request.head.sha",
+              "github.run_id",
+              "github.run_attempt",
+              "github.event.workflow_run.pull_requests[0].number",
+              "github.event.workflow_run.head_sha",
+              "github.run_id",
+              "github.run_attempt",
+              "github.event.workflow_run.pull_requests[0].number",
+              "github.event.workflow_run.head_sha",
+              "github.run_id",
+              "github.run_attempt",
+              "github.run_id",
+              "github.run_attempt",
+              "github.event.workflow_run.pull_requests[0].number",
+              "github.event.workflow_run.head_sha",
+              "github.event.workflow_run.head_repository.full_name",
+              "github.event.workflow_run.head_branch",
+              "github.event.workflow_run.id",
+              "github.event.workflow_run.run_attempt",
+              "github.event.workflow_run.conclusion",
+              "github.token",
+              "github.token",
+              "github.token",
+              "steps.trusted-evidence-upload.outputs.artifact-id",
+              "steps.trusted-evidence-upload.outputs.artifact-digest",
+              "github.event.workflow_run.pull_requests[0].number",
+              "github.event.workflow_run.head_sha",
+              "github.run_id",
+              "github.run_attempt",
+              "github.run_id",
+              "github.token",
+              "steps.trusted-evidence-upload.outputs.artifact-id",
+              "steps.trusted-evidence-upload.outputs.artifact-digest",
+              "github.token",
+              "steps.promotion-terminal-upload.outputs.artifact-id",
+              "steps.promotion-terminal-upload.outputs.artifact-digest",
+              "github.event.workflow_run.pull_requests[0].number",
+              "github.event.workflow_run.head_sha",
+              "github.run_id",
+              "github.run_attempt",
+              "github.run_id",
+          ]
+          assert observed_gexpr_calls==expected_gexpr_calls, (
+              f"Ruby gexpr manifest mismatch: {observed_gexpr_calls!r}"
+          )
           assert ruby_source.index('"Retain promotion terminal transport attestation"=>{') < ruby_source.index('expected_upload_keys=[')
           assert ruby_source.index('upload_steps=selftest.fetch("steps")') < ruby_source.index('upload_steps.each do |step|')
           trusted_assignment='trusted=jobs.fetch("trusted-admission")'
