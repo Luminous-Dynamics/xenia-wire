@@ -19,7 +19,7 @@ env:
   VERIFIER_WORKFLOW_ID: "373418900"
   VERIFIER_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-trusted-admission.yml
   VERIFIER_WORKFLOW_NAME: Trusted XEN-KANI-FV-002 Admission
-  EXPECTED_VERIFIER_WORKFLOW_BLOB: 10bcd8ff3f682c29f0aeaf90f5072f92a93d0dbb
+  EXPECTED_VERIFIER_WORKFLOW_BLOB: 1fa326a6b2b6ec87fbdd02348a4e681d26cfe9f6
   CONSUMER_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-certificate-consumer.yml
   PROMOTION_TERMINAL_PREFIX: trusted-xen-kani-fv-002-promotion-terminal-
   PROMOTION_TERMINAL_SCHEMA: xenia.formal.kani-replay-kernel.promotion-terminal.v1
