@@ -448,6 +448,8 @@ jobs:
                   'actions/runs/$TRIGGER_RUN_ID/jobs?per_page=100',
                   'assert len(jobs)==len(expected_names)==4',
                   'assert observed_names==expected_names',
+                  'assert job["run_id"]==int(os.environ["TRIGGER_RUN_ID"])',
+                  'assert job["head_sha"]==os.environ["HEAD_SHA"]',
                   'assert job["status"]=="completed"',
                   'assert job["conclusion"]=="success"',
               ],
@@ -1810,6 +1812,8 @@ jobs:
           observed_names={job["name"] for job in jobs}
           assert observed_names==expected_names
           for job in jobs:
+              assert job["run_id"]==int(os.environ["TRIGGER_RUN_ID"])
+              assert job["head_sha"]==os.environ["HEAD_SHA"]
               assert job["status"]=="completed"
               assert job["conclusion"]=="success"
           print("all qualifying workflow jobs completed successfully; no required job was skipped")
@@ -3071,6 +3075,10 @@ jobs:
                   and read_optional("/tmp/hostile-cover-restored-kernel.blob")==read_optional("/tmp/xen-kani-trusted/kernel.blob")
               )
 
+          triggering_jobs_payload_sha256=(
+              __import__("hashlib").sha256(Path("/tmp/trigger-run-jobs.json").read_bytes()).hexdigest()
+              if Path("/tmp/trigger-run-jobs.json").exists() else None
+          )
           triggering_jobs_ok=(
               Path("/tmp/trigger-run-jobs.json").exists()
               and (
@@ -3191,6 +3199,7 @@ jobs:
               "verifier_workflow_path":os.environ["VERIFIER_WORKFLOW_PATH"],
               "verifier_workflow_commit":os.environ["GITHUB_SHA"],
               "triggering_jobs_verified":triggering_jobs_ok,
+              "triggering_jobs_payload_sha256":triggering_jobs_payload_sha256,
               "verifier_workflow_id":int(os.environ["EXPECTED_VERIFIER_WORKFLOW_ID"]),
               "verifier_workflow_blob":read_optional("/tmp/verifier-workflow.blob"),
               "verifier_workflow_sha256":read_optional("/tmp/verifier-workflow.sha256"),
