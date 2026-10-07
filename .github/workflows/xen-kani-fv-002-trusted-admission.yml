@@ -1877,6 +1877,7 @@ jobs:
           assert len(pull_requests)==1, f"unexpected triggering PR cardinality: {len(pull_requests)}"
           assert pull_requests[0]["number"]==int(os.environ["PR_NUMBER"])
           assert d["conclusion"]==os.environ["TRIGGER_CONCLUSION"]
+          PY
           curl --fail-with-body --silent --show-error \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
