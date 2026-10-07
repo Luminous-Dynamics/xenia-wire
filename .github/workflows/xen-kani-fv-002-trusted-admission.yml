@@ -3235,13 +3235,87 @@ jobs:
               Path("/tmp/trigger-run-jobs.json").exists()
               and (
                   (lambda d: (
-                      len(d.get("jobs",[]))==4
+                      d.get("total_count")==4
+                      and len(d.get("jobs",[]))==4
                       and {job.get("name") for job in d.get("jobs",[])}=={"preflight","clean","hostile","admission"}
                       and all(
-                          job.get("status")=="completed" and job.get("conclusion")=="success"
+                          job.get("run_id")==int(os.environ["TRIGGER_RUN_ID"])
+                          and job.get("head_sha")==os.environ["HEAD_SHA"]
+                          and job.get("workflow_name")=="XEN-KANI-FV-002 Replay Kernel"
+                          and job.get("head_branch")==os.environ["EXPECTED_TRIGGER_BRANCH"]
+                          and job.get("status")=="completed"
+                          and job.get("conclusion")=="success"
                           for job in d.get("jobs",[])
                       )
                   ))(__import__("json").loads(Path("/tmp/trigger-run-jobs.json").read_text()))
+              )
+          )
+          final_trigger_run_ok=(
+              Path("/tmp/final-trigger-run.json").exists()
+              and (
+                  (lambda d: (
+                      d.get("id")==int(os.environ["TRIGGER_RUN_ID"])
+                      and d.get("run_attempt")==int(os.environ["TRIGGER_RUN_ATTEMPT"])
+                      and d.get("name")=="XEN-KANI-FV-002 Replay Kernel"
+                      and d.get("path")==os.environ["EXPECTED_TRIGGER_WORKFLOW_PATH"]
+                      and d.get("workflow_id")==int(os.environ["EXPECTED_TRIGGER_WORKFLOW_ID"])
+                      and d.get("head_branch")==os.environ["EXPECTED_TRIGGER_BRANCH"]
+                      and d.get("event")=="pull_request"
+                      and d.get("status")=="completed"
+                      and d.get("conclusion")=="success"
+                      and d.get("head_sha")==os.environ["HEAD_SHA"]
+                      and d.get("head_repository",{}).get("id")==int(os.environ["EXPECTED_HEAD_REPO_ID"])
+                      and d.get("head_repository",{}).get("full_name")==os.environ["EXPECTED_HEAD_REPO"]
+                      and len(d.get("pull_requests",[]))==1
+                      and d["pull_requests"][0].get("number")==int(os.environ["PR_NUMBER"])
+                      and d["pull_requests"][0].get("head",{}).get("sha")==os.environ["HEAD_SHA"]
+                      and d["pull_requests"][0].get("head",{}).get("repo",{}).get("id")==int(os.environ["EXPECTED_HEAD_REPO_ID"])
+                      and d["pull_requests"][0].get("base",{}).get("ref")=="main"
+                      and d["pull_requests"][0].get("base",{}).get("repo",{}).get("id")==int(os.environ["EXPECTED_HEAD_REPO_ID"])
+                  ))(__import__("json").loads(Path("/tmp/final-trigger-run.json").read_text()))
+              )
+          )
+          final_trigger_attempt_ok=(
+              Path("/tmp/final-trigger-run-attempt.json").exists()
+              and (
+                  (lambda d: (
+                      d.get("id")==int(os.environ["TRIGGER_RUN_ID"])
+                      and d.get("run_attempt")==int(os.environ["TRIGGER_RUN_ATTEMPT"])
+                      and d.get("workflow_id")==int(os.environ["EXPECTED_TRIGGER_WORKFLOW_ID"])
+                      and d.get("path")==os.environ["EXPECTED_TRIGGER_WORKFLOW_PATH"]
+                      and d.get("event")=="pull_request"
+                      and d.get("status")=="completed"
+                      and d.get("conclusion")=="success"
+                      and d.get("head_sha")==os.environ["HEAD_SHA"]
+                      and d.get("head_branch")==os.environ["EXPECTED_TRIGGER_BRANCH"]
+                      and d.get("repository",{}).get("id")==int(os.environ["EXPECTED_HEAD_REPO_ID"])
+                      and d.get("head_repository",{}).get("id")==int(os.environ["EXPECTED_HEAD_REPO_ID"])
+                      and len(d.get("pull_requests",[]))==1
+                      and d["pull_requests"][0].get("number")==int(os.environ["PR_NUMBER"])
+                      and d["pull_requests"][0].get("head",{}).get("sha")==os.environ["HEAD_SHA"]
+                      and d["pull_requests"][0].get("head",{}).get("repo",{}).get("id")==int(os.environ["EXPECTED_HEAD_REPO_ID"])
+                      and d["pull_requests"][0].get("base",{}).get("ref")=="main"
+                      and d["pull_requests"][0].get("base",{}).get("repo",{}).get("id")==int(os.environ["EXPECTED_HEAD_REPO_ID"])
+                  ))(__import__("json").loads(Path("/tmp/final-trigger-run-attempt.json").read_text()))
+              )
+          )
+          final_trigger_jobs_ok=(
+              Path("/tmp/final-trigger-run-jobs.json").exists()
+              and (
+                  (lambda d: (
+                      d.get("total_count")==4
+                      and len(d.get("jobs",[]))==4
+                      and {job.get("name") for job in d.get("jobs",[])}=={"preflight","clean","hostile","admission"}
+                      and all(
+                          job.get("run_id")==int(os.environ["TRIGGER_RUN_ID"])
+                          and job.get("head_sha")==os.environ["HEAD_SHA"]
+                          and job.get("workflow_name")=="XEN-KANI-FV-002 Replay Kernel"
+                          and job.get("head_branch")==os.environ["EXPECTED_TRIGGER_BRANCH"]
+                          and job.get("status")=="completed"
+                          and job.get("conclusion")=="success"
+                          for job in d.get("jobs",[])
+                      )
+                  ))(__import__("json").loads(Path("/tmp/final-trigger-run-jobs.json").read_text()))
               )
           )
           workflow_identity_ok=(
@@ -3300,8 +3374,13 @@ jobs:
                   "/tmp/trusted-workflow-run-event.json",
                   "/tmp/verifier-run.json",
                   "/tmp/trigger-run.json",
+                  "/tmp/trigger-run-attempt.json",
+                  "/tmp/trigger-run-jobs.json",
                   "/tmp/pr.json",
                   "/tmp/final-pr.json",
+                  "/tmp/final-trigger-run.json",
+                  "/tmp/final-trigger-run-attempt.json",
+                  "/tmp/final-trigger-run-jobs.json",
               )
           )
 
@@ -3313,6 +3392,10 @@ jobs:
               and workflow_identity_ok
               and triggering_jobs_ok
               and Path("/tmp/trigger-run-attempt.json").exists()
+              and final_trigger_run_ok
+              and final_trigger_attempt_ok
+              and final_trigger_jobs_ok
+              and read_optional("/tmp/final-trigger-freshness.txt")=="verified"
               and upload_artifact_commit_signature_verified
               and upload_artifact_v6_tag_binding_verified
               and upload_artifact_action_contract_verified
@@ -3358,6 +3441,22 @@ jobs:
                   if Path("/tmp/trigger-run-attempt.json").exists() else None
               ),
               "triggering_attempt_verified":Path("/tmp/trigger-run-attempt.json").exists(),
+              "final_trigger_run_verified":final_trigger_run_ok,
+              "final_trigger_attempt_verified":final_trigger_attempt_ok,
+              "final_trigger_jobs_verified":final_trigger_jobs_ok,
+              "final_trigger_freshness_verified":read_optional("/tmp/final-trigger-freshness.txt")=="verified",
+              "final_trigger_run_payload_sha256":(
+                  __import__("hashlib").sha256(Path("/tmp/final-trigger-run.json").read_bytes()).hexdigest()
+                  if Path("/tmp/final-trigger-run.json").exists() else None
+              ),
+              "final_trigger_attempt_payload_sha256":(
+                  __import__("hashlib").sha256(Path("/tmp/final-trigger-run-attempt.json").read_bytes()).hexdigest()
+                  if Path("/tmp/final-trigger-run-attempt.json").exists() else None
+              ),
+              "final_trigger_jobs_payload_sha256":(
+                  __import__("hashlib").sha256(Path("/tmp/final-trigger-run-jobs.json").read_bytes()).hexdigest()
+                  if Path("/tmp/final-trigger-run-jobs.json").exists() else None
+              ),
               "verifier_workflow_id":int(os.environ["EXPECTED_VERIFIER_WORKFLOW_ID"]),
               "verifier_workflow_blob":read_optional("/tmp/verifier-workflow.blob"),
               "verifier_workflow_sha256":read_optional("/tmp/verifier-workflow.sha256"),
@@ -3614,6 +3713,10 @@ jobs:
             /tmp/trigger-run.json
             /tmp/trigger-run-jobs.json
             /tmp/trigger-run-attempt.json
+            /tmp/final-trigger-run.json
+            /tmp/final-trigger-run-jobs.json
+            /tmp/final-trigger-run-attempt.json
+            /tmp/final-trigger-freshness.txt
             /tmp/pr.json
             /tmp/base-tree-sha
             /tmp/head-tree-sha
@@ -3693,6 +3796,12 @@ jobs:
             /tmp/verifier-run.json
             /tmp/upload-artifact-commit.json
             /tmp/trigger-run.json
+            /tmp/trigger-run-jobs.json
+            /tmp/trigger-run-attempt.json
+            /tmp/final-trigger-run.json
+            /tmp/final-trigger-run-jobs.json
+            /tmp/final-trigger-run-attempt.json
+            /tmp/final-trigger-freshness.txt
             /tmp/pr.json
             /tmp/base-tree-sha
             /tmp/head-tree-sha
