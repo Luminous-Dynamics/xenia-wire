@@ -28,7 +28,7 @@ env:
   EXPECTED_KERNEL_BLOB: d1bc8a1f8fc0883856d5073fa37b1658a7ea63ad
   EXPECTED_PROOF_BLOB: 4e3f0f584ca189baafe230da66b4bdeac87a7515
   EXPECTED_EVIDENCE_CONTRACT_BLOB: ce3e1447cc6b9bd1f0fc361b4fb81c5fe1450b0b
-  EXPECTED_VERIFIER_WORKFLOW_BLOB: 1fa326a6b2b6ec87fbdd02348a4e681d26cfe9f6
+  EXPECTED_VERIFIER_WORKFLOW_BLOB: ebcf21039c20bc61061f8dc500817554a434970a
   CONSUMER_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-certificate-consumer.yml
   PROMOTION_TERMINAL_PREFIX: trusted-xen-kani-fv-002-promotion-terminal-
   PROMOTION_TERMINAL_SCHEMA: xenia.formal.kani-replay-kernel.promotion-terminal.v1
