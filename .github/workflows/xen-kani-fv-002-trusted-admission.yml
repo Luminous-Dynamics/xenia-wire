@@ -447,6 +447,12 @@ jobs:
                   'assert pull_requests[0]["number"]==int(os.environ["PR_NUMBER"])',
                   'assert d["conclusion"]==os.environ["TRIGGER_CONCLUSION"]',
                   'actions/runs/$TRIGGER_RUN_ID/attempts/$TRIGGER_RUN_ATTEMPT/jobs?per_page=100',
+                  'actions/runs/$TRIGGER_RUN_ID/attempts/$TRIGGER_RUN_ATTEMPT',
+                  'assert attempt["run_attempt"]==int(os.environ["TRIGGER_RUN_ATTEMPT"])',
+                  'assert attempt["workflow_id"]==int(os.environ["EXPECTED_TRIGGER_WORKFLOW_ID"])',
+                  'assert attempt["head_sha"]==os.environ["HEAD_SHA"]',
+                  'assert attempt["head_branch"]==os.environ["EXPECTED_TRIGGER_BRANCH"]',
+                  'assert attempt["conclusion"]==os.environ["TRIGGER_CONCLUSION"]',
                   'assert d.get("total_count")==4',
                   'assert len(jobs)==len(expected_names)==4',
                   'assert observed_names==expected_names',
@@ -1801,11 +1807,29 @@ jobs:
           assert len(pull_requests)==1, f"unexpected triggering PR cardinality: {len(pull_requests)}"
           assert pull_requests[0]["number"]==int(os.environ["PR_NUMBER"])
           assert d["conclusion"]==os.environ["TRIGGER_CONCLUSION"]
-          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2026-03-10"             "https://api.github.com/repos/$EXPECTED_HEAD_REPO/actions/runs/$TRIGGER_RUN_ID/attempts/$TRIGGER_RUN_ATTEMPT/jobs?per_page=100"             -o /tmp/trigger-run-jobs.json
+          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2026-03-10"                       curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2026-03-10"             "https://api.github.com/repos/$EXPECTED_HEAD_REPO/actions/runs/$TRIGGER_RUN_ID/attempts/$TRIGGER_RUN_ATTEMPT"             -o /tmp/trigger-run-attempt.json
+"https://api.github.com/repos/$EXPECTED_HEAD_REPO/actions/runs/$TRIGGER_RUN_ID/attempts/$TRIGGER_RUN_ATTEMPT/jobs?per_page=100"             -o /tmp/trigger-run-jobs.json
           python3 - <<'PY'
           import json
           from pathlib import Path
 
+          attempt=json.loads(Path("/tmp/trigger-run-attempt.json").read_text())
+          assert attempt["id"]==int(os.environ["TRIGGER_RUN_ID"])
+          assert attempt["run_attempt"]==int(os.environ["TRIGGER_RUN_ATTEMPT"])
+          assert attempt["workflow_id"]==int(os.environ["EXPECTED_TRIGGER_WORKFLOW_ID"])
+          assert attempt["path"]==os.environ["EXPECTED_TRIGGER_WORKFLOW_PATH"]
+          assert attempt["event"]=="pull_request"
+          assert attempt["status"]=="completed"
+          assert attempt["conclusion"]==os.environ["TRIGGER_CONCLUSION"]
+          assert attempt["head_sha"]==os.environ["HEAD_SHA"]
+          assert attempt["head_branch"]==os.environ["EXPECTED_TRIGGER_BRANCH"]
+          assert attempt["repository"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])
+          assert attempt["head_repository"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])
+          attempt_prs=attempt.get("pull_requests",[])
+          assert len(attempt_prs)==1
+          assert attempt_prs[0]["number"]==int(os.environ["PR_NUMBER"])
+          assert attempt_prs[0]["head"]["sha"]==os.environ["HEAD_SHA"]
+          assert attempt_prs[0]["base"]["ref"]=="main"
           d=json.loads(Path("/tmp/trigger-run-jobs.json").read_text())
           jobs=d.get("jobs",[])
           expected_names={"preflight","clean","hostile","admission"}
@@ -3164,6 +3188,7 @@ jobs:
               and read_optional("/tmp/final-pr-freshness.txt") is not None
               and workflow_identity_ok
               and triggering_jobs_ok
+              and Path("/tmp/trigger-run-attempt.json").exists()
               and upload_artifact_commit_signature_verified
               and upload_artifact_v6_tag_binding_verified
               and upload_artifact_action_contract_verified
@@ -3204,6 +3229,11 @@ jobs:
               "verifier_workflow_commit":os.environ["GITHUB_SHA"],
               "triggering_jobs_verified":triggering_jobs_ok,
               "triggering_jobs_payload_sha256":triggering_jobs_payload_sha256,
+              "triggering_attempt_payload_sha256":(
+                  __import__("hashlib").sha256(Path("/tmp/trigger-run-attempt.json").read_bytes()).hexdigest()
+                  if Path("/tmp/trigger-run-attempt.json").exists() else None
+              ),
+              "triggering_attempt_verified":Path("/tmp/trigger-run-attempt.json").exists(),
               "verifier_workflow_id":int(os.environ["EXPECTED_VERIFIER_WORKFLOW_ID"]),
               "verifier_workflow_blob":read_optional("/tmp/verifier-workflow.blob"),
               "verifier_workflow_sha256":read_optional("/tmp/verifier-workflow.sha256"),
@@ -3459,6 +3489,7 @@ jobs:
             /tmp/upload-artifact-action.json
             /tmp/trigger-run.json
             /tmp/trigger-run-jobs.json
+            /tmp/trigger-run-attempt.json
             /tmp/pr.json
             /tmp/base-tree-sha
             /tmp/head-tree-sha
