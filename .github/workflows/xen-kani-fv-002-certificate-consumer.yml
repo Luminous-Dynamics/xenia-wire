@@ -25,7 +25,7 @@ env:
   PROMOTION_TERMINAL_SCHEMA: xenia.formal.kani-replay-kernel.promotion-terminal.v1
   PROMOTION_CERTIFICATE_CANONICALIZATION: xenia.canonical-json.utf8.sort-keys.no-floats.v1
   CANONICALIZATION_VECTORS_PATH: docs/formal/xen-kani-fv-002-canonical-json-v1-vectors.json
-  EXPECTED_CANONICALIZATION_VECTORS_BLOB: c75f3ffd759f8cecf34bc90ef72f8cd62cad9d8d
+  EXPECTED_CANONICALIZATION_VECTORS_BLOB: 2094645ec64821f8c8bbed58d2b340a5d90f20f5
   MAX_PROMOTION_TERMINAL_BYTES: "5242880"
   MAX_CERTIFICATE_MEMBER_BYTES: "1048576"
   MAX_CERTIFICATE_TOTAL_UNCOMPRESSED_BYTES: "4194304"
@@ -205,6 +205,7 @@ jobs:
           def verify_canonicalization_vectors(document):
               assert document["schema"]=="xenia.formal.kani-replay-kernel.canonical-json-v1-vectors"
               assert document["algorithm"]==os.environ["PROMOTION_CERTIFICATE_CANONICALIZATION"]
+              assert document["key_order"]=="Unicode scalar value lexicographic order over decoded JSON object member names"
               vectors=document.get("vectors")
               assert isinstance(vectors,list)
               expected_ids={
@@ -212,6 +213,7 @@ jobs:
                   "nested-unicode-and-escapes",
                   "large-integer-preserved",
                   "unicode-code-point-key-order",
+                  "unicode-scalar-key-order",
                   "whitespace-and-negative-zero",
                   "duplicate-keys-rejected",
                   "invalid-utf8-rejected",

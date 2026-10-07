@@ -48,6 +48,12 @@
       "canonical_utf8_hex": "7b2261223a302c2265cc81223a322c22c3a9223a317d"
     },
     {
+      "id": "unicode-scalar-key-order",
+      "kind": "accept_raw_json",
+      "raw_utf8_hex": "7b22ee8080223a312c22f0908080223a327d",
+      "canonical_utf8_hex": "7b22ee8080223a312c22f0908080223a327d"
+    },
+    {
       "id": "whitespace-and-negative-zero",
       "kind": "accept_raw_json",
       "raw_utf8_hex": "207b20226222203a202d302c20226122203a2031207d20",
@@ -83,5 +89,6 @@
       "raw_utf8_hex": "7b2278223a4e614e7d",
       "expected_failure": "nonfinite_or_float"
     }
-  ]
+  ],
+  "key_order": "Unicode scalar value lexicographic order over decoded JSON object member names"
 }
