@@ -21,7 +21,6 @@ env:
   VERIFIER_WORKFLOW_NAME: Trusted XEN-KANI-FV-002 Admission
   EXPECTED_VERIFIER_WORKFLOW_BLOB: 10bcd8ff3f682c29f0aeaf90f5072f92a93d0dbb
   CONSUMER_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-certificate-consumer.yml
-  EXPECTED_CONSUMER_WORKFLOW_BLOB: 9c9fb34233f86e8e9eadc186a5c040ff6a7b2e83
   AUTHORITY_TERMINAL_PREFIX: trusted-xen-kani-fv-002-authority-terminal-
   AUTHORITY_TERMINAL_SCHEMA: xenia.formal.kani-replay-kernel.promotion-terminal.v1
   MAX_AUTHORITY_TERMINAL_BYTES: "5242880"
@@ -130,7 +129,7 @@ jobs:
           )
           assert consumer_workflow["type"]=="file"
           assert consumer_workflow["path"]==os.environ["CONSUMER_WORKFLOW_PATH"]
-          assert consumer_workflow["sha"]==os.environ["EXPECTED_CONSUMER_WORKFLOW_BLOB"]
+          assert re.fullmatch(r"[0-9a-f]{40}",consumer_workflow["sha"])
 
           pr=get(f"/pulls/{PR_NUMBER}")
           assert pr["number"]==PR_NUMBER
@@ -462,6 +461,9 @@ jobs:
               "certificate_verifier_workflow_id":VERIFIER_WORKFLOW_ID,
               "certificate_verifier_workflow_blob":os.environ["EXPECTED_VERIFIER_WORKFLOW_BLOB"],
               "certificate_verifier_workflow_commit":producer_run["head_sha"],
+              "consumer_workflow_ref":os.environ["GITHUB_WORKFLOW_REF"],
+              "consumer_workflow_sha":os.environ["GITHUB_WORKFLOW_SHA"],
+              "consumer_workflow_blob":consumer_workflow["sha"],
               "scope":"IN_SCOPE",
               "qualification_files_observed":applicable_files,
               "main_protected":True,
