@@ -21,9 +21,9 @@ env:
   VERIFIER_WORKFLOW_NAME: Trusted XEN-KANI-FV-002 Admission
   EXPECTED_VERIFIER_WORKFLOW_BLOB: 10bcd8ff3f682c29f0aeaf90f5072f92a93d0dbb
   CONSUMER_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-certificate-consumer.yml
-  AUTHORITY_TERMINAL_PREFIX: trusted-xen-kani-fv-002-authority-terminal-
-  AUTHORITY_TERMINAL_SCHEMA: xenia.formal.kani-replay-kernel.promotion-terminal.v1
-  MAX_AUTHORITY_TERMINAL_BYTES: "5242880"
+  PROMOTION_TERMINAL_PREFIX: trusted-xen-kani-fv-002-promotion-terminal-
+  PROMOTION_TERMINAL_SCHEMA: xenia.formal.kani-replay-kernel.promotion-terminal.v1
+  MAX_PROMOTION_TERMINAL_BYTES: "5242880"
   MAX_CERTIFICATE_MEMBER_BYTES: "1048576"
   MAX_CERTIFICATE_TOTAL_UNCOMPRESSED_BYTES: "4194304"
 
@@ -66,8 +66,8 @@ jobs:
           VERIFIER_WORKFLOW_PATH=os.environ["VERIFIER_WORKFLOW_PATH"]
           VERIFIER_WORKFLOW_NAME=os.environ["VERIFIER_WORKFLOW_NAME"]
           PR_NUMBER=int(os.environ["PR_NUMBER"])
-          PREFIX=os.environ["AUTHORITY_TERMINAL_PREFIX"]
-          MAX_BYTES=int(os.environ["MAX_AUTHORITY_TERMINAL_BYTES"])
+          PREFIX=os.environ["PROMOTION_TERMINAL_PREFIX"]
+          MAX_BYTES=int(os.environ["MAX_PROMOTION_TERMINAL_BYTES"])
           TOKEN=os.environ["GITHUB_TOKEN"]
           API_BASE=f"https://api.github.com/repos/{REPO}"
 
@@ -307,7 +307,7 @@ jobs:
               and artifact.get("expired") is False
           ]
           assert len(producer_candidates)==1, (
-              f"expected exactly one authority-terminal artifact from producer run, "
+              f"expected exactly one promotion-terminal artifact from producer run, "
               f"observed={len(producer_candidates)}"
           )
           artifact=producer_candidates[0]
@@ -364,7 +364,7 @@ jobs:
                   return data
 
               expected_members={
-                  "authority-terminal.json",
+                  "promotion-terminal.json",
                   "terminal-main-branch.json",
                   "terminal-main-commit.json",
                   "trusted-artifact.json",
@@ -374,11 +374,11 @@ jobs:
                   "terminal-pr.json",
               }
               assert set(names)==expected_members, (
-                  f"authority-terminal member mismatch: "
+                  f"promotion-terminal member mismatch: "
                   f"unexpected={sorted(set(names)-expected_members)} "
                   f"missing={sorted(expected_members-set(names))}"
               )
-              terminal=strict_json(read_member("authority-terminal.json"),"authority-terminal.json")
+              terminal=strict_json(read_member("promotion-terminal.json"),"promotion-terminal.json")
               terminal_main_branch=strict_json(read_member("terminal-main-branch.json"),"terminal-main-branch.json")
               terminal_main_commit=strict_json(read_member("terminal-main-commit.json"),"terminal-main-commit.json")
               trusted_artifact=strict_json(read_member("trusted-artifact.json"),"trusted-artifact.json")
@@ -387,7 +387,7 @@ jobs:
               evidence_zip_digest=read_member("trusted-artifact-download.sha256").decode("utf-8").strip()
               evidence_members=read_member("trusted-artifact-members.txt").decode("utf-8").splitlines()
 
-          assert terminal["schema"]==os.environ["AUTHORITY_TERMINAL_SCHEMA"]
+          assert terminal["schema"]==os.environ["PROMOTION_TERMINAL_SCHEMA"]
           canonical_terminal=json.dumps(
               terminal,
               sort_keys=True,
@@ -531,7 +531,7 @@ jobs:
               f"Main tip: {current_main_sha}\n"
               f"Qualification paths changed: {', '.join(applicable_files)}\n"
               f"Producer run: {producer_run_id} attempt {producer_run['run_attempt']}\n"
-              f"Authority terminal artifact: {artifact_id} / {artifact_digest}\n"
+              f"Promotion terminal artifact: {artifact_id} / {artifact_digest}\n"
               f"Promotion certificate payload: {promotion_certificate_payload_digest}\n"
               f"Verifier runs observed for current main: {len(verifier_candidates)}\n"
               f"Certificate artifacts observed in selected verifier run: {len(producer_candidates)}\n"
