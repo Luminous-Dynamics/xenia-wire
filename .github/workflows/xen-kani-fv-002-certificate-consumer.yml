@@ -19,9 +19,9 @@ env:
   VERIFIER_WORKFLOW_ID: "373418900"
   VERIFIER_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-trusted-admission.yml
   VERIFIER_WORKFLOW_NAME: Trusted XEN-KANI-FV-002 Admission
-  EXPECTED_VERIFIER_WORKFLOW_BLOB: 51d03ebc2ade5eb24408db1e257fee652decc014
+  EXPECTED_VERIFIER_WORKFLOW_BLOB: 10bcd8ff3f682c29f0aeaf90f5072f92a93d0dbb
   AUTHORITY_TERMINAL_PREFIX: trusted-xen-kani-fv-002-authority-terminal-
-  AUTHORITY_TERMINAL_SCHEMA: xenia.formal.kani-replay-kernel.authority-terminal.v1
+  AUTHORITY_TERMINAL_SCHEMA: xenia.formal.kani-replay-kernel.promotion-terminal.v1
   MAX_AUTHORITY_TERMINAL_BYTES: "5242880"
 
 jobs:
@@ -334,7 +334,7 @@ jobs:
               evidence_members=z.read("trusted-artifact-members.txt").decode().splitlines()
 
           assert terminal["schema"]==os.environ["AUTHORITY_TERMINAL_SCHEMA"]
-          assert terminal["authority_eligible"] is True
+          assert terminal["promotion_eligible"] is True
           assert terminal["verifier_workflow_id"]==VERIFIER_WORKFLOW_ID
           assert terminal["verifier_workflow_path"]==VERIFIER_WORKFLOW_PATH
           assert terminal["verifier_workflow_commit"]==producer_run["head_sha"]
@@ -352,7 +352,7 @@ jobs:
           assert terminal["final_trigger_job_steps_verified"] is True
           assert terminal["final_trigger_freshness_verified"] is True
           assert terminal["final_pr_freshness_verified"] is True
-          assert terminal["pre_transport_authority_eligible"] is True
+          assert terminal["pre_transport_promotion_eligible"] is True
           assert terminal["main_branch_protection_verified"] is True
           assert terminal["final_main_branch_protection_verified"] is True
           assert terminal["terminal_main_branch_protection_verified"] is True
