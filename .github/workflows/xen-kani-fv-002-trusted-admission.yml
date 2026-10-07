@@ -952,7 +952,7 @@ jobs:
           abort "self-test runner mismatch" unless selftest["runs-on"] == "ubuntu-24.04" && selftest["timeout-minutes"] == 30
           abort "self-test permissions mismatch" unless selftest["permissions"] == {"contents"=>"read"}
 
-          expected_trusted_if="github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.pull_requests[0].number != null && github.event.workflow_run.head_branch == 'formal/xen-kani-fv-002-replay-kernel' && github.event.workflow_run.head_sha == '1fbea431db9e7e20ae3b31e925219a90de2b36bd' && github.event.workflow_run.conclusion == 'success'"
+          expected_trusted_if="github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.pull_requests[0].number != null && github.event.workflow_run.head_repository.full_name == 'Luminous-Dynamics/xenia-wire' && github.event.workflow_run.head_repository.id == 1213976974 && github.event.workflow_run.repository.id == 1213976974 && github.event.workflow_run.head_branch == 'formal/xen-kani-fv-002-replay-kernel' && github.event.workflow_run.head_sha == '1fbea431db9e7e20ae3b31e925219a90de2b36bd' && github.event.workflow_run.conclusion == 'success'"
           abort "trusted trigger predicate mismatch" unless trusted["if"] == expected_trusted_if
           abort "trusted runner mismatch" unless trusted["runs-on"] == "ubuntu-24.04" && trusted["timeout-minutes"] == 60
           abort "trusted job unexpectedly overrides permissions" if trusted.key?("permissions")
@@ -1092,7 +1092,7 @@ jobs:
           }
           expected_job_if={
             "non-authoritative-selftest"=>"github.event_name == 'pull_request'",
-            "trusted-admission"=>"github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.pull_requests[0].number != null && github.event.workflow_run.head_branch == 'formal/xen-kani-fv-002-replay-kernel' && github.event.workflow_run.head_sha == '1fbea431db9e7e20ae3b31e925219a90de2b36bd' && github.event.workflow_run.conclusion == 'success'",
+            "trusted-admission"=>"github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.pull_requests[0].number != null && github.event.workflow_run.head_repository.full_name == 'Luminous-Dynamics/xenia-wire' && github.event.workflow_run.head_repository.id == 1213976974 && github.event.workflow_run.repository.id == 1213976974 && github.event.workflow_run.head_branch == 'formal/xen-kani-fv-002-replay-kernel' && github.event.workflow_run.head_sha == '1fbea431db9e7e20ae3b31e925219a90de2b36bd' && github.event.workflow_run.conclusion == 'success'",
           }
           expected_job_permissions={
             "non-authoritative-selftest"=>{"contents"=>"read"},
@@ -1533,7 +1533,7 @@ jobs:
           include-hidden-files: false
 
   trusted-admission:
-    if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.pull_requests[0].number != null && github.event.workflow_run.head_branch == 'formal/xen-kani-fv-002-replay-kernel' && github.event.workflow_run.head_sha == '1fbea431db9e7e20ae3b31e925219a90de2b36bd' && github.event.workflow_run.conclusion == 'success'
+    if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.pull_requests[0].number != null && github.event.workflow_run.head_repository.full_name == 'Luminous-Dynamics/xenia-wire' && github.event.workflow_run.head_repository.id == 1213976974 && github.event.workflow_run.repository.id == 1213976974 && github.event.workflow_run.head_branch == 'formal/xen-kani-fv-002-replay-kernel' && github.event.workflow_run.head_sha == '1fbea431db9e7e20ae3b31e925219a90de2b36bd' && github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
