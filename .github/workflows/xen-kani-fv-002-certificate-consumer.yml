@@ -24,6 +24,8 @@ env:
   AUTHORITY_TERMINAL_PREFIX: trusted-xen-kani-fv-002-authority-terminal-
   AUTHORITY_TERMINAL_SCHEMA: xenia.formal.kani-replay-kernel.promotion-terminal.v1
   MAX_AUTHORITY_TERMINAL_BYTES: "5242880"
+  MAX_CERTIFICATE_MEMBER_BYTES: "1048576"
+  MAX_CERTIFICATE_TOTAL_UNCOMPRESSED_BYTES: "4194304"
 
 jobs:
   certificate-consumer:
@@ -114,6 +116,19 @@ jobs:
 
           def sha256_bytes(data):
               return hashlib.sha256(data).hexdigest()
+
+          def strict_json(data, label):
+              def unique_pairs(pairs):
+                  result={}
+                  for key,value in pairs:
+                      assert key not in result, f"{label}: duplicate JSON key: {key!r}"
+                      result[key]=value
+                  return result
+              try:
+                  text_value=data.decode("utf-8")
+              except UnicodeDecodeError as exc:
+                  raise AssertionError(f"{label}: invalid UTF-8: {exc}") from exc
+              return json.loads(text_value, object_pairs_hook=unique_pairs)
 
           def parse_time(value):
               return datetime.fromisoformat(value.replace("Z","+00:00")).astimezone(timezone.utc)
@@ -311,8 +326,12 @@ jobs:
           archive=download(archive_url,MAX_BYTES)
           assert sha256_bytes(archive)==artifact_digest.removeprefix("sha256:")
 
+          MAX_MEMBER_BYTES=int(os.environ["MAX_CERTIFICATE_MEMBER_BYTES"])
+          MAX_TOTAL_UNCOMPRESSED_BYTES=int(os.environ["MAX_CERTIFICATE_TOTAL_UNCOMPRESSED_BYTES"])
+
           with zipfile.ZipFile(io.BytesIO(archive)) as z:
-              names=z.namelist()
+              infos=z.infolist()
+              names=[info.filename for info in infos]
               assert names
               assert len(names)==len(set(names))
               assert all(
@@ -323,6 +342,27 @@ jobs:
                   and ".." not in name.split("/")
                   for name in names
               )
+              total_uncompressed=0
+              for info in infos:
+                  assert not (info.flag_bits & 0x1), f"encrypted ZIP member forbidden: {info.filename!r}"
+                  assert info.file_size<=MAX_MEMBER_BYTES, (
+                      f"ZIP member exceeds bounded expansion: {info.filename!r} "
+                      f"size={info.file_size}"
+                  )
+                  total_uncompressed += info.file_size
+                  assert total_uncompressed<=MAX_TOTAL_UNCOMPRESSED_BYTES, (
+                      f"ZIP total expansion exceeds bounded size: {total_uncompressed}"
+                  )
+
+              def read_member(name):
+                  info=z.getinfo(name)
+                  with z.open(info) as member:
+                      data=member.read(MAX_MEMBER_BYTES+1)
+                  assert len(data)<=MAX_MEMBER_BYTES, (
+                      f"ZIP member exceeded bounded read: {name!r}: {len(data)}"
+                  )
+                  return data
+
               expected_members={
                   "authority-terminal.json",
                   "terminal-main-branch.json",
@@ -338,14 +378,14 @@ jobs:
                   f"unexpected={sorted(set(names)-expected_members)} "
                   f"missing={sorted(expected_members-set(names))}"
               )
-              terminal=json.loads(z.read("authority-terminal.json"))
-              terminal_main_branch=json.loads(z.read("terminal-main-branch.json"))
-              terminal_main_commit=json.loads(z.read("terminal-main-commit.json"))
-              trusted_artifact=json.loads(z.read("trusted-artifact.json"))
-              terminal_pr=json.loads(z.read("terminal-pr.json"))
-              provenance=z.read("trusted-artifact-provenance.txt").decode()
-              evidence_zip_digest=z.read("trusted-artifact-download.sha256").decode().strip()
-              evidence_members=z.read("trusted-artifact-members.txt").decode().splitlines()
+              terminal=strict_json(read_member("authority-terminal.json"),"authority-terminal.json")
+              terminal_main_branch=strict_json(read_member("terminal-main-branch.json"),"terminal-main-branch.json")
+              terminal_main_commit=strict_json(read_member("terminal-main-commit.json"),"terminal-main-commit.json")
+              trusted_artifact=strict_json(read_member("trusted-artifact.json"),"trusted-artifact.json")
+              terminal_pr=strict_json(read_member("terminal-pr.json"),"terminal-pr.json")
+              provenance=read_member("trusted-artifact-provenance.txt").decode("utf-8")
+              evidence_zip_digest=read_member("trusted-artifact-download.sha256").decode("utf-8").strip()
+              evidence_members=read_member("trusted-artifact-members.txt").decode("utf-8").splitlines()
 
           assert terminal["schema"]==os.environ["AUTHORITY_TERMINAL_SCHEMA"]
           canonical_terminal=json.dumps(
