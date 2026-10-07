@@ -237,10 +237,27 @@ jobs:
                       assert canonical_certificate_bytes(parsed).hex()==vector["canonical_utf8_hex"], vector_id
                   elif kind=="reject_raw_json":
                       assert raw is not None
+                      expected_failure=vector.get("expected_failure")
+                      expected_fragments={
+                          "duplicate_json_key":["duplicate JSON key"],
+                          "invalid_utf8":["invalid UTF-8"],
+                          "floating_point":["floating-point JSON values"],
+                          "surrogate":["surrogate code point"],
+                          "nonfinite_or_float":["floating-point JSON values"],
+                      }
+                      assert expected_failure in expected_fragments, vector_id
                       try:
                           parsed=strict_json(raw,vector_id)
                           canonical_certificate_bytes(parsed)
-                      except AssertionError:
+                      except AssertionError as exc:
+                          message=str(exc)
+                          assert any(
+                              fragment in message
+                              for fragment in expected_fragments[expected_failure]
+                          ), (
+                              f"canonicalization rejection vector failed with unexpected "
+                              f"reason: {vector_id}: {message!r}"
+                          )
                           continue
                       raise AssertionError(f"canonicalization rejection vector unexpectedly accepted: {vector_id}")
                   else:
