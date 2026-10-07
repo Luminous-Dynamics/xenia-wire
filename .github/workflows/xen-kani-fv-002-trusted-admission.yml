@@ -751,6 +751,7 @@ jobs:
           seen_mappings={}
           walk_mapping = lambda do |node, location|
             if node.is_a?(Psych::Nodes::Mapping)
+              seen_mappings[location]=true
               seen={}
               node.children.each_slice(2).with_index do |(key, value), index|
                 if key.is_a?(Psych::Nodes::Scalar)
@@ -1244,7 +1245,7 @@ jobs:
           concurrency=workflow.fetch("concurrency")
           expected_group="$"+"{{ github.workflow }}"+"-"+"{{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.run_id }}"
           abort "concurrency contract mismatch" unless concurrency["cancel-in-progress"] == false && concurrency["group"] == expected_group
-          abort "YAML duplicate-key walker must run before semantic load" unless seen_mappings.is_a?(Hash)
+          abort "YAML duplicate-key walker must inspect mappings" unless seen_mappings.any?
           puts "YAML semantic workflow guard passed"
           RUBY
 
