@@ -252,15 +252,15 @@ jobs:
               'expected_path="/model-checking/kani/releases/download/"',
               'assert pull_requests[0]["base"]["ref"]=="main"',
               'assert pull_requests[0]["base"]["repo"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]',
-              '"pre_transport_authority_eligible":pre_transport_authority_eligible',
+              '"pre_transport_promotion_eligible":pre_transport_promotion_eligible',
               '"upload_artifact_v6_tag_binding_verified":upload_artifact_v6_tag_binding_verified',
-              '"authority_eligible":False',
-              'assert receipt["pre_transport_authority_eligible"] is True',
-              'assert receipt["authority_eligible"] is False',
+              '"promotion_eligible":False',
+              'assert receipt["pre_transport_promotion_eligible"] is True',
+              'assert receipt["promotion_eligible"] is False',
               '"terminal_pr_freshness_verified":True',
               'assert terminal["terminal_pr_freshness_verified"] is True',
-              '"authority_eligible":False',
-              'terminal["authority_eligible"]=True',
+              '"promotion_eligible":False',
+              'terminal["promotion_eligible"]=True',
               'assert main_branch["name"] == "main"',
               'assert main_branch["protected"] is True',
               'assert os.environ["GITHUB_REF_PROTECTED"] == "true"',
@@ -597,9 +597,9 @@ jobs:
               "Build authority terminal receipt":[
                   'assert d["base"]["repo"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])',
                   'assert d["head"]["repo"]["id"]==int(os.environ["EXPECTED_HEAD_REPO_ID"])',
-                  'assert receipt["pre_transport_authority_eligible"] is True',
-                  'assert receipt["authority_eligible"] is False',
-                  'terminal["authority_eligible"]=True',
+                  'assert receipt["pre_transport_promotion_eligible"] is True',
+                  'assert receipt["promotion_eligible"] is False',
+                  'terminal["promotion_eligible"]=True',
                   'terminal["terminal_main_branch_protection_verified"]=True',
                   'terminal["terminal_main_branch_signed_tip_verified"]=(',
                   'terminal["terminal_commit_signature_verified"]=(',
@@ -3638,7 +3638,7 @@ jobs:
               )
           )
 
-          pre_transport_authority_eligible=(
+          pre_transport_promotion_eligible=(
               envelope_evidence_ok
               and os.environ["HEAD_SHA"]==os.environ["EXPECTED_QUALIFIED_HEAD_SHA"]
               and os.environ["RUSTUP_TOOLCHAIN"]==os.environ["EXPECTED_KANI_RUST_TOOLCHAIN"]
@@ -3886,8 +3886,8 @@ jobs:
                   if Path("/tmp/trusted-clean-manifest.json").exists() else None
               ),
               "clean_proof_all_success":clean_proofs_ok,
-              "pre_transport_authority_eligible":pre_transport_authority_eligible,
-              "authority_eligible":False,
+              "pre_transport_promotion_eligible":pre_transport_promotion_eligible,
+              "promotion_eligible":False,
               "base_tree_sha":Path("/tmp/base-tree-sha").read_text().strip() if Path("/tmp/base-tree-sha").exists() else None,
               "head_tree_sha":Path("/tmp/head-tree-sha").read_text().strip() if Path("/tmp/head-tree-sha").exists() else None,
               "complete_tree_delta_verified":Path("/tmp/trusted-tree-delta.txt").exists(),
@@ -3936,7 +3936,7 @@ jobs:
           }
           Path("/tmp/trusted-admission.json").write_text(json.dumps(receipt,indent=2,sort_keys=True)+"\n")
           print(Path("/tmp/trusted-admission.json").read_text())
-          if not pre_transport_authority_eligible:
+          if not pre_transport_promotion_eligible:
               raise SystemExit("authority eligibility predicate is false")
           PY
 
@@ -4412,16 +4412,16 @@ jobs:
           assert terminal_pr["head"]["sha"] == os.environ["HEAD_SHA"]
           assert terminal_pr["head"]["repo"]["full_name"] == os.environ["EXPECTED_HEAD_REPO"]
           assert terminal_pr["head"]["repo"]["full_name"] == os.environ["HEAD_REPO"]
-          assert receipt["pre_transport_authority_eligible"] is True
-          assert receipt["authority_eligible"] is False
+          assert receipt["pre_transport_promotion_eligible"] is True
+          assert receipt["promotion_eligible"] is False
           assert artifact["id"] == int(os.environ["ARTIFACT_ID"])
           assert artifact["digest"] == "sha256:"+os.environ["ARTIFACT_DIGEST"]
           assert artifact["workflow_run"]["id"] == int(os.environ["GITHUB_RUN_ID"])
           assert artifact["workflow_run"]["head_sha"] == os.environ["GITHUB_SHA"]
 
           terminal=dict(receipt)
-          terminal["schema"]="xenia.formal.kani-replay-kernel.authority-terminal.v1"
-          terminal["authority_eligible"]=True
+          terminal["schema"]="xenia.formal.kani-replay-kernel.promotion-terminal.v1"
+          terminal["promotion_eligible"]=True
           terminal["evidence_artifact_id"]=artifact["id"]
           terminal["evidence_artifact_name"]=artifact["name"]
           terminal["evidence_artifact_digest"]=artifact["digest"]
@@ -4579,7 +4579,7 @@ jobs:
               assert archive.read("trusted-artifact-members.txt")==Path("/tmp/trusted-artifact-members.txt").read_bytes()
           transport={
               "schema":"xenia.formal.kani-replay-kernel.authority-terminal-transport.v1",
-              "authority_eligible":False,
+              "promotion_eligible":False,
               "verifier_run_id":int(os.environ["GITHUB_RUN_ID"]),
               "verifier_run_attempt":int(os.environ["GITHUB_RUN_ATTEMPT"]),
               "artifact_id":int(os.environ["ARTIFACT_ID"]),
