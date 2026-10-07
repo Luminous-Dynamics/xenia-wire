@@ -1814,7 +1814,6 @@ jobs:
               assert job["conclusion"]=="success"
           print("all qualifying workflow jobs completed successfully; no required job was skipped")
           PY
-          PY
 
       - name: Verify triggering workflow source identity
         shell: bash
@@ -3072,7 +3071,6 @@ jobs:
                   and read_optional("/tmp/hostile-cover-restored-kernel.blob")==read_optional("/tmp/xen-kani-trusted/kernel.blob")
               )
 
-          workflow_identity_ok=(
           triggering_jobs_ok=(
               Path("/tmp/trigger-run-jobs.json").exists()
               and (
@@ -3086,6 +3084,7 @@ jobs:
                   ))(__import__("json").loads(Path("/tmp/trigger-run-jobs.json").read_text()))
               )
           )
+          workflow_identity_ok=(
               read_optional("/tmp/verifier-workflow.blob") is not None
               and read_optional("/tmp/trigger-workflow.blob")==os.environ["EXPECTED_TRIGGER_WORKFLOW_BLOB"]
           )
@@ -3446,6 +3445,7 @@ jobs:
             /tmp/upload-artifact-tag.json
             /tmp/upload-artifact-action.json
             /tmp/trigger-run.json
+            /tmp/trigger-run-jobs.json
             /tmp/pr.json
             /tmp/base-tree-sha
             /tmp/head-tree-sha
