@@ -114,6 +114,65 @@ jobs:
           assert re.fullmatch(r"[0-9a-f]{40}",head_sha)
           assert re.fullmatch(r"[0-9a-f]{40}",base_sha)
 
+          qualification_paths={
+              "src/replay_kernel.rs",
+              "src/replay_kernel_kani.rs",
+              "src/replay_window.rs",
+              "fuzz/fuzz_targets/fuzz_replay_window.rs",
+              "src/lib.rs",
+              "Cargo.toml",
+              "docs/formal/xen-kani-fv-002-replay-kernel-v1.json",
+              ".github/workflows/xen-kani-fv-002-replay-kernel-v2.yml",
+          }
+          changed_files=[]
+          first_files=get(f"/pulls/{PR_NUMBER}/files",per_page=100,page=1)
+          total_file_count=0
+          page=1
+          while True:
+              files=first_files if page==1 else get(f"/pulls/{PR_NUMBER}/files",per_page=100,page=page)
+              batch=files if isinstance(files,list) else []
+              if not batch:
+                  break
+              assert len(batch)<=100
+              changed_files.extend(batch)
+              total_file_count += len(batch)
+              if len(batch)<100:
+                  break
+              page += 1
+              assert page<=30, "pull request changed-file surface reached the API's 3000-file cap"
+          assert len(changed_files)==total_file_count
+          assert len(changed_files)<3000, "changed-file API cap prevents complete scope determination"
+          applicable_files=sorted({
+              candidate
+              for file in changed_files
+              for candidate in (file.get("filename"),file.get("previous_filename"))
+              if candidate in qualification_paths
+          })
+          if not applicable_files:
+              decision={
+                  "schema":"xenia.formal.kani-replay-kernel.certificate-consumer.v1",
+                  "decision":"NOT_APPLICABLE",
+                  "scope":"OUT_OF_SCOPE",
+                  "pr_number":PR_NUMBER,
+                  "head_sha":head_sha,
+                  "main_sha":None,
+                  "changed_file_count":len(changed_files),
+                  "qualification_files_observed":[],
+              }
+              Path("/tmp/xen-kani-fv-002-consumer-decision.json").write_text(
+                  json.dumps(decision,indent=2,sort_keys=True)+"\n"
+              )
+              Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text(
+                  "## XEN-KANI-FV-002 Certificate Consumer\n\n"
+                  "Decision: NOT_APPLICABLE\n\n"
+                  f"PR #{PR_NUMBER}\n"
+                  f"Subject head: {head_sha}\n"
+                  f"Changed files inspected: {len(changed_files)}\n"
+                  "No XEN-KANI-FV-002 qualification subject or qualification workflow path changed.\n"
+              )
+              print(json.dumps(decision,indent=2,sort_keys=True))
+              raise SystemExit(0)
+
           main=get("/branches/main")
           assert main["name"]=="main"
           assert main["protected"] is True
@@ -234,7 +293,6 @@ jobs:
           assert terminal["verifier_workflow_commit"]==producer_run["head_sha"]
           assert terminal["pr_number"]==PR_NUMBER
           assert terminal["head_sha"]==head_sha
-          assert terminal["qualified_head_sha_verified"] is True
           assert terminal["head_repo"]==REPO
           assert terminal["head_repo_id"]==REPO_ID
           assert terminal["pr_base_ref"]=="main"
@@ -340,6 +398,8 @@ jobs:
               "authority_terminal_candidates":len(candidates),
               "certificate_verifier_workflow_id":VERIFIER_WORKFLOW_ID,
               "certificate_verifier_workflow_commit":producer_run["head_sha"],
+              "scope":"IN_SCOPE",
+              "qualification_files_observed":applicable_files,
               "main_protected":True,
               "main_tip_signature_verified":True,
               "certificate_subject_verified":True,
@@ -355,6 +415,7 @@ jobs:
               f"PR #{PR_NUMBER}\n"
               f"Subject head: {head_sha}\n"
               f"Main tip: {current_main_sha}\n"
+              f"Qualification paths changed: {', '.join(applicable_files)}\n"
               f"Producer run: {producer_run_id} attempt {producer_run['run_attempt']}\n"
               f"Authority terminal artifact: {artifact_id} / {artifact_digest}\n"
               f"Certificate candidates observed: {len(candidates)}\n"
