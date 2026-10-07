@@ -309,6 +309,10 @@ jobs:
           for surface in forbidden_runner_state_files:
               assert surface not in workflow, f"forbidden runner state injection channel: {surface}"
 
+          assert workflow.count('critical_step_attestation_schema="xenia.formal.kani-replay-kernel.trigger-job-steps.v1"')==3
+          assert workflow.count('substantive=[step for step in steps if step.get("name") not in wrapper_step_names]')==0
+          assert workflow.count('and not str(step.get("name","")).startswith("Post ")')>=3
+          assert workflow.count('def job_step_attestation_ok(job):')==1
           assert workflow.count('[[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]')==3
           uses=re.findall(r"^\s+uses:\s+([^\s#]+)",workflow,re.MULTILINE)
           expected_uses=[
@@ -464,6 +468,18 @@ jobs:
                   'assert job["head_branch"]==os.environ["EXPECTED_TRIGGER_BRANCH"]',
                   'assert job["status"]=="completed"',
                   'assert job["conclusion"]=="success"',
+                  'critical_step_attestation_schema="xenia.formal.kani-replay-kernel.trigger-job-steps.v1"',
+                  'expected_critical_steps={',
+                  'wrapper_step_names={"Set up job","Complete job"}',
+                  'substantive=[step for step in steps',
+                  'not str(step.get("name","")).startswith("Post ")',
+                  'observed_steps=[step.get("name") for step in substantive]',
+                  'step.get("status")=="completed"',
+                  'step.get("conclusion")=="success"',
+                  'def job_step_attestation_ok(job):',
+                  'def trigger_job_steps_attestation_ok(doc):',
+                  'def trigger_jobs_identity_ok(doc):',
+                  'https://api.github.com/repos/$EXPECTED_HEAD_REPO/actions/runs/$TRIGGER_RUN_ID',
                    'https://api.github.com/repos/$EXPECTED_HEAD_REPO/actions/runs/$TRIGGER_RUN_ID',
                    'https://api.github.com/repos/$EXPECTED_HEAD_REPO/actions/runs/$TRIGGER_RUN_ID/attempts/$TRIGGER_RUN_ATTEMPT',
                    'https://api.github.com/repos/$EXPECTED_HEAD_REPO/actions/runs/$TRIGGER_RUN_ID/attempts/$TRIGGER_RUN_ATTEMPT/jobs?per_page=100',
@@ -479,6 +495,8 @@ jobs:
                    '"final_trigger_run_verified":final_trigger_run_ok',
                    '"final_trigger_attempt_verified":final_trigger_attempt_ok',
                    '"final_trigger_jobs_verified":final_trigger_jobs_ok',
+              '"final_trigger_job_steps_verified":final_trigger_job_steps_ok',
+              '"final_trigger_job_steps_schema":critical_step_attestation_schema',
                    '"final_trigger_run_payload_sha256"',
                    '"final_trigger_attempt_payload_sha256"',
                    '"final_trigger_jobs_payload_sha256"',
@@ -1899,6 +1917,41 @@ jobs:
           d=json.loads(Path("/tmp/trigger-run-jobs.json").read_text())
           jobs=d.get("jobs",[])
           expected_names={"preflight","clean","hostile","admission"}
+          critical_step_attestation_schema="xenia.formal.kani-replay-kernel.trigger-job-steps.v1"
+          expected_critical_steps={
+              "preflight":[
+                  "Checkout exact subject",
+                  "Verify lineage, exact subjects, and scope",
+                  "Validate evidence contract",
+                  "Verify source harness manifest",
+                  "Ordinary Rust build",
+                  "Retain preflight evidence",
+              ],
+              "clean":[
+                  "Checkout exact subject",
+                  "Verify exact production subjects",
+                  "Install pinned Kani",
+                  "Run all clean kernel proofs",
+                  "Retain clean evidence",
+              ],
+              "hostile":[
+                  "Checkout exact subject",
+                  "Verify kernel subject",
+                  "Install pinned Kani",
+                  "Apply hostile stale-boundary mutant",
+                  "Run hostile proof",
+                  "Restore clean source identity",
+                  "Build hostile receipt",
+                  "Retain hostile evidence",
+              ],
+              "admission":[
+                  "Checkout exact subject",
+                  "Download qualification evidence",
+                  "Evaluate canonical admission",
+                  "Retain canonical receipt",
+              ],
+          }
+          wrapper_step_names={"Set up job","Complete job"}
           assert d.get("total_count")==4
           assert len(jobs)==len(expected_names)==4
           observed_names={job["name"] for job in jobs}
@@ -1910,7 +1963,21 @@ jobs:
               assert job["head_branch"]==os.environ["EXPECTED_TRIGGER_BRANCH"]
               assert job["status"]=="completed"
               assert job["conclusion"]=="success"
-          print("all qualifying workflow jobs completed successfully; no required job was skipped")
+              assert job["name"] in expected_critical_steps
+              steps=job.get("steps",[])
+              substantive=[
+                  step for step in steps
+                  if step.get("name") not in wrapper_step_names
+                  and not str(step.get("name","")).startswith("Post ")
+              ]
+              observed_steps=[step.get("name") for step in substantive]
+              assert observed_steps==expected_critical_steps[job["name"]]
+              assert all(
+                  step.get("status")=="completed"
+                  and step.get("conclusion")=="success"
+                  for step in substantive
+              )
+          print(f"critical trigger step attestation verified: {critical_step_attestation_schema}")
           PY
 
       - name: Verify triggering workflow source identity
@@ -3088,6 +3155,41 @@ jobs:
           final_jobs_doc=json.loads(Path("/tmp/final-trigger-run-jobs.json").read_text())
           final_jobs=final_jobs_doc.get("jobs",[])
           expected_job_names={"preflight","clean","hostile","admission"}
+          critical_step_attestation_schema="xenia.formal.kani-replay-kernel.trigger-job-steps.v1"
+          expected_critical_steps={
+              "preflight":[
+                  "Checkout exact subject",
+                  "Verify lineage, exact subjects, and scope",
+                  "Validate evidence contract",
+                  "Verify source harness manifest",
+                  "Ordinary Rust build",
+                  "Retain preflight evidence",
+              ],
+              "clean":[
+                  "Checkout exact subject",
+                  "Verify exact production subjects",
+                  "Install pinned Kani",
+                  "Run all clean kernel proofs",
+                  "Retain clean evidence",
+              ],
+              "hostile":[
+                  "Checkout exact subject",
+                  "Verify kernel subject",
+                  "Install pinned Kani",
+                  "Apply hostile stale-boundary mutant",
+                  "Run hostile proof",
+                  "Restore clean source identity",
+                  "Build hostile receipt",
+                  "Retain hostile evidence",
+              ],
+              "admission":[
+                  "Checkout exact subject",
+                  "Download qualification evidence",
+                  "Evaluate canonical admission",
+                  "Retain canonical receipt",
+              ],
+          }
+          wrapper_step_names={"Set up job","Complete job"}
           assert final_jobs_doc.get("total_count")==4
           assert len(final_jobs)==4
           assert {job.get("name") for job in final_jobs}==expected_job_names
@@ -3098,6 +3200,20 @@ jobs:
               assert job["head_branch"]==os.environ["EXPECTED_TRIGGER_BRANCH"]
               assert job["status"]=="completed"
               assert job["conclusion"]=="success"
+              assert job["name"] in expected_critical_steps
+              steps=job.get("steps",[])
+              substantive=[
+                  step for step in steps
+                  if step.get("name") not in wrapper_step_names
+                  and not str(step.get("name","")).startswith("Post ")
+              ]
+              observed_steps=[step.get("name") for step in substantive]
+              assert observed_steps==expected_critical_steps[job["name"]]
+              assert all(
+                  step.get("status")=="completed"
+                  and step.get("conclusion")=="success"
+                  for step in substantive
+              )
 
           Path("/tmp/final-trigger-freshness.txt").write_text(
               "verified\n"
@@ -3258,24 +3374,94 @@ jobs:
               __import__("hashlib").sha256(Path("/tmp/trigger-run-jobs.json").read_bytes()).hexdigest()
               if Path("/tmp/trigger-run-jobs.json").exists() else None
           )
+          critical_step_attestation_schema="xenia.formal.kani-replay-kernel.trigger-job-steps.v1"
+          expected_critical_steps={
+              "preflight":[
+                  "Checkout exact subject",
+                  "Verify lineage, exact subjects, and scope",
+                  "Validate evidence contract",
+                  "Verify source harness manifest",
+                  "Ordinary Rust build",
+                  "Retain preflight evidence",
+              ],
+              "clean":[
+                  "Checkout exact subject",
+                  "Verify exact production subjects",
+                  "Install pinned Kani",
+                  "Run all clean kernel proofs",
+                  "Retain clean evidence",
+              ],
+              "hostile":[
+                  "Checkout exact subject",
+                  "Verify kernel subject",
+                  "Install pinned Kani",
+                  "Apply hostile stale-boundary mutant",
+                  "Run hostile proof",
+                  "Restore clean source identity",
+                  "Build hostile receipt",
+                  "Retain hostile evidence",
+              ],
+              "admission":[
+                  "Checkout exact subject",
+                  "Download qualification evidence",
+                  "Evaluate canonical admission",
+                  "Retain canonical receipt",
+              ],
+          }
+          wrapper_step_names={"Set up job","Complete job"}
+          def job_step_attestation_ok(job):
+              if job.get("name") not in expected_critical_steps:
+                  return False
+              steps=job.get("steps",[])
+              substantive=[
+                  step for step in steps
+                  if step.get("name") not in wrapper_step_names
+                  and not str(step.get("name","")).startswith("Post ")
+              ]
+              return (
+                  [step.get("name") for step in substantive] == expected_critical_steps[job["name"]]
+                  and all(
+                      step.get("status")=="completed"
+                      and step.get("conclusion")=="success"
+                      for step in substantive
+                  )
+              )
+          def trigger_job_steps_attestation_ok(doc):
+              jobs=doc.get("jobs",[])
+              return (
+                  doc.get("total_count")==4
+                  and len(jobs)==4
+                  and {job.get("name") for job in jobs}==set(expected_critical_steps)
+                  and all(job_step_attestation_ok(job) for job in jobs)
+              )
+          def trigger_jobs_identity_ok(doc):
+              jobs=doc.get("jobs",[])
+              return (
+                  doc.get("total_count")==4
+                  and len(jobs)==4
+                  and {job.get("name") for job in jobs}==set(expected_critical_steps)
+                  and all(
+                      job.get("run_id")==int(os.environ["TRIGGER_RUN_ID"])
+                      and job.get("head_sha")==os.environ["HEAD_SHA"]
+                      and job.get("workflow_name")=="XEN-KANI-FV-002 Replay Kernel"
+                      and job.get("head_branch")==os.environ["EXPECTED_TRIGGER_BRANCH"]
+                      and job.get("status")=="completed"
+                      and job.get("conclusion")=="success"
+                      for job in jobs
+                  )
+              )
+          triggering_job_steps_ok=(
+              Path("/tmp/trigger-run-jobs.json").exists()
+              and trigger_job_steps_attestation_ok(
+                  __import__("json").loads(Path("/tmp/trigger-run-jobs.json").read_text())
+              )
+          )
           triggering_jobs_ok=(
               Path("/tmp/trigger-run-jobs.json").exists()
-              and (
-                  (lambda d: (
-                      d.get("total_count")==4
-                      and len(d.get("jobs",[]))==4
-                      and {job.get("name") for job in d.get("jobs",[])}=={"preflight","clean","hostile","admission"}
-                      and all(
-                          job.get("run_id")==int(os.environ["TRIGGER_RUN_ID"])
-                          and job.get("head_sha")==os.environ["HEAD_SHA"]
-                          and job.get("workflow_name")=="XEN-KANI-FV-002 Replay Kernel"
-                          and job.get("head_branch")==os.environ["EXPECTED_TRIGGER_BRANCH"]
-                          and job.get("status")=="completed"
-                          and job.get("conclusion")=="success"
-                          for job in d.get("jobs",[])
-                      )
-                  ))(__import__("json").loads(Path("/tmp/trigger-run-jobs.json").read_text()))
+              and trigger_jobs_identity_ok(
+                  __import__("json").loads(Path("/tmp/trigger-run-jobs.json").read_text())
               )
+              and triggering_job_steps_ok
           )
           final_trigger_run_ok=(
               Path("/tmp/final-trigger-run.json").exists()
@@ -3330,24 +3516,18 @@ jobs:
                   ))(__import__("json").loads(Path("/tmp/final-trigger-run-attempt.json").read_text()))
               )
           )
+          final_trigger_job_steps_ok=(
+              Path("/tmp/final-trigger-run-jobs.json").exists()
+              and trigger_job_steps_attestation_ok(
+                  __import__("json").loads(Path("/tmp/final-trigger-run-jobs.json").read_text())
+              )
+          )
           final_trigger_jobs_ok=(
               Path("/tmp/final-trigger-run-jobs.json").exists()
-              and (
-                  (lambda d: (
-                      d.get("total_count")==4
-                      and len(d.get("jobs",[]))==4
-                      and {job.get("name") for job in d.get("jobs",[])}=={"preflight","clean","hostile","admission"}
-                      and all(
-                          job.get("run_id")==int(os.environ["TRIGGER_RUN_ID"])
-                          and job.get("head_sha")==os.environ["HEAD_SHA"]
-                          and job.get("workflow_name")=="XEN-KANI-FV-002 Replay Kernel"
-                          and job.get("head_branch")==os.environ["EXPECTED_TRIGGER_BRANCH"]
-                          and job.get("status")=="completed"
-                          and job.get("conclusion")=="success"
-                          for job in d.get("jobs",[])
-                      )
-                  ))(__import__("json").loads(Path("/tmp/final-trigger-run-jobs.json").read_text()))
+              and trigger_jobs_identity_ok(
+                  __import__("json").loads(Path("/tmp/final-trigger-run-jobs.json").read_text())
               )
+              and final_trigger_job_steps_ok
           )
           workflow_identity_ok=(
               read_optional("/tmp/verifier-workflow.blob") is not None
@@ -3466,6 +3646,8 @@ jobs:
               "verifier_workflow_path":os.environ["VERIFIER_WORKFLOW_PATH"],
               "verifier_workflow_commit":os.environ["GITHUB_SHA"],
               "triggering_jobs_verified":triggering_jobs_ok,
+              "triggering_job_steps_verified":triggering_job_steps_ok,
+              "triggering_job_steps_schema":critical_step_attestation_schema,
               "triggering_jobs_payload_sha256":triggering_jobs_payload_sha256,
               "triggering_attempt_payload_sha256":(
                   __import__("hashlib").sha256(Path("/tmp/trigger-run-attempt.json").read_bytes()).hexdigest()
@@ -3475,6 +3657,8 @@ jobs:
               "final_trigger_run_verified":final_trigger_run_ok,
               "final_trigger_attempt_verified":final_trigger_attempt_ok,
               "final_trigger_jobs_verified":final_trigger_jobs_ok,
+              "final_trigger_job_steps_verified":final_trigger_job_steps_ok,
+              "final_trigger_job_steps_schema":critical_step_attestation_schema,
               "final_trigger_freshness_verified":read_optional("/tmp/final-trigger-freshness.txt")=="verified",
               "final_trigger_run_payload_sha256":(
                   __import__("hashlib").sha256(Path("/tmp/final-trigger-run.json").read_bytes()).hexdigest()
