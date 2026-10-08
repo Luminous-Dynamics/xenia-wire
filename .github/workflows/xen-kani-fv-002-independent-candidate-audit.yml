@@ -262,9 +262,36 @@ jobs:
               os.environ["CONSUMER_WORKFLOW_PATH"],
           }
 
+          MAX_MAIN_WORKFLOW_FILES=300
           main_status_writer_paths=[]
-          main_workflows=get("/contents/.github/workflows",ref=current_main_sha)
-          assert isinstance(main_workflows,list)
+          main_workflows=[]
+          for page in range(1,4):
+              page_workflows=get(
+                  "/contents/.github/workflows",
+                  ref=current_main_sha,
+                  per_page=100,
+                  page=page,
+              )
+              assert isinstance(page_workflows,list)
+              assert len(page_workflows)<=100
+              main_workflows.extend(page_workflows)
+              if len(page_workflows)<100:
+                  break
+          else:
+              raise AssertionError(
+                  "main workflow directory reached the bounded 300-file inventory ceiling"
+              )
+
+          assert 0 < len(main_workflows) <= MAX_MAIN_WORKFLOW_FILES
+          main_workflow_paths=[
+              item.get("path")
+              for item in main_workflows
+              if isinstance(item,dict) and item.get("type")=="file"
+          ]
+          assert len(main_workflow_paths)==len(set(main_workflow_paths))
+          assert all(
+              isinstance(item.get("path"),str) for item in main_workflows
+          )
 
           for main_item in main_workflows:
               if main_item.get("type")!="file":
@@ -309,33 +336,33 @@ jobs:
               os.environ["CONSUMER_WORKFLOW_PATH"],
           })
 
-              inline_permission_probe=subprocess.run(
-                  ["ruby","-rjson","-e",permission_scan_ruby],
-                  input='name: probe\npermissions: { "contents": "read", "statuses": "write" }\n',
-                  capture_output=True,
-                  text=True,
-              )
-              assert inline_permission_probe.returncode==0, inline_permission_probe.stderr
-              inline_permissions=json.loads(inline_permission_probe.stdout)
-              assert inline_permissions=={"status_write":True,"write_all":False}
+          inline_permission_probe=subprocess.run(
+              ["ruby","-rjson","-e",permission_scan_ruby],
+              input='name: probe\npermissions: { "contents": "read", "statuses": "write" }\n',
+              capture_output=True,
+              text=True,
+          )
+          assert inline_permission_probe.returncode==0, inline_permission_probe.stderr
+          inline_permissions=json.loads(inline_permission_probe.stdout)
+          assert inline_permissions=={"status_write":True,"write_all":False}
 
-              merge_permission_probe=subprocess.run(
-                  ["ruby","-rjson","-e",permission_scan_ruby],
-                  input='name: probe\ndefaults: &p\n  statuses: write\npermissions:\n  <<: *p\n',
-                  capture_output=True,
-                  text=True,
-              )
-              assert merge_permission_probe.returncode!=0, "permissions merge key unexpectedly accepted"
+          merge_permission_probe=subprocess.run(
+              ["ruby","-rjson","-e",permission_scan_ruby],
+              input='name: probe\ndefaults: &p\n  statuses: write\npermissions:\n  <<: *p\n',
+              capture_output=True,
+              text=True,
+          )
+          assert merge_permission_probe.returncode!=0, "permissions merge key unexpectedly accepted"
 
-              write_all_probe=subprocess.run(
-                  ["ruby","-rjson","-e",permission_scan_ruby],
-                  input='name: probe\njobs:\n  p:\n    permissions: "write-all"\n',
-                  capture_output=True,
-                  text=True,
-              )
-              assert write_all_probe.returncode==0, write_all_probe.stderr
-              write_all_permissions=json.loads(write_all_probe.stdout)
-              assert write_all_permissions=={"status_write":False,"write_all":True}
+          write_all_probe=subprocess.run(
+              ["ruby","-rjson","-e",permission_scan_ruby],
+              input='name: probe\njobs:\n  p:\n    permissions: "write-all"\n',
+              capture_output=True,
+              text=True,
+          )
+          assert write_all_probe.returncode==0, write_all_probe.stderr
+          write_all_permissions=json.loads(write_all_probe.stdout)
+          assert write_all_permissions=={"status_write":False,"write_all":True}
 
           workflow_scope_violations=[]
           for item in files:
