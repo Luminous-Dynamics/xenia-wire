@@ -20,6 +20,7 @@ env:
   REPOSITORY_ID: "1213976974"
   CANDIDATE_PATH: .github/workflows/xen-kani-fv-002-trusted-admission.yml
   AUDIT_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-independent-candidate-audit.yml
+  TRIGGER_WORKFLOW_PATH: .github/workflows/ci.yml
   AUDIT_STATUS_CONTEXT: XEN-KANI-FV-002 / Independent Candidate Audit
   EXPECTED_CANDIDATE_BLOB: 88582c047b8f651dddcb5acac3a74b0af50a9ea0
   EXPECTED_BASE_BRANCH: main
@@ -202,11 +203,12 @@ jobs:
               )
 
           touches_audit=path_touched(os.environ["AUDIT_WORKFLOW_PATH"])
+          touches_trigger=path_touched(os.environ["TRIGGER_WORKFLOW_PATH"])
           touches_candidate=path_touched(CANDIDATE_PATH)
 
-          if touches_audit:
+          if touches_audit or touches_trigger:
               raise AssertionError(
-                  "independent audit workflow itself changed in the candidate PR; "
+                  "an independent trust-root workflow changed in the candidate PR; "
                   "the current main-anchored auditor cannot qualify that change"
               )
 
