@@ -553,6 +553,8 @@ jobs:
           assert re.fullmatch(r"sha256:[0-9a-f]{64}",audit_artifact_digest)
           assert audit_artifact["workflow_run"]["id"]==audit_run_id
           assert audit_artifact["workflow_run"]["repository_id"]==REPO_ID
+          assert audit_artifact["workflow_run"]["head_repository_id"]==REPO_ID
+          assert audit_artifact["workflow_run"]["head_branch"]=="main"
           assert audit_artifact["workflow_run"]["head_sha"]==current_main_sha
 
           audit_archive=download(
