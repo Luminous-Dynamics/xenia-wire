@@ -202,6 +202,50 @@ jobs:
               os.environ["CONSUMER_WORKFLOW_PATH"],
           }
 
+          main_status_writer_paths=[]
+          main_workflows=get("/contents/.github/workflows",ref=current_main_sha)
+          assert isinstance(main_workflows,list)
+
+          for main_item in main_workflows:
+              if main_item.get("type")!="file":
+                  continue
+              main_path=main_item.get("path")
+              if not isinstance(main_path,str):
+                  raise AssertionError("main workflow entry has no path")
+              if not (main_path.endswith(".yml") or main_path.endswith(".yaml")):
+                  continue
+              main_source=get(
+                  f"/contents/{urllib.parse.quote(main_path,safe='/')}",
+                  ref=current_main_sha,
+              )
+              assert main_source["type"]=="file"
+              assert main_source["path"]==main_path
+              main_text=base64.b64decode(
+                  main_source["content"].replace("\n","")
+              ).decode("utf-8")
+              main_uncommented=re.sub(r"(?m)#.*$","",main_text)
+              main_status_write=bool(re.search(
+                  r"(?mi)(?:^|[,{\s])status(?:es)?\s*:\s*[\"']?write[\"']?(?:$|[},\s])",
+                  main_uncommented,
+              ))
+              main_write_all=bool(re.search(
+                  r"(?mi)(?:^|[,{\s])permissions\s*:\s*[\"']?write-all[\"']?(?:$|[},\s])",
+                  main_uncommented,
+              ))
+              if not (main_status_write or main_write_all):
+                  continue
+              main_status_writer_paths.append(main_path)
+              assert main_path in {
+                  os.environ["AUDIT_WORKFLOW_PATH"],
+                  os.environ["CONSUMER_WORKFLOW_PATH"],
+              }, f"unexpected status-authority workflow on main: {main_path}"
+              assert not main_write_all, f"write-all status authority is forbidden: {main_path}"
+
+          assert set(main_status_writer_paths).issubset({
+              os.environ["AUDIT_WORKFLOW_PATH"],
+              os.environ["CONSUMER_WORKFLOW_PATH"],
+          })
+
           workflow_scope_violations=[]
           for item in files:
               current_path=item.get("filename")
@@ -293,6 +337,7 @@ jobs:
                   "changed_file_count":len(files),
                   "scope_source":"pull_request_files",
                   "scope_ceiling":3000,
+                  "main_status_writer_paths":sorted(main_status_writer_paths),
                   "reason":"candidate verifier workflow is outside the PR delta",
               })
               raise SystemExit(0)
@@ -470,6 +515,7 @@ jobs:
               "changed_file_count":len(files),
               "scope_source":"pull_request_files",
               "scope_ceiling":3000,
+              "main_status_writer_paths":sorted(main_status_writer_paths),
               "initial_main_sha":current_main_sha,
               "final_main_sha":final_main_sha,
               "freshness_recheck":"passed",
