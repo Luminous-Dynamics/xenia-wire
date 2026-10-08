@@ -180,7 +180,7 @@ jobs:
           restore-keys: |
             fuzz-corpus-${{ runner.os }}-
       - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz --locked
+        run: cargo install cargo-fuzz --locked --version 0.13.2
       - name: Run every fuzz target briefly
         working-directory: .
         run: |
@@ -213,7 +213,7 @@ jobs:
           restore-keys: |
             fuzz-corpus-${{ runner.os }}-
       - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz --locked
+        run: cargo install cargo-fuzz --locked --version 0.13.2
       - name: Run every fuzz target for 5 minutes
         run: |
           set -euo pipefail
@@ -244,7 +244,7 @@ jobs:
       - name: Generate Cargo.lock
         run: cargo generate-lockfile
       - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
+        run: cargo install cargo-audit --locked --version 0.22.2
       - name: Run cargo audit
         # RUSTSEC-2025-0141: bincode v1 flagged as unmaintained (v2 is out).
         # We deliberately pin bincode v1 because SPEC §12.3 specifies
