@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  merge_group:
+    types: [checks_requested]
+    branches: [main]
   workflow_dispatch:
   schedule:
     # Weekly deep fuzz run (see fuzz-deep job) -- Sundays 06:00 UTC.
