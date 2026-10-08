@@ -1,17 +1,18 @@
 name: XEN-KANI-FV-002 Certificate Consumer
 
 on:
-  pull_request_target:
-    types: [opened, synchronize, reopened]
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
 
 permissions:
   actions: read
   contents: read
   pull-requests: read
-  statuses: read
+  statuses: write
 
 concurrency:
-  group: xen-kani-fv-002-certificate-${{ github.event.pull_request.number || github.run_id }}
+  group: xen-kani-fv-002-certificate-${{ github.event.workflow_run.pull_requests[0].number }} || ${{ github.run_id }}
   cancel-in-progress: false
 
 env:
@@ -33,7 +34,12 @@ env:
   INDEPENDENT_AUDIT_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-independent-candidate-audit.yml
   EXPECTED_INDEPENDENT_AUDIT_WORKFLOW_BLOB: 0d0da367783e6476409de13817ee5ad588fba7b8
   EXPECTED_INDEPENDENT_AUDIT_TRIGGER_BLOB: f0b2b6682f84c960e36bcc5a19f821d103d014c3
+  EXPECTED_CI_WORKFLOW_ID: "262609031"
+  EXPECTED_CI_WORKFLOW_NAME: CI
+  EXPECTED_CI_WORKFLOW_PATH: .github/workflows/ci.yml
+  EXPECTED_CI_WORKFLOW_BLOB: f0b2b6682f84c960e36bcc5a19f821d103d014c3
   INDEPENDENT_AUDIT_STATUS_CONTEXT: XEN-KANI-FV-002 / Independent Candidate Audit
+  CERTIFICATE_STATUS_CONTEXT: XEN-KANI-FV-002 / Certificate Consumer
   CONSUMER_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-certificate-consumer.yml
   PROMOTION_TERMINAL_PREFIX: trusted-xen-kani-fv-002-promotion-terminal-
   PROMOTION_TERMINAL_SCHEMA: xenia.formal.kani-replay-kernel.promotion-terminal.v1
@@ -50,15 +56,35 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Consume trusted qualification certificate
+        id: consume-certificate
+        if: github.event.workflow_run.event == 'pull_request'
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          CI_RUN_ID: ${{ github.event.workflow_run.id }}
+          CI_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          CI_RUN_HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
+          CI_RUN_WORKFLOW_ID: ${{ github.event.workflow_run.workflow_id }}
+          CI_RUN_NAME: ${{ github.event.workflow_run.name }}
+          CI_RUN_PATH: ${{ github.event.workflow_run.path }}
+          CI_RUN_EVENT: ${{ github.event.workflow_run.event }}
         run: |
           set -euo pipefail
-          test "$GITHUB_EVENT_NAME" = "pull_request_target"
+          test "$GITHUB_EVENT_NAME" = "workflow_run"
           test "$GITHUB_REPOSITORY" = "$REPOSITORY"
           test "$GITHUB_REF" = "refs/heads/main"
+          test "$GITHUB_REF_PROTECTED" = "true"
+          test "$CI_RUN_HEAD_REPO" = "$REPOSITORY"
+          test "$CI_RUN_NAME" = "$EXPECTED_CI_WORKFLOW_NAME"
+          test "$CI_RUN_EVENT" = "pull_request"
+          test "$CI_RUN_WORKFLOW_ID" = "$EXPECTED_CI_WORKFLOW_ID"
+          test "$CI_RUN_PATH" = "$EXPECTED_CI_WORKFLOW_PATH"
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
+          [[ "$CI_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$CI_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
           [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
           test "$GITHUB_WORKFLOW" = "XEN-KANI-FV-002 Certificate Consumer"
           test "$GITHUB_WORKFLOW_REF" = "$REPOSITORY/$CONSUMER_WORKFLOW_PATH@refs/heads/main"
