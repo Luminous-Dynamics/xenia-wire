@@ -389,6 +389,18 @@ jobs:
           PY
 
 
+      - name: Retain independent audit receipt
+        id: retain-audit-receipt
+        if: always() && steps.audit-candidate-verifier-snapshot.outcome == 'success'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: xen-kani-fv-002-independent-audit-${{ github.event.workflow_run.pull_requests[0].number || github.run_id }}-${{ github.event.workflow_run.head_sha }}
+          path: /tmp/xen-kani-fv-002-independent-audit-receipt.json
+          if-no-files-found: error
+          retention-days: 90
+          overwrite: false
+          include-hidden-files: false
+
       - name: Publish exact-head audit status
         id: publish-head-status
         if: always()
@@ -399,6 +411,7 @@ jobs:
           PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
           AUDIT_RUN_ID: ${{ github.run_id }}
           AUDIT_RUN_ATTEMPT: ${{ github.run_attempt }}
+          RECEIPT_UPLOAD_OUTCOME: ${{ steps.retain-audit-receipt.outcome }}
           AUDIT_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           STATUS_CONTEXT: XEN-KANI-FV-002 / Independent Candidate Audit
           AUDIT_STEP_OUTCOME: ${{ steps.audit-candidate-verifier-snapshot.outcome }}
@@ -411,7 +424,7 @@ jobs:
 
           STATUS_STATE=failure
           STATUS_DESCRIPTION="Independent audit failed; no admission evidence produced."
-          if [[ "$AUDIT_STEP_OUTCOME" == "success" ]]; then
+          if [[ "$AUDIT_STEP_OUTCOME" == "success" && "$RECEIPT_UPLOAD_OUTCOME" == "success" ]]; then
             STATUS_STATE=success
             if [[ -f /tmp/xen-kani-fv-002-independent-audit-receipt.json ]]; then
               decision="$(python3 -c 'import json; print(json.load(open("/tmp/xen-kani-fv-002-independent-audit-receipt.json"))["decision"])')"
@@ -467,21 +480,6 @@ jobs:
           Path("/tmp/xen-kani-fv-002-status-id.txt").write_text(str(d["id"])+"\\n")
           Path("/tmp/xen-kani-fv-002-status-url.txt").write_text(d["url"]+"\\n")
 
-          if state=="success":
-              receipt_path=Path("/tmp/xen-kani-fv-002-independent-audit-receipt.json")
-              assert receipt_path.is_file()
-              receipt=json.loads(receipt_path.read_text())
-              receipt["exact_head_status"]={
-                  "context":context,
-                  "state":state,
-                  "status_id":d["id"],
-                  "status_url":d["url"],
-                  "target_url":target_url,
-                  "target_run_id":int(run_id),
-                  "target_run_attempt":int(run_attempt),
-                  "creator":d.get("creator",{}).get("login"),
-              }
-              receipt_path.write_text(json.dumps(receipt,sort_keys=True,indent=2)+"\\n")
           PY
 
           encoded_context="$(python3 -c 'import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))' "$STATUS_CONTEXT")"
@@ -518,14 +516,3 @@ jobs:
               },sort_keys=True,indent=2)+"\\n"
           )
           PY
-
-      - name: Retain independent audit receipt
-        if: always() && steps.audit-candidate-verifier-snapshot.outcome == 'success' && steps.publish-head-status.outcome == 'success'
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: xen-kani-fv-002-independent-audit-${{ github.event.workflow_run.pull_requests[0].number || github.run_id }}-${{ github.event.workflow_run.head_sha }}
-          path: /tmp/xen-kani-fv-002-independent-audit-receipt.json
-          if-no-files-found: error
-          retention-days: 90
-          overwrite: false
-          include-hidden-files: false
