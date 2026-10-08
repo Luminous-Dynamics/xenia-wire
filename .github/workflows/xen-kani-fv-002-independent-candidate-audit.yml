@@ -219,8 +219,14 @@ jobs:
               decoded=base64.b64decode(source["content"].replace("\n",""))
               workflow_text=decoded.decode("utf-8")
               uncommented=re.sub(r"(?m)#.*$","",workflow_text)
-              grants_status_write=bool(re.search(r"(?m)^\s*statuses\s*:\s*write\s*$",uncommented))
-              grants_write_all=bool(re.search(r"(?m)^\s*permissions\s*:\s*write-all\s*$",uncommented))
+              grants_status_write=bool(re.search(
+                  r"(?mi)(?:^|[,{\\s])status(?:es)?\\s*:\s*[\"']?write[\"']?(?:$|[},\\s])",
+                  uncommented,
+              ))
+              grants_write_all=bool(re.search(
+                  r"(?mi)(?:^|[,{\\s])permissions\\s*:\s*[\"']?write-all[\"']?(?:$|[},\\s])",
+                  uncommented,
+              ))
 
               if not (grants_status_write or grants_write_all):
                   continue
