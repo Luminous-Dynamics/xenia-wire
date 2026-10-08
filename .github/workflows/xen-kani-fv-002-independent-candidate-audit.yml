@@ -26,10 +26,12 @@ name: XEN-KANI-FV-002 Independent Candidate Audit
                       abort "odd permissions mapping child count at #{location}.permissions" if permission_children.length.odd?
                       permission_seen={}
                       permission_children.each_slice(2) do |permission_key,permission_value|
+                        abort "permission mapping aliases are unsupported" if permission_key.is_a?(Psych::Nodes::Alias)
                         next unless permission_key.is_a?(Psych::Nodes::Scalar)
                         permission_name=permission_key.value.to_s
                         abort "duplicate permissions key: #{permission_name.inspect}" if permission_seen.key?(permission_name)
                         permission_seen[permission_name]=true
+                        abort "permissions merge keys are unsupported" if permission_name=="<<"
                         if permission_name=="statuses" || permission_name=="status"
                           if permission_value.is_a?(Psych::Nodes::Scalar) && permission_value.value.to_s=="write"
                             status_write=true
@@ -314,6 +316,14 @@ jobs:
               assert inline_permission_probe.returncode==0, inline_permission_probe.stderr
               inline_permissions=json.loads(inline_permission_probe.stdout)
               assert inline_permissions=={"status_write":True,"write_all":False}
+
+              merge_permission_probe=subprocess.run(
+                  ["ruby","-rjson","-e",permission_scan_ruby],
+                  input='name: probe\ndefaults: &p\n  statuses: write\npermissions:\n  <<: *p\n',
+                  capture_output=True,
+                  text=True,
+              )
+              assert merge_permission_probe.returncode!=0, "permissions merge key unexpectedly accepted"
 
               write_all_probe=subprocess.run(
                   ["ruby","-rjson","-e",permission_scan_ruby],
