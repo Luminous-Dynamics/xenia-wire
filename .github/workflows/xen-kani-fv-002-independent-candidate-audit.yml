@@ -123,10 +123,19 @@ jobs:
               f"pr_base={pr['base']['sha']} current_main={current_main_sha}"
           )
 
-          compare=get(f"/compare/{current_main_sha}...{HEAD_SHA}")
-          assert compare.get("too_large") is not True
-          files=compare.get("files")
-          assert isinstance(files,list)
+          files=[]
+          for page in range(1,31):
+              page_files=get(f"/pulls/{PR_NUMBER}/files?per_page=100&page={page}")
+              assert isinstance(page_files,list)
+              files.extend(page_files)
+              if len(page_files)<100:
+                  break
+          if len(files)>=3000:
+              raise AssertionError(
+                  f"pull request file list reached GitHub's 3000-file response ceiling; "
+                  f"scope is incomplete and must fail closed: count={len(files)}"
+              )
+          assert files
 
           touches_candidate=any(
               item.get("filename")==CANDIDATE_PATH
@@ -300,6 +309,8 @@ jobs:
               "candidate_blob_sha1":git_blob_sha1,
               "candidate_content_sha256":content_sha256,
               "changed_file_count":len(files),
+              "scope_source":"pull_request_files",
+              "scope_ceiling":3000,
               "initial_main_sha":current_main_sha,
               "final_main_sha":final_main_sha,
               "freshness_recheck":"passed",
