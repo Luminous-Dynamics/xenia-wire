@@ -270,6 +270,16 @@ jobs:
           ruby_script = r'''
           require "yaml"
           document = Psych.parse(STDIN.read)
+          root = document.root
+          raise "workflow document root must be a mapping" unless root.is_a?(Psych::Nodes::Mapping)
+          root_children = root.children || []
+          raise "odd workflow root mapping child count" if root_children.length.odd?
+          root_keys = root_children.each_slice(2).map(&:first)
+          has_permissions = root_keys.any? do |key|
+            key.is_a?(Psych::Nodes::Scalar) && key.value.to_s == "permissions"
+          end
+          abort "workflow must declare explicit top-level permissions" unless has_permissions
+
           walk = nil
           walk = lambda do |node, location|
             if node.is_a?(Psych::Nodes::Mapping)
