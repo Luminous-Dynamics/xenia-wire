@@ -12,7 +12,7 @@ permissions:
   statuses: write
 
 concurrency:
-  group: xen-kani-fv-002-certificate-${{ github.event.workflow_run.pull_requests[0].number }} || ${{ github.run_id }}
+  group: xen-kani-fv-002-certificate-${{ github.event.workflow_run.pull_requests[0].number || github.run_id }}
   cancel-in-progress: false
 
 env:
@@ -117,6 +117,29 @@ jobs:
           API_BASE=f"https://api.github.com/repos/{REPO}"
 
           def get(path, **query):
+          ci_run=get(f"/actions/runs/{os.environ[\"CI_RUN_ID\"]}")
+          assert ci_run["id"]==int(os.environ["CI_RUN_ID"])
+          assert ci_run["name"]==os.environ["EXPECTED_CI_WORKFLOW_NAME"]
+          assert ci_run["workflow_id"]==int(os.environ["EXPECTED_CI_WORKFLOW_ID"])
+          assert ci_run["path"]==os.environ["EXPECTED_CI_WORKFLOW_PATH"]
+          assert ci_run["event"]=="pull_request"
+          assert ci_run["run_attempt"]==int(os.environ["CI_RUN_ATTEMPT"])
+          assert ci_run["head_sha"]==os.environ["HEAD_SHA"]
+          assert ci_run["head_repository"]["id"]==REPO_ID
+          assert ci_run["head_repository"]["full_name"]==REPO
+          assert ci_run["pull_requests"] and len(ci_run["pull_requests"])==1
+          assert ci_run["pull_requests"][0]["number"]==PR_NUMBER
+          assert ci_run["pull_requests"][0]["head"]["sha"]==os.environ["HEAD_SHA"]
+          assert ci_run["pull_requests"][0]["head"]["repo"]["id"]==REPO_ID
+          assert ci_run["pull_requests"][0]["head"]["repo"]["full_name"]==REPO
+
+          ci_source=get(
+              f"/contents/{urllib.parse.quote(os.environ[\"EXPECTED_CI_WORKFLOW_PATH\"],safe=\"/\")}",
+              ref=os.environ["GITHUB_SHA"],
+          )
+          assert ci_source["type"]=="file"
+          assert ci_source["path"]==os.environ["EXPECTED_CI_WORKFLOW_PATH"]
+          assert ci_source["sha"]==os.environ["EXPECTED_CI_WORKFLOW_BLOB"]
               url=API_BASE+path
               if query:
                   url += "?" + urllib.parse.urlencode(query)
@@ -337,7 +360,10 @@ jobs:
           assert pr["base"]["ref"]=="main"
           verify_repo(pr,"base")
           verify_repo(pr,"head")
-          head_sha=pr["head"]["sha"]
+          assert pr["head"]["sha"]==os.environ["HEAD_SHA"], (
+              f"current PR head changed after triggering CI run: run_head={os.environ['HEAD_SHA']} current_pr_head={pr['head']['sha']}"
+          )
+          head_sha=os.environ["HEAD_SHA"]
           base_sha=pr["base"]["sha"]
           assert re.fullmatch(r"[0-9a-f]{40}",head_sha)
           assert re.fullmatch(r"[0-9a-f]{40}",base_sha)
