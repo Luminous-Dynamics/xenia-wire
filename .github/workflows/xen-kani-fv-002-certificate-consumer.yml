@@ -422,31 +422,6 @@ jobs:
               for candidate in (file.get("filename"),file.get("previous_filename"))
               if candidate in qualification_paths
           })
-          if not applicable_files:
-              decision={
-                  "schema":"xenia.formal.kani-replay-kernel.certificate-consumer.v1",
-                  "decision":"NOT_APPLICABLE",
-                  "scope":"OUT_OF_SCOPE",
-                  "pr_number":PR_NUMBER,
-                  "head_sha":head_sha,
-                  "main_sha":None,
-                  "changed_file_count":len(changed_files),
-                  "qualification_files_observed":[],
-              }
-              Path("/tmp/xen-kani-fv-002-consumer-decision.json").write_text(
-                  json.dumps(decision,indent=2,sort_keys=True)+"\n"
-              )
-              Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text(
-                  "## XEN-KANI-FV-002 Certificate Consumer\n\n"
-                  "Decision: NOT_APPLICABLE\n\n"
-                  f"PR #{PR_NUMBER}\n"
-                  f"Subject head: {head_sha}\n"
-                  f"Changed files inspected: {len(changed_files)}\n"
-                  "No XEN-KANI-FV-002 qualification subject or qualification workflow path changed.\n"
-              )
-              print(json.dumps(decision,indent=2,sort_keys=True))
-              raise SystemExit(0)
-
           main=get("/branches/main")
           assert main["name"]=="main"
           assert main["protected"] is True
@@ -468,6 +443,34 @@ jobs:
           assert verification.get("signature")
           assert verification.get("payload")
           assert verification.get("verified_at")
+
+          if not applicable_files:
+              decision={
+                  "schema":"xenia.formal.kani-replay-kernel.certificate-consumer.v1",
+                  "decision":"NOT_APPLICABLE",
+                   "main_sha":current_main_sha,
+                  "scope":"OUT_OF_SCOPE",
+                  "pr_number":PR_NUMBER,
+                  "head_sha":head_sha,
+                  "changed_file_count":len(changed_files),
+                  "qualification_files_observed":[],
+                   "main_protected":True,
+                   "main_tip_signature_verified":True,
+              }
+              Path("/tmp/xen-kani-fv-002-consumer-decision.json").write_text(
+                  json.dumps(decision,indent=2,sort_keys=True)+"\n"
+              )
+              Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text(
+                  "## XEN-KANI-FV-002 Certificate Consumer\n\n"
+                  "Decision: NOT_APPLICABLE\n\n"
+                  f"PR #{PR_NUMBER}\n"
+                  f"Subject head: {head_sha}\n"
+                  f"Changed files inspected: {len(changed_files)}\n"
+                  "No XEN-KANI-FV-002 qualification subject or qualification workflow path changed.\n"
+              )
+              print(json.dumps(decision,indent=2,sort_keys=True))
+              raise SystemExit(0)
+
 
 
           independent_audit_source=get(
