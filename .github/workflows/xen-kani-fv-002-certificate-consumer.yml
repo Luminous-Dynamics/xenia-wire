@@ -31,7 +31,8 @@ env:
   EXPECTED_EVIDENCE_CONTRACT_BLOB: ce3e1447cc6b9bd1f0fc361b4fb81c5fe1450b0b
   EXPECTED_VERIFIER_WORKFLOW_BLOB: 88582c047b8f651dddcb5acac3a74b0af50a9ea0
   INDEPENDENT_AUDIT_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-independent-candidate-audit.yml
-  EXPECTED_INDEPENDENT_AUDIT_WORKFLOW_BLOB: 4ba705a8ece85e86c37d1b7672b3c438d72fef59
+  EXPECTED_INDEPENDENT_AUDIT_WORKFLOW_BLOB: 0d0da367783e6476409de13817ee5ad588fba7b8
+  EXPECTED_INDEPENDENT_AUDIT_TRIGGER_BLOB: f0b2b6682f84c960e36bcc5a19f821d103d014c3
   INDEPENDENT_AUDIT_STATUS_CONTEXT: XEN-KANI-FV-002 / Independent Candidate Audit
   CONSUMER_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-certificate-consumer.yml
   PROMOTION_TERMINAL_PREFIX: trusted-xen-kani-fv-002-promotion-terminal-
@@ -516,6 +517,8 @@ jobs:
           assert audit_receipt["auditor_execution_sha"]==audit_run["head_sha"]
           assert audit_receipt["candidate_path"]==os.environ["VERIFIER_WORKFLOW_PATH"]
           assert audit_receipt["candidate_blob_sha1"]==os.environ["EXPECTED_VERIFIER_WORKFLOW_BLOB"]
+          assert audit_receipt["ci_workflow_path"]==".github/workflows/ci.yml"
+          assert audit_receipt["ci_workflow_blob"]==os.environ["EXPECTED_INDEPENDENT_AUDIT_TRIGGER_BLOB"]
           assert audit_receipt["scope_decision"]=="IN_SCOPE"
           assert audit_receipt["freshness_recheck"]=="passed"
           assert audit_receipt["main_branch_protected"] is True
