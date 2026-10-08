@@ -9,6 +9,7 @@ permissions:
   actions: read
   contents: read
   pull-requests: read
+  statuses: write
 
 concurrency:
   group: xenia-kani-fv-002-independent-audit-${{ github.event.workflow_run.pull_requests[0].number || github.run_id }}
@@ -19,6 +20,7 @@ env:
   REPOSITORY_ID: "1213976974"
   CANDIDATE_PATH: .github/workflows/xen-kani-fv-002-trusted-admission.yml
   AUDIT_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-independent-candidate-audit.yml
+  AUDIT_STATUS_CONTEXT: XEN-KANI-FV-002 / Independent Candidate Audit
   EXPECTED_CANDIDATE_BLOB: 88582c047b8f651dddcb5acac3a74b0af50a9ea0
   EXPECTED_BASE_BRANCH: main
 
@@ -386,8 +388,138 @@ jobs:
           })
           PY
 
+
+      - name: Publish exact-head audit status
+        id: publish-head-status
+        if: always()
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          AUDIT_RUN_ID: ${{ github.run_id }}
+          AUDIT_RUN_ATTEMPT: ${{ github.run_attempt }}
+          AUDIT_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          STATUS_CONTEXT: XEN-KANI-FV-002 / Independent Candidate Audit
+        run: |
+          set -euo pipefail
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
+          [[ "$AUDIT_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$AUDIT_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+
+          STATUS_STATE=failure
+          STATUS_DESCRIPTION="Independent audit failed; no admission evidence produced."
+          if [[ "${{ steps.audit-candidate-verifier-snapshot.outcome }}" == "success" ]]; then
+            STATUS_STATE=success
+            if [[ -f /tmp/xen-kani-fv-002-independent-audit-receipt.json ]]; then
+              decision="$(python3 -c 'import json; print(json.load(open("/tmp/xen-kani-fv-002-independent-audit-receipt.json"))["decision"])')"
+              STATUS_DESCRIPTION="Independent verifier-workflow audit: $decision."
+            else
+              echo "successful audit step produced no receipt" >&2
+              exit 1
+            fi
+          fi
+
+          python3 - "$HEAD_SHA" "$STATUS_STATE" "$STATUS_DESCRIPTION" "$STATUS_CONTEXT" "$AUDIT_RUN_URL" "$AUDIT_RUN_ID" "$AUDIT_RUN_ATTEMPT" > /tmp/xen-kani-fv-002-status-payload.json <<'PY'
+          import json
+          import re
+          import sys
+          head_sha,state,description,context,target_url,run_id,run_attempt=sys.argv[1:]
+          assert re.fullmatch(r"[0-9a-f]{40}",head_sha)
+          assert state in {"success","failure"}
+          assert len(description)<=140
+          assert context=="XEN-KANI-FV-002 / Independent Candidate Audit"
+          assert re.fullmatch(r"https://github.com/Luminous-Dynamics/xenia-wire/actions/runs/[1-9][0-9]*",target_url)
+          assert re.fullmatch(r"[1-9][0-9]*",run_id)
+          assert re.fullmatch(r"[1-9][0-9]*",run_attempt)
+          print(json.dumps({
+              "state":state,
+              "target_url":target_url,
+              "description":description,
+              "context":context,
+          },sort_keys=True))
+          PY
+
+          status_url="https://api.github.com/repos/Luminous-Dynamics/xenia-wire/statuses/$HEAD_SHA"
+          curl --fail-with-body --silent --show-error \
+            -X POST \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "$status_url" \
+            --data-binary @/tmp/xen-kani-fv-002-status-payload.json \
+            -o /tmp/xen-kani-fv-002-status-response.json
+
+          python3 - "$HEAD_SHA" "$STATUS_STATE" "$STATUS_CONTEXT" "$AUDIT_RUN_URL" "$AUDIT_RUN_ID" "$AUDIT_RUN_ATTEMPT" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          head_sha,state,context,target_url,run_id,run_attempt=sys.argv[1:]
+          d=json.loads(Path("/tmp/xen-kani-fv-002-status-response.json").read_text())
+          assert d.get("sha")==head_sha
+          assert d.get("state")==state
+          assert d.get("context")==context
+          assert d.get("target_url")==target_url
+          assert d.get("id")
+          assert str(d.get("creator",{}).get("login","")).strip()
+          Path("/tmp/xen-kani-fv-002-status-id.txt").write_text(str(d["id"])+"\\n")
+          Path("/tmp/xen-kani-fv-002-status-url.txt").write_text(d["url"]+"\\n")
+
+          if state=="success":
+              receipt_path=Path("/tmp/xen-kani-fv-002-independent-audit-receipt.json")
+              assert receipt_path.is_file()
+              receipt=json.loads(receipt_path.read_text())
+              receipt["exact_head_status"]={
+                  "context":context,
+                  "state":state,
+                  "status_id":d["id"],
+                  "status_url":d["url"],
+                  "target_url":target_url,
+                  "target_run_id":int(run_id),
+                  "target_run_attempt":int(run_attempt),
+                  "creator":d.get("creator",{}).get("login"),
+              }
+              receipt_path.write_text(json.dumps(receipt,sort_keys=True,indent=2)+"\\n")
+          PY
+
+          encoded_context="$(python3 -c 'import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))' "$STATUS_CONTEXT")"
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/commits/$HEAD_SHA/statuses?context=$encoded_context&per_page=100" \
+            -o /tmp/xen-kani-fv-002-statuses.json
+
+          python3 - "$HEAD_SHA" "$STATUS_STATE" "$STATUS_CONTEXT" "$AUDIT_RUN_URL" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          head_sha,state,context,target_url=sys.argv[1:]
+          data=json.loads(Path("/tmp/xen-kani-fv-002-statuses.json").read_text())
+          assert isinstance(data,list)
+          matching=[x for x in data if isinstance(x,dict) and x.get("context","").lower()==context.lower()]
+          assert matching, f"no persisted status for exact context: {context}"
+          latest=matching[0]
+          assert latest.get("sha")==head_sha
+          assert latest.get("state")==state
+          assert latest.get("target_url")==target_url
+          assert latest.get("context","").lower()==context.lower()
+          Path("/tmp/xen-kani-fv-002-status-verified.json").write_text(
+              json.dumps({
+                  "status_id":latest["id"],
+                  "status_url":latest["url"],
+                  "sha":latest["sha"],
+                  "state":latest["state"],
+                  "context":latest["context"],
+                  "target_url":latest["target_url"],
+                  "creator":latest.get("creator",{}).get("login"),
+              },sort_keys=True,indent=2)+"\\n"
+          )
+          PY
+
       - name: Retain independent audit receipt
-        if: always() && steps.audit-candidate-verifier-snapshot.outcome == 'success'
+        if: always() && steps.audit-candidate-verifier-snapshot.outcome == 'success' && steps.publish-head-status.outcome == 'success'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: xen-kani-fv-002-independent-audit-${{ github.event.workflow_run.pull_requests[0].number || github.run_id }}-${{ github.event.workflow_run.head_sha }}
