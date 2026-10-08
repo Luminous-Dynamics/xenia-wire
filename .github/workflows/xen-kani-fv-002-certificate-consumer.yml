@@ -1090,6 +1090,7 @@ jobs:
           self_protection_paths={
               CONSUMER_PATH,
               os.environ["CANONICALIZATION_VECTORS_PATH"],
+              os.environ["EXPECTED_CI_WORKFLOW_PATH"],
           }
 
           def get(path, **query):
@@ -1270,12 +1271,33 @@ jobs:
                   assert decision["main_tip_signature_verified"] is True
                   assert base_sha==current_main_sha
 
+                  audit_statuses=get(
+                      f"/commits/{head_sha}/statuses",
+                      context=os.environ["INDEPENDENT_AUDIT_STATUS_CONTEXT"],
+                      per_page=100,
+                  )
+                  audit_matches=[
+                      item for item in audit_statuses
+                      if isinstance(item,dict)
+                      and item.get("context","").lower()==os.environ["INDEPENDENT_AUDIT_STATUS_CONTEXT"].lower()
+                  ]
+                  audit_matches.sort(key=lambda item: int(item.get("id",0)),reverse=True)
+
                   if decision["decision"]=="QUALIFIED_FOR_MERGE":
-                      audit_statuses=get(
-                          f"/commits/{head_sha}/statuses",
-                          context=os.environ["INDEPENDENT_AUDIT_STATUS_CONTEXT"],
-                          per_page=100,
+                      assert audit_matches and audit_matches[0].get("state")=="success"
+                      audit_status=audit_matches[0]
+                      audit_target=audit_status.get("target_url")
+                      audit_match=re.fullmatch(
+                          r"https://github.com/Luminous-Dynamics/xenia-wire/actions/runs/([1-9][0-9]*)/attempts/([1-9][0-9]*)",
+                          str(audit_target),
                       )
+                      assert audit_match
+                      assert int(audit_match.group(1))==int(decision["independent_audit_run_id"])
+                      assert int(audit_match.group(2))==int(decision["independent_audit_run_attempt"])
+                      audit_status=audit_matches[0]
+                      audit_status_target=audit_target
+
+                      audit_statuses=get(
                       upstream_matching=[
                           item for item in audit_statuses
                           if isinstance(item,dict)
