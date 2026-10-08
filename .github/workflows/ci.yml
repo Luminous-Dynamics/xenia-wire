@@ -262,7 +262,7 @@ jobs:
           import textwrap
           from pathlib import Path
 
-          ruby_script = r'''\
+          ruby_script = r'''
           require "yaml"
           document = Psych.parse(STDIN.read)
           walk = nil
@@ -315,7 +315,7 @@ jobs:
                           break
                   if end is None:
                       raise SystemExit(f"{path}: embedded Python heredoc has no closing PY")
-                  source = textwrap.dedent("\\n".join(lines[start:end]) + "\\n")
+                  source = textwrap.dedent("\n".join(lines[start:end]) + "\n")
                   try:
                       ast.parse(source, filename=str(path))
                   except SyntaxError as exc:
