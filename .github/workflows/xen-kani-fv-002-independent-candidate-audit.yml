@@ -67,6 +67,8 @@ jobs:
           [[ "$PR_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$CI_RUN_ID" =~ ^[1-9][0-9]*$ ]]
           [[ "$CI_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          test "$(ruby -e "print RUBY_VERSION")" = "$EXPECTED_RUBY_VERSION"
+          test "$(ruby -rpsych -e "print Psych::VERSION")" = "$EXPECTED_PSYCH_VERSION"
 
           python3 - <<'PY'
           import base64
@@ -407,6 +409,8 @@ jobs:
               "candidate_size_bytes":len(raw),
               "scope_decision":"IN_SCOPE",
               "yaml_duplicate_key_check":"passed",
+              "ruby_version":os.environ["EXPECTED_RUBY_VERSION"],
+              "psych_version":os.environ["EXPECTED_PSYCH_VERSION"],
               "run_blocks_checked":len(run_blocks),
               "action_pin_check":"passed",
           })
