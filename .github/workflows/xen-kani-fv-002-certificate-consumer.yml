@@ -4,6 +4,8 @@ on:
   workflow_run:
     workflows: ["CI"]
     types: [completed]
+  schedule:
+    - cron: "17 * * * *"
 
 permissions:
   actions: read
@@ -849,6 +851,10 @@ jobs:
               "main_sha":current_main_sha,
               "producer_run_id":producer_run_id,
               "producer_run_attempt":producer_run["run_attempt"],
+              "independent_audit_run_id":audit_run_id,
+              "independent_audit_run_attempt":audit_run["run_attempt"],
+              "independent_audit_artifact_id":audit_artifact_id,
+              "independent_audit_artifact_digest":audit_artifact["digest"],
               "promotion_terminal_artifact_id":artifact_id,
               "promotion_terminal_artifact_digest":artifact_digest,
               "promotion_certificate_payload_digest":promotion_certificate_payload_digest,
@@ -1021,4 +1027,270 @@ jobs:
           assert latest.get("state")==state
           assert latest.get("target_url")==target_url
           assert latest.get("context","").lower()==context.lower()
+          PY
+
+  certificate-freshness-watchdog:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Revalidate live certificate-consumer statuses
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          WATCHDOG_RUN_ID: ${{ github.run_id }}
+          WATCHDOG_RUN_ATTEMPT: ${{ github.run_attempt }}
+          WATCHDOG_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          GITHUB_SHA_OBSERVED: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = "schedule"
+          test "$GITHUB_REPOSITORY" = "$REPOSITORY"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$GITHUB_REF_PROTECTED" = "true"
+          [[ "$GITHUB_SHA_OBSERVED" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$WATCHDOG_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$WATCHDOG_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+
+          python3 - <<'PY'
+          import base64
+          import hashlib
+          import io
+          import json
+          import os
+          import re
+          import urllib.parse
+          import urllib.request
+          import zipfile
+          from datetime import datetime, timezone
+
+          REPO=os.environ["REPOSITORY"]
+          REPO_ID=int(os.environ["REPOSITORY_ID"])
+          TOKEN=os.environ["GITHUB_TOKEN"]
+          STATUS_CONTEXT=os.environ["CERTIFICATE_STATUS_CONTEXT"]
+          CONSUMER_PATH=os.environ["CONSUMER_WORKFLOW_PATH"]
+          AUDIT_PATH=os.environ["INDEPENDENT_AUDIT_WORKFLOW_PATH"]
+          HEAD_EXECUTION_SHA=os.environ["GITHUB_SHA_OBSERVED"]
+          WATCHDOG_URL=os.environ["WATCHDOG_RUN_URL"]
+          API_BASE=f"https://api.github.com/repos/{REPO}"
+
+          qualification_paths={
+              "src/replay_kernel.rs",
+              "src/replay_kernel_kani.rs",
+              "src/replay_window.rs",
+              "fuzz/fuzz_targets/fuzz_replay_window.rs",
+              "src/lib.rs",
+              "Cargo.toml",
+              "docs/formal/xen-kani-fv-002-replay-kernel-v1.json",
+              ".github/workflows/xen-kani-fv-002-replay-kernel-v2.yml",
+          }
+          self_protection_paths={
+              CONSUMER_PATH,
+              os.environ["CANONICALIZATION_VECTORS_PATH"],
+          }
+
+          def get(path, **query):
+              url=API_BASE+path
+              if query:
+                  url += "?"+urllib.parse.urlencode(query)
+              req=urllib.request.Request(url,headers={
+                  "Authorization":"Bearer "+TOKEN,
+                  "Accept":"application/vnd.github+json",
+                  "X-GitHub-Api-Version":"2026-03-10",
+              })
+              with urllib.request.urlopen(req,timeout=30) as response:
+                  return json.loads(response.read())
+
+          class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self,req,fp,code,msg,headers,newurl):
+                  redirected=super().redirect_request(req,fp,code,msg,headers,newurl)
+                  if redirected is None:
+                      return None
+                  if urllib.parse.urlsplit(req.full_url).netloc != urllib.parse.urlsplit(newurl).netloc:
+                      redirected.headers.pop("Authorization",None)
+                      redirected.headers.pop("authorization",None)
+                  return redirected
+
+          OPENER=urllib.request.build_opener(SafeRedirectHandler)
+
+          def download(url,max_bytes):
+              req=urllib.request.Request(url,headers={
+                  "Authorization":"Bearer "+TOKEN,
+                  "Accept":"application/vnd.github+json",
+                  "X-GitHub-Api-Version":"2026-03-10",
+              })
+              with OPENER.open(req,timeout=60) as response:
+                  data=response.read(max_bytes+1)
+              assert len(data)<=max_bytes, f"bounded download exceeded: {len(data)}"
+              return data
+
+          def strict_json(data,label):
+              def pairs(items):
+                  out={}
+                  for key,value in items:
+                      assert key not in out, f"{label}: duplicate JSON key {key!r}"
+                      out[key]=value
+                  return out
+              return json.loads(data.decode("utf-8"),object_pairs_hook=pairs)
+
+          def sha256(data):
+              return hashlib.sha256(data).hexdigest()
+
+          def post_failure(head_sha,reason):
+              payload={
+                  "state":"failure",
+                  "target_url":WATCHDOG_URL,
+                  "description":reason[:140],
+                  "context":STATUS_CONTEXT,
+              }
+              req=urllib.request.Request(
+                  f"{API_BASE}/statuses/{head_sha}",
+                  data=json.dumps(payload,sort_keys=True).encode(),
+                  method="POST",
+                  headers={
+                      "Authorization":"Bearer "+TOKEN,
+                      "Accept":"application/vnd.github+json",
+                      "Content-Type":"application/json",
+                      "X-GitHub-Api-Version":"2026-03-10",
+                  },
+              )
+              with urllib.request.urlopen(req,timeout=30) as response:
+                  result=json.loads(response.read())
+              assert result.get("sha")==head_sha
+              assert result.get("state")=="failure"
+              assert result.get("context")==STATUS_CONTEXT
+              assert result.get("target_url")==WATCHDOG_URL
+              return result
+
+          main=get("/branches/main")
+          assert main["name"]=="main"
+          current_main_sha=main["commit"]["sha"]
+          assert current_main_sha==HEAD_EXECUTION_SHA
+          main_commit=get(f"/commits/{current_main_sha}")
+          verification=main_commit["commit"]["verification"]
+          main_governance_ok=(
+              main["protected"] is True
+              and verification.get("verified") is True
+              and verification.get("reason")=="valid"
+          )
+
+          prs=[]
+          for page in range(1,31):
+              batch=get("/pulls",state="open",base="main",per_page=100,page=page)
+              assert isinstance(batch,list)
+              prs.extend(batch)
+              if len(batch)<100:
+                  break
+              if page==30:
+                  raise AssertionError("open PR enumeration reached 3000-item ceiling; watchdog cannot prove complete scope")
+
+          stale=0
+          checked=0
+          for pr in prs:
+              number=pr.get("number")
+              try:
+                  assert pr.get("state")=="open" and pr.get("merged") is False
+                  assert pr.get("base",{}).get("ref")=="main"
+                  assert pr.get("base",{}).get("repo",{}).get("id")==REPO_ID
+                  assert pr.get("base",{}).get("repo",{}).get("full_name")==REPO
+                  assert pr.get("head",{}).get("repo",{}).get("id")==REPO_ID
+                  assert pr.get("head",{}).get("repo",{}).get("full_name")==REPO
+                  head_sha=pr["head"]["sha"]
+                  base_sha=pr["base"]["sha"]
+                  files=[]
+                  for page in range(1,31):
+                      batch=get(f"/pulls/{number}/files",per_page=100,page=page)
+                      assert isinstance(batch,list)
+                      files.extend(batch)
+                      if len(batch)<100:
+                          break
+                      if page==30:
+                          raise AssertionError("PR file list reached 3000-item ceiling")
+                  def touched(path):
+                      return any(
+                          item.get("filename")==path or item.get("previous_filename")==path
+                          for item in files
+                      )
+                  in_scope=any(
+                      item.get("filename") in qualification_paths or item.get("previous_filename") in qualification_paths
+                      for item in files
+                  )
+                  self_changed=touched(CONSUMER_PATH) or touched(os.environ["CANONICALIZATION_VECTORS_PATH"])
+                  if not in_scope and not self_changed:
+                      continue
+                  checked+=1
+
+                  statuses=get(f"/commits/{head_sha}/statuses",context=STATUS_CONTEXT,per_page=100)
+                  matching=[item for item in statuses if isinstance(item,dict) and item.get("context","").lower()==STATUS_CONTEXT.lower()]
+                  if not matching or matching[0].get("state")!="success":
+                      continue
+                  status=matching[0]
+                  target=status.get("target_url")
+                  match=re.fullmatch(r"https://github.com/Luminous-Dynamics/xenia-wire/actions/runs/([1-9][0-9]*)",str(target))
+                  assert match, f"unexpected certificate status target URL for PR #{number}"
+                  consumer_run_id=int(match.group(1))
+                  consumer_run=get(f"/actions/runs/{consumer_run_id}")
+                  assert consumer_run["name"]=="XEN-KANI-FV-002 Certificate Consumer"
+                  assert consumer_run["path"]==CONSUMER_PATH
+                  assert consumer_run["event"]=="workflow_run"
+                  assert consumer_run["status"]=="completed"
+                  assert consumer_run["conclusion"]=="success"
+                  assert consumer_run["head_branch"]=="main"
+                  assert consumer_run["head_sha"]==current_main_sha
+                  assert consumer_run["repository"]["id"]==REPO_ID
+                  assert consumer_run["pull_requests"] and consumer_run["pull_requests"][0]["number"]==number
+                  assert consumer_run["pull_requests"][0]["head"]["sha"]==head_sha
+
+                  expected_name=f"xen-kani-fv-002-certificate-consumer-{number}-{head_sha}-{consumer_run_id}-{consumer_run['run_attempt']}"
+                  artifacts=get(f"/actions/runs/{consumer_run_id}/artifacts",per_page=100,page=1).get("artifacts",[])
+                  candidates=[a for a in artifacts if isinstance(a,dict) and a.get("name")==expected_name and a.get("expired") is False]
+                  assert len(candidates)==1
+                  consumer_artifact=candidates[0]
+                  archive=download(f"{API_BASE}/actions/artifacts/{int(consumer_artifact['id'])}/zip",1048576)
+                  assert sha256(archive)==consumer_artifact["digest"].removeprefix("sha256:")
+                  with zipfile.ZipFile(io.BytesIO(archive)) as z:
+                      assert z.namelist()==["xen-kani-fv-002-consumer-decision.json"]
+                      decision=strict_json(z.read("xen-kani-fv-002-consumer-decision.json"),"consumer-decision")
+                  assert decision["schema"]=="xenia.formal.kani-replay-kernel.certificate-consumer.v1"
+                  assert decision["pr_number"]==number
+                  assert decision["head_sha"]==head_sha
+                  assert decision["main_sha"]==current_main_sha
+                  assert decision["consumer_workflow_sha"]==consumer_run["head_sha"]
+                  assert decision["consumer_workflow_blob"]==get(f"/contents/{urllib.parse.quote(CONSUMER_PATH,safe='/')}",ref=current_main_sha)["sha"]
+                  assert decision["decision"] in {"QUALIFIED_FOR_MERGE","NOT_APPLICABLE"}
+                  assert decision["main_protected"] is True
+                  assert decision["main_tip_signature_verified"] is True
+                  assert base_sha==current_main_sha
+
+                  if decision["decision"]=="QUALIFIED_FOR_MERGE":
+                      assert in_scope and not self_changed
+                      verifier_artifact_id=int(decision["promotion_terminal_artifact_id"])
+                      verifier_artifact=get(f"/actions/artifacts/{verifier_artifact_id}")
+                      assert verifier_artifact["expired"] is False
+                      assert verifier_artifact["digest"]==decision["promotion_terminal_artifact_digest"]
+                      assert verifier_artifact["workflow_run"]["id"]==int(decision["producer_run_id"])
+                      audit_artifact_id=int(decision["independent_audit_artifact_id"])
+                      audit_artifact=get(f"/actions/artifacts/{audit_artifact_id}")
+                      assert audit_artifact["expired"] is False
+                      assert audit_artifact["digest"]==decision["independent_audit_artifact_digest"]
+                      assert audit_artifact["workflow_run"]["id"]==int(decision["independent_audit_run_id"])
+                      assert audit_artifact["workflow_run"]["head_sha"]==current_main_sha
+                      audit_source=get(f"/contents/{urllib.parse.quote(AUDIT_PATH,safe='/')}",ref=current_main_sha)
+                      assert audit_source["sha"]==os.environ["EXPECTED_INDEPENDENT_AUDIT_WORKFLOW_BLOB"]
+                  if not main_governance_ok:
+                      raise AssertionError("main governance root is no longer protected/signed")
+              except Exception as exc:
+                  stale+=1
+                  try:
+                      post_failure(head_sha,str(f"certificate status stale/requires revalidation: {exc}")[:140])
+                  except Exception as post_exc:
+                      raise AssertionError(f"unable to invalidate stale certificate status for PR #{number}: {post_exc}") from exc
+
+          print(json.dumps({
+              "decision":"WATCHDOG_REVALIDATION_COMPLETE",
+              "open_prs":len(prs),
+              "in_scope_or_self_protected_prs_checked":checked,
+              "stale_statuses_invalidated":stale,
+              "main_governance_verified":main_governance_ok,
+          },sort_keys=True,indent=2))
           PY
