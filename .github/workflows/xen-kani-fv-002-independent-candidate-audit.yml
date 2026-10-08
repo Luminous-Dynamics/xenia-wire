@@ -168,6 +168,8 @@ jobs:
           assert ci["workflow_id"]==int(os.environ["CI_RUN_WORKFLOW_ID"])
           assert ci["path"]==".github/workflows/ci.yml"
           assert ci["event"]=="pull_request"
+          assert ci["status"]=="completed"
+          assert ci["conclusion"]=="success"
           assert ci["run_attempt"]==int(os.environ["CI_RUN_ATTEMPT"])
           assert ci["head_sha"]==HEAD_SHA
           assert ci["head_repository"]["full_name"]==REPO
