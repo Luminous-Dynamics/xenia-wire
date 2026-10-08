@@ -973,6 +973,59 @@ jobs:
             fi
           fi
 
+          python3 - "$HEAD_SHA" "$PR_NUMBER" "$STATUS_STATE" "$STATUS_DESCRIPTION" > /tmp/xen-kani-fv-002-final-status.json <<'PY'
+          import json
+          import os
+          import sys
+          import urllib.request
+          repo=os.environ["REPOSITORY"]
+          repo_id=int(os.environ["REPOSITORY_ID"])
+          token=os.environ["GITHUB_TOKEN"]
+          head_sha,pr_number,state,description=sys.argv[1:]
+          api=f"https://api.github.com/repos/{repo}"
+          def get(path):
+              request=urllib.request.Request(
+                  api+path,
+                  headers={
+                      "Authorization":"Bearer "+token,
+                      "Accept":"application/vnd.github+json",
+                      "X-GitHub-Api-Version":"2026-03-10",
+                  },
+              )
+              with urllib.request.urlopen(request,timeout=30) as response:
+                  return json.loads(response.read())
+          if state=="success":
+              pr=get(f"/pulls/{int(pr_number)}")
+              main=get("/branches/main")
+              main_sha=main.get("commit",{}).get("sha")
+              main_commit=get(f"/commits/{main_sha}") if isinstance(main_sha,str) else {}
+              verification=main_commit.get("commit",{}).get("verification",{})
+              valid=(
+                  pr.get("state")=="open"
+                  and pr.get("merged") is False
+                  and pr.get("base",{}).get("ref")=="main"
+                  and pr.get("base",{}).get("repo",{}).get("id")==repo_id
+                  and pr.get("base",{}).get("repo",{}).get("full_name")==repo
+                  and pr.get("head",{}).get("repo",{}).get("id")==repo_id
+                  and pr.get("head",{}).get("repo",{}).get("full_name")==repo
+                  and pr.get("head",{}).get("sha")==head_sha
+                  and pr.get("base",{}).get("sha")==main_sha
+                  and main.get("name")=="main"
+                  and main.get("protected") is True
+                  and verification.get("verified") is True
+                  and verification.get("reason")=="valid"
+                  and verification.get("signature")
+                  and verification.get("payload")
+                  and verification.get("verified_at")
+              )
+              if not valid:
+                  state="failure"
+                  description="status publication blocked: final PR/main governance recheck failed."
+          print(json.dumps({"state":state,"description":description},sort_keys=True))
+          PY
+          STATUS_STATE="$(python3 -c 'import json; print(json.load(open("/tmp/xen-kani-fv-002-final-status.json"))["state"])')"
+          STATUS_DESCRIPTION="$(python3 -c 'import json; print(json.load(open("/tmp/xen-kani-fv-002-final-status.json"))["description"])')"
+
           python3 - "$HEAD_SHA" "$STATUS_STATE" "$STATUS_DESCRIPTION" "$STATUS_CONTEXT" "$CONSUMER_RUN_URL" "$CONSUMER_RUN_ID" "$CONSUMER_RUN_ATTEMPT" > /tmp/xen-kani-fv-002-consumer-status-payload.json <<'PY'
           import json
           import re
