@@ -1298,6 +1298,10 @@ jobs:
                       audit_status_target=audit_target
 
                       audit_statuses=get(
+                          f"/commits/{head_sha}/statuses",
+                          context=os.environ["INDEPENDENT_AUDIT_STATUS_CONTEXT"],
+                          per_page=100,
+                      )
                       upstream_matching=[
                           item for item in audit_statuses
                           if isinstance(item,dict)
