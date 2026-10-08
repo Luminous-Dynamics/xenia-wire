@@ -25,6 +25,7 @@ env:
   CONSUMER_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-certificate-consumer.yml
   AUDIT_STATUS_CONTEXT: XEN-KANI-FV-002 / Independent Candidate Audit
   EXPECTED_CANDIDATE_BLOB: 88582c047b8f651dddcb5acac3a74b0af50a9ea0
+  EXPECTED_CANDIDATE_WORKFLOW_ID: "373418900"
   EXPECTED_BASE_BRANCH: main
   EXPECTED_CI_WORKFLOW_PATH: .github/workflows/ci.yml
   EXPECTED_CI_WORKFLOW_BLOB: f0b2b6682f84c960e36bcc5a19f821d103d014c3
@@ -316,6 +317,28 @@ jobs:
           ).decode("utf-8")
           assert "name: Trusted XEN-KANI-FV-002 Admission" in candidate_main_text
           assert "workflow_run:" in candidate_main_text
+          candidate_runs=get(
+              "/actions/runs",
+              event="workflow_run",
+              head_sha=current_main_sha,
+              per_page=100,
+              page=1,
+          )
+          assert isinstance(candidate_runs,dict)
+          candidate_run_identities=[
+              run for run in candidate_runs.get("workflow_runs",[])
+              if isinstance(run,dict)
+              and run.get("name")==os.environ["EXPECTED_CANDIDATE_WORKFLOW_NAME"]
+              and run.get("path")==os.environ["CANDIDATE_PATH"]
+              and run.get("head_sha")==current_main_sha
+          ]
+          assert candidate_run_identities, (
+              "active candidate verifier workflow has no recorded workflow_run execution on current main tip"
+          )
+          assert all(
+              int(run.get("workflow_id",0))==int(os.environ["EXPECTED_CANDIDATE_WORKFLOW_ID"])
+              for run in candidate_run_identities
+          ), "candidate verifier workflow entity ID changed or is ambiguous"
           main_workflow_paths=[
               item.get("path")
               for item in main_workflows
