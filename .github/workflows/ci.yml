@@ -27,7 +27,7 @@ jobs:
     name: Format Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 tag resolved 2026-10-08
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
@@ -37,11 +37,11 @@ jobs:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 tag resolved 2026-10-08
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 tag resolved 2026-10-08
       - name: Clippy (default features)
         run: cargo clippy --all-targets -- -D warnings
       - name: Clippy (no default features)
@@ -61,9 +61,9 @@ jobs:
           - "--no-default-features"
           - "--all-features"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 tag resolved 2026-10-08
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 tag resolved 2026-10-08
       # Use --tests to exercise unit + integration tests without
       # running doctests. The lib.rs module-level doctest exercises
       # the reference-frame quick-start and fails to compile when
@@ -77,9 +77,9 @@ jobs:
     name: MSRV (Rust 1.94)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 tag resolved 2026-10-08
       - uses: dtolnay/rust-toolchain@1.94
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 tag resolved 2026-10-08
       - name: Build (default features)
         run: cargo build --all-targets
       - name: Build (all features)
@@ -89,20 +89,20 @@ jobs:
     name: Docs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 tag resolved 2026-10-08
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 tag resolved 2026-10-08
       - run: cargo doc --all-features --no-deps
 
   wasm32:
     name: WebAssembly (wasm32-unknown-unknown)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 tag resolved 2026-10-08
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 tag resolved 2026-10-08
       - name: Build (no default features)
         run: cargo build --target wasm32-unknown-unknown --no-default-features
       - name: Build (default features)
@@ -114,15 +114,15 @@ jobs:
     name: PQC Boundary Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 tag resolved 2026-10-08
       - run: scripts/check-pqc-boundary.sh .
 
   conformance:
     name: Cross-implementation conformance (Node)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 tag resolved 2026-10-08
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4 tag resolved 2026-10-08
         with:
           node-version: "22"
       - name: Verify envelope vectors from an independent implementation
@@ -143,9 +143,9 @@ jobs:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 tag resolved 2026-10-08
       - uses: dtolnay/rust-toolchain@nightly
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 tag resolved 2026-10-08
         with:
           workspaces: fuzz -> target
       # Corpus accumulates the inputs libFuzzer found "interesting" across
@@ -157,7 +157,7 @@ jobs:
       # same key prefix, so the weekly deep run's discoveries feed back
       # into every PR's smoke run and vice versa.
       - name: Cache fuzz corpus
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4 tag resolved 2026-10-08
         with:
           path: fuzz/corpus
           key: fuzz-corpus-${{ runner.os }}-${{ github.run_id }}
@@ -179,16 +179,16 @@ jobs:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 tag resolved 2026-10-08
       - uses: dtolnay/rust-toolchain@nightly
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 tag resolved 2026-10-08
         with:
           workspaces: fuzz -> target
       # Same growing-cache pattern as fuzz-smoke, same key prefix -- this
       # is the job most likely to actually find new corpus entries (5m vs
       # 20s per target), so keeping the two in sync matters most here.
       - name: Cache fuzz corpus
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4 tag resolved 2026-10-08
         with:
           path: fuzz/corpus
           key: fuzz-corpus-${{ runner.os }}-${{ github.run_id }}
@@ -205,7 +205,7 @@ jobs:
           done
       - name: Upload crash artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4 tag resolved 2026-10-08
         with:
           name: fuzz-crash-artifacts
           path: fuzz/artifacts/
@@ -215,9 +215,9 @@ jobs:
     name: Security Audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 tag resolved 2026-10-08
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 tag resolved 2026-10-08
       # Library crate: Cargo.lock is gitignored. Generate it for the
       # audit run against the current registry rather than committing a
       # checked-in lockfile that would drift.
@@ -244,3 +244,4 @@ jobs:
         # where the unsound read doesn't apply. Revisit if dudect-bencher
         # ever updates its own clap dependency.
         run: cargo audit --deny warnings --ignore RUSTSEC-2025-0141 --ignore RUSTSEC-2021-0139 --ignore RUSTSEC-2024-0375 --ignore RUSTSEC-2021-0145
+
