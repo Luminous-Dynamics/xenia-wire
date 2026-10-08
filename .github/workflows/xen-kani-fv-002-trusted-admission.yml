@@ -895,7 +895,7 @@ jobs:
                 walk_mapping.call(key, "#{location}.key#{index}")
                 walk_mapping.call(value, "#{location}.value#{index}")
               end
-            elsif node.respond_to?(:children)
+            elsif node.respond_to?(:children) && node.children
               node.children.each_with_index do |child, index|
                 walk_mapping.call(child, "#{location}[#{index}]")
               end
