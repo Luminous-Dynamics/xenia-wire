@@ -119,9 +119,28 @@ jobs:
           assert compare.get("too_large") is not True
           files=compare.get("files")
           assert isinstance(files,list)
+
+          touches_candidate=any(
+              item.get("filename")==CANDIDATE_PATH
+              or item.get("previous_filename")==CANDIDATE_PATH
+              for item in files
+          )
+          if not touches_candidate:
+              print(json.dumps({
+                  "decision":"NOT_APPLICABLE",
+                  "pr_number":PR_NUMBER,
+                  "base_sha":pr["base"]["sha"],
+                  "head_sha":HEAD_SHA,
+                  "candidate_path":CANDIDATE_PATH,
+                  "changed_file_count":len(files),
+                  "reason":"candidate verifier workflow is outside the PR delta",
+              },sort_keys=True,indent=2))
+              raise SystemExit(0)
+
           assert len(files)==1
           assert files[0]["filename"]==CANDIDATE_PATH
           assert files[0]["status"]=="modified"
+          assert files[0].get("previous_filename") in (None,CANDIDATE_PATH)
 
           encoded_path=urllib.parse.quote(CANDIDATE_PATH,safe="/")
           candidate=get(f"/contents/{encoded_path}?ref={urllib.parse.quote(HEAD_SHA,safe='')}")
@@ -254,6 +273,7 @@ jobs:
               "candidate_content_sha256":content_sha256,
               "changed_file_count":len(files),
               "candidate_size_bytes":len(raw),
+              "scope_decision":"IN_SCOPE",
               "yaml_duplicate_key_check":"passed",
               "run_blocks_checked":len(run_blocks),
               "action_pin_check":"passed",
