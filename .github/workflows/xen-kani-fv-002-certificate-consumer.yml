@@ -383,6 +383,7 @@ jobs:
           self_protection_paths={
               os.environ["CONSUMER_WORKFLOW_PATH"],
               os.environ["CANONICALIZATION_VECTORS_PATH"],
+              os.environ["EXPECTED_CI_WORKFLOW_PATH"],
           }
           changed_files=[]
           first_files=get(f"/pulls/{PR_NUMBER}/files",per_page=100,page=1)
