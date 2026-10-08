@@ -979,7 +979,7 @@ jobs:
           assert state in {"success","failure"}
           assert len(description)<=140
           assert context=="XEN-KANI-FV-002 / Certificate Consumer"
-          assert re.fullmatch(r"https://github.com/Luminous-Dynamics/xenia-wire/actions/runs/[1-9][0-9]*",target_url)
+          assert re.fullmatch(r"https://github.com/Luminous-Dynamics/xenia-wire/actions/runs/[1-9][0-9]*/attempts/[1-9][0-9]*",target_url)
           assert re.fullmatch(r"[1-9][0-9]*",run_id)
           assert re.fullmatch(r"[1-9][0-9]*",run_attempt)
           print(json.dumps({
