@@ -331,8 +331,12 @@ jobs:
               if yaml.returncode != 0:
                   raise SystemExit(f"{path}: invalid YAML or duplicate mapping key: {yaml.stderr.strip()}")
 
+              use_pattern = re.compile(r"^\s*(?:-\s+)?uses:\s+([^\s#]+)")
+              assert use_pattern.match("      - uses: actions/checkout@" + "a" * 40)
+              assert not use_pattern.match("      - uses: actions/checkout@v4")
+
               for line_number, line in enumerate(text.splitlines(), 1):
-                  match = re.match(r"^\\s*(?:-\\s+)?uses:\\s+([^\\s#]+)", line)
+                  match = use_pattern.match(line)
                   if not match:
                       continue
                   action_ref = match.group(1)
