@@ -488,6 +488,7 @@ jobs:
               if isinstance(item,dict)
               and item.get("context","").lower()==os.environ["INDEPENDENT_AUDIT_STATUS_CONTEXT"].lower()
           ]
+          matching_statuses.sort(key=lambda item: int(item.get("id",0)),reverse=True)
           assert matching_statuses, (
               f"no independent audit status for PR head {head_sha}"
           )
@@ -1023,6 +1024,7 @@ jobs:
           assert isinstance(data,list)
           matching=[x for x in data if isinstance(x,dict) and x.get("context","").lower()==context.lower()]
           assert matching
+          matching.sort(key=lambda item: int(item.get("id",0)),reverse=True)
           latest=matching[0]
           assert latest.get("sha")==head_sha
           assert latest.get("state")==state
@@ -1224,6 +1226,7 @@ jobs:
 
                   statuses=get(f"/commits/{head_sha}/statuses",context=STATUS_CONTEXT,per_page=100)
                   matching=[item for item in statuses if isinstance(item,dict) and item.get("context","").lower()==STATUS_CONTEXT.lower()]
+                  matching.sort(key=lambda item: int(item.get("id",0)),reverse=True)
                   if not matching or matching[0].get("state")!="success":
                       continue
                   status=matching[0]
@@ -1267,6 +1270,42 @@ jobs:
                   assert base_sha==current_main_sha
 
                   if decision["decision"]=="QUALIFIED_FOR_MERGE":
+                      audit_statuses=get(
+                          f"/commits/{head_sha}/statuses",
+                          context=os.environ["INDEPENDENT_AUDIT_STATUS_CONTEXT"],
+                          per_page=100,
+                      )
+                      upstream_matching=[
+                          item for item in audit_statuses
+                          if isinstance(item,dict)
+                          and item.get("context","").lower()==os.environ["INDEPENDENT_AUDIT_STATUS_CONTEXT"].lower()
+                      ]
+                      upstream_matching.sort(key=lambda item: int(item.get("id",0)),reverse=True)
+                      assert upstream_matching and upstream_matching[0].get("state")=="success"
+                      upstream_status=upstream_matching[0]
+                      upstream_target=upstream_status.get("target_url")
+                      upstream_match=re.fullmatch(
+                          r"https://github.com/Luminous-Dynamics/xenia-wire/actions/runs/([1-9][0-9]*)/attempts/([1-9][0-9]*)",
+                          str(upstream_target),
+                      )
+                      assert upstream_match
+                      upstream_run_id=int(upstream_match.group(1))
+                      upstream_run_attempt=int(upstream_match.group(2))
+                      assert upstream_run_id==int(decision["independent_audit_run_id"])
+                      assert upstream_run_attempt==int(decision["independent_audit_run_attempt"])
+                      upstream_run=get(f"/actions/runs/{upstream_run_id}/attempts/{upstream_run_attempt}")
+                      assert upstream_run["name"]=="XEN-KANI-FV-002 Independent Candidate Audit"
+                      assert upstream_run["path"]==AUDIT_PATH
+                      assert upstream_run["event"]=="workflow_run"
+                      assert upstream_run["status"]=="completed"
+                      assert upstream_run["conclusion"]=="success"
+                      assert upstream_run["head_branch"]=="main"
+                      assert upstream_run["head_sha"]==current_main_sha
+                      assert upstream_run["repository"]["id"]==REPO_ID
+                      assert upstream_run["pull_requests"] and upstream_run["pull_requests"][0]["number"]==number
+                      assert upstream_run["pull_requests"][0]["head"]["sha"]==head_sha
+
+                      audit_artifact_id=int(decision["independent_audit_artifact_id"])
                       assert in_scope and not self_changed
                       verifier_artifact_id=int(decision["promotion_terminal_artifact_id"])
                       verifier_artifact=get(f"/actions/artifacts/{verifier_artifact_id}")
@@ -1278,6 +1317,12 @@ jobs:
                       assert audit_artifact["expired"] is False
                       assert audit_artifact["digest"]==decision["independent_audit_artifact_digest"]
                       assert audit_artifact["workflow_run"]["id"]==int(decision["independent_audit_run_id"])
+                      assert audit_artifact["workflow_run"]["run_attempt"]==int(decision["independent_audit_run_attempt"])
+                      expected_audit_name=(
+                          f"xen-kani-fv-002-independent-audit-{number}-{head_sha}-"
+                          f"{upstream_run_id}-{upstream_run_attempt}"
+                      )
+                      assert audit_artifact["name"]==expected_audit_name
                       assert audit_artifact["workflow_run"]["head_sha"]==current_main_sha
                       audit_source=get(f"/contents/{urllib.parse.quote(AUDIT_PATH,safe='/')}",ref=current_main_sha)
                       assert audit_source["sha"]==os.environ["EXPECTED_INDEPENDENT_AUDIT_WORKFLOW_BLOB"]
