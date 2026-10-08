@@ -115,7 +115,15 @@ jobs:
           assert pr["head"]["repo"]["full_name"]==REPO
           assert pr["head"]["sha"]==HEAD_SHA
 
-          compare=get(f"/compare/{pr['base']['sha']}...{HEAD_SHA}")
+          main_ref=get("/git/ref/heads/main")
+          current_main_sha=main_ref["object"]["sha"]
+          assert re.fullmatch(r"[0-9a-f]{40}",current_main_sha)
+          assert current_main_sha==pr["base"]["sha"], (
+              f"PR base is stale relative to current main: "
+              f"pr_base={pr['base']['sha']} current_main={current_main_sha}"
+          )
+
+          compare=get(f"/compare/{current_main_sha}...{HEAD_SHA}")
           assert compare.get("too_large") is not True
           files=compare.get("files")
           assert isinstance(files,list)
@@ -261,6 +269,26 @@ jobs:
           assert text_value.count("  workflow_run:\n")==1
           assert text_value.count("  pull_request:\n")==1
 
+          final_pr=get(f"/pulls/{PR_NUMBER}")
+          final_main=get("/git/ref/heads/main")
+          assert final_pr["number"]==PR_NUMBER
+          assert final_pr["state"]=="open"
+          assert final_pr["merged"] is False
+          assert final_pr["base"]["ref"]==os.environ["EXPECTED_BASE_BRANCH"]
+          assert final_pr["base"]["repo"]["id"]==REPO_ID
+          assert final_pr["base"]["repo"]["full_name"]==REPO
+          assert final_pr["head"]["repo"]["id"]==REPO_ID
+          assert final_pr["head"]["repo"]["full_name"]==REPO
+          assert final_pr["head"]["sha"]==HEAD_SHA
+          final_main_sha=final_main["object"]["sha"]
+          assert final_main_sha==current_main_sha
+          assert final_pr["base"]["sha"]==current_main_sha
+
+          final_candidate=get(f"/contents/{encoded_path}?ref={urllib.parse.quote(HEAD_SHA,safe='')}")
+          assert final_candidate["type"]=="file"
+          assert final_candidate["path"]==CANDIDATE_PATH
+          assert final_candidate["sha"]==EXPECTED_BLOB
+
           print(json.dumps({
               "decision":"AUDITED_CANDIDATE",
               "pr_number":PR_NUMBER,
@@ -272,6 +300,9 @@ jobs:
               "candidate_blob_sha1":git_blob_sha1,
               "candidate_content_sha256":content_sha256,
               "changed_file_count":len(files),
+              "initial_main_sha":current_main_sha,
+              "final_main_sha":final_main_sha,
+              "freshness_recheck":"passed",
               "candidate_size_bytes":len(raw),
               "scope_decision":"IN_SCOPE",
               "yaml_duplicate_key_check":"passed",
