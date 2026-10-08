@@ -31,7 +31,7 @@ env:
   EXPECTED_EVIDENCE_CONTRACT_BLOB: ce3e1447cc6b9bd1f0fc361b4fb81c5fe1450b0b
   EXPECTED_VERIFIER_WORKFLOW_BLOB: 88582c047b8f651dddcb5acac3a74b0af50a9ea0
   INDEPENDENT_AUDIT_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-independent-candidate-audit.yml
-  EXPECTED_INDEPENDENT_AUDIT_WORKFLOW_BLOB: 5641d9e168572d6cd6f262bf43a8de824b668870
+  EXPECTED_INDEPENDENT_AUDIT_WORKFLOW_BLOB: 4ba705a8ece85e86c37d1b7672b3c438d72fef59
   INDEPENDENT_AUDIT_STATUS_CONTEXT: XEN-KANI-FV-002 / Independent Candidate Audit
   CONSUMER_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-certificate-consumer.yml
   PROMOTION_TERMINAL_PREFIX: trusted-xen-kani-fv-002-promotion-terminal-
@@ -58,6 +58,7 @@ jobs:
           test "$GITHUB_EVENT_NAME" = "pull_request_target"
           test "$GITHUB_REPOSITORY" = "$REPOSITORY"
           test "$GITHUB_REF" = "refs/heads/main"
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
           test "$GITHUB_WORKFLOW" = "XEN-KANI-FV-002 Certificate Consumer"
           test "$GITHUB_WORKFLOW_REF" = "$REPOSITORY/$CONSUMER_WORKFLOW_PATH@refs/heads/main"
           test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
@@ -395,6 +396,9 @@ jobs:
           assert main["protected"] is True
           current_main_sha=main["commit"]["sha"]
           assert re.fullmatch(r"[0-9a-f]{40}",current_main_sha)
+          assert current_main_sha==os.environ["GITHUB_SHA"], (
+              f"consumer execution SHA is not current main tip: execution={os.environ['GITHUB_SHA']} current_main={current_main_sha}"
+          )
           assert base_sha==current_main_sha, (
               f"stale PR base: base={base_sha} current_main={current_main_sha}"
           )
