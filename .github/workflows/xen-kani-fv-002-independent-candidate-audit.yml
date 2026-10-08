@@ -21,6 +21,7 @@ env:
   CANDIDATE_PATH: .github/workflows/xen-kani-fv-002-trusted-admission.yml
   AUDIT_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-independent-candidate-audit.yml
   TRIGGER_WORKFLOW_PATH: .github/workflows/ci.yml
+  CONSUMER_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-certificate-consumer.yml
   AUDIT_STATUS_CONTEXT: XEN-KANI-FV-002 / Independent Candidate Audit
   EXPECTED_CANDIDATE_BLOB: 88582c047b8f651dddcb5acac3a74b0af50a9ea0
   EXPECTED_BASE_BRANCH: main
@@ -194,6 +195,66 @@ jobs:
                   encoding="utf-8",
               )
               print(json.dumps(payload,sort_keys=True,indent=2))
+
+
+          authorized_status_writer_paths={
+              os.environ["AUDIT_WORKFLOW_PATH"],
+              os.environ["CONSUMER_WORKFLOW_PATH"],
+          }
+
+          workflow_scope_violations=[]
+          for item in files:
+              current_path=item.get("filename")
+              previous_path=item.get("previous_filename")
+              candidate_path=current_path or previous_path
+              if not isinstance(candidate_path,str) or not candidate_path.startswith(".github/workflows/"):
+                  continue
+
+              source=get(
+                  f"/contents/{urllib.parse.quote(current_path,safe='/')}",
+                  ref=HEAD_SHA,
+              )
+              assert source["type"]=="file"
+              assert source["path"]==current_path
+              decoded=base64.b64decode(source["content"].replace("\n",""))
+              workflow_text=decoded.decode("utf-8")
+              uncommented=re.sub(r"(?m)#.*$","",workflow_text)
+              grants_status_write=bool(re.search(r"(?m)^\s*statuses\s*:\s*write\s*$",uncommented))
+              grants_write_all=bool(re.search(r"(?m)^\s*permissions\s*:\s*write-all\s*$",uncommented))
+
+              if not (grants_status_write or grants_write_all):
+                  continue
+
+              if current_path not in authorized_status_writer_paths:
+                  workflow_scope_violations.append(
+                      f"unauthorized status-writing workflow: {current_path}"
+                  )
+                  continue
+
+              if previous_path is not None and previous_path != current_path:
+                  workflow_scope_violations.append(
+                      f"status-writing workflow was renamed: {previous_path} -> {current_path}"
+                  )
+                  continue
+
+              if grants_write_all:
+                  workflow_scope_violations.append(
+                      f"broad write-all permissions are forbidden on status-writing trust roots: {current_path}"
+                  )
+                  continue
+
+              if current_path==os.environ["AUDIT_WORKFLOW_PATH"]:
+                  assert "XEN-KANI-FV-002 / Independent Candidate Audit" in workflow_text
+                  assert "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/statuses/" in workflow_text
+              elif current_path==os.environ["CONSUMER_WORKFLOW_PATH"]:
+                  assert "XEN-KANI-FV-002 / Certificate Consumer" in workflow_text
+                  assert "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/statuses/" in workflow_text
+
+          if workflow_scope_violations:
+              raise AssertionError(
+                  "PR changes introduce an unauthorized status-authority surface: "
+                  + " | ".join(sorted(workflow_scope_violations))
+              )
 
           def path_touched(path):
               return any(
