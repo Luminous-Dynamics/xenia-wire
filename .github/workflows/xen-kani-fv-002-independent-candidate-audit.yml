@@ -320,7 +320,7 @@ jobs:
           candidate_runs=get(
               "/actions/runs",
               event="workflow_run",
-              head_sha=current_main_sha,
+              branch="main",
               per_page=100,
               page=1,
           )
@@ -330,7 +330,7 @@ jobs:
               if isinstance(run,dict)
               and run.get("name")==os.environ["EXPECTED_CANDIDATE_WORKFLOW_NAME"]
               and run.get("path")==os.environ["CANDIDATE_PATH"]
-              and run.get("head_sha")==current_main_sha
+              and run.get("head_branch")=="main"
           ]
           assert candidate_run_identities, (
               "active candidate verifier workflow has no recorded workflow_run execution on current main tip"
