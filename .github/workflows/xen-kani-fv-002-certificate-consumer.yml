@@ -8,6 +8,7 @@ permissions:
   actions: read
   contents: read
   pull-requests: read
+  statuses: read
 
 concurrency:
   group: xen-kani-fv-002-certificate-${{ github.event.pull_request.number || github.run_id }}
@@ -29,6 +30,9 @@ env:
   EXPECTED_PROOF_BLOB: 4e3f0f584ca189baafe230da66b4bdeac87a7515
   EXPECTED_EVIDENCE_CONTRACT_BLOB: ce3e1447cc6b9bd1f0fc361b4fb81c5fe1450b0b
   EXPECTED_VERIFIER_WORKFLOW_BLOB: 88582c047b8f651dddcb5acac3a74b0af50a9ea0
+  INDEPENDENT_AUDIT_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-independent-candidate-audit.yml
+  EXPECTED_INDEPENDENT_AUDIT_WORKFLOW_BLOB: 99997712deb3c3afd8be83d58fcd350b3af58f06
+  INDEPENDENT_AUDIT_STATUS_CONTEXT: XEN-KANI-FV-002 / Independent Candidate Audit
   CONSUMER_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-certificate-consumer.yml
   PROMOTION_TERMINAL_PREFIX: trusted-xen-kani-fv-002-promotion-terminal-
   PROMOTION_TERMINAL_SCHEMA: xenia.formal.kani-replay-kernel.promotion-terminal.v1
@@ -404,6 +408,123 @@ jobs:
           assert verification.get("signature")
           assert verification.get("payload")
           assert verification.get("verified_at")
+
+
+          independent_audit_source=get(
+              f"/contents/{urllib.parse.quote(INDEPENDENT_AUDIT_WORKFLOW_PATH,safe='/')}",
+              ref=current_main_sha,
+          )
+          assert independent_audit_source["type"]=="file"
+          assert independent_audit_source["path"]==INDEPENDENT_AUDIT_WORKFLOW_PATH
+          assert independent_audit_source["sha"]==os.environ["EXPECTED_INDEPENDENT_AUDIT_WORKFLOW_BLOB"]
+
+          statuses=get(
+              f"/commits/{head_sha}/statuses",
+              context=os.environ["INDEPENDENT_AUDIT_STATUS_CONTEXT"],
+              per_page=100,
+          )
+          status_items=statuses if isinstance(statuses,list) else []
+          matching_statuses=[
+              item for item in status_items
+              if isinstance(item,dict)
+              and item.get("context","").lower()==os.environ["INDEPENDENT_AUDIT_STATUS_CONTEXT"].lower()
+          ]
+          assert matching_statuses, (
+              f"no independent audit status for PR head {head_sha}"
+          )
+          audit_status=matching_statuses[0]
+          assert audit_status["sha"]==head_sha
+          assert audit_status["state"]=="success"
+          assert audit_status["context"].lower()==os.environ["INDEPENDENT_AUDIT_STATUS_CONTEXT"].lower()
+          target_url=audit_status.get("target_url")
+          assert isinstance(target_url,str)
+          audit_url_match=re.fullmatch(
+              r"https://github.com/Luminous-Dynamics/xenia-wire/actions/runs/([1-9][0-9]*)",
+              target_url,
+          )
+          assert audit_url_match, f"unexpected audit status target_url: {target_url!r}"
+          audit_run_id=int(audit_url_match.group(1))
+
+          audit_run=get(f"/actions/runs/{audit_run_id}")
+          assert audit_run["id"]==audit_run_id
+          assert audit_run["name"]=="XEN-KANI-FV-002 Independent Candidate Audit"
+          assert audit_run["path"]==INDEPENDENT_AUDIT_WORKFLOW_PATH
+          assert audit_run["event"]=="workflow_run"
+          assert audit_run["status"]=="completed"
+          assert audit_run["conclusion"]=="success"
+          assert audit_run["head_branch"]=="main"
+          assert audit_run["head_sha"]==current_main_sha
+          assert audit_run["repository"]["id"]==REPO_ID
+          assert audit_run["repository"]["full_name"]==REPO
+          assert audit_run["pull_requests"] and len(audit_run["pull_requests"])==1
+          assert audit_run["pull_requests"][0]["number"]==PR_NUMBER
+          assert audit_run["pull_requests"][0]["head"]["sha"]==head_sha
+          assert audit_run["pull_requests"][0]["head"]["repo"]["id"]==REPO_ID
+
+          audit_artifacts=get(
+              f"/actions/runs/{audit_run_id}/artifacts",
+              per_page=100,
+              page=1,
+          )
+          expected_audit_artifact_name=(
+              f"xen-kani-fv-002-independent-audit-{PR_NUMBER}-{head_sha}"
+          )
+          audit_artifact_candidates=[
+              item for item in audit_artifacts.get("artifacts",[])
+              if isinstance(item,dict)
+              and item.get("name")==expected_audit_artifact_name
+              and item.get("expired") is False
+          ]
+          assert len(audit_artifact_candidates)==1, (
+              f"expected exactly one independent audit receipt artifact, "
+              f"observed={len(audit_artifact_candidates)}"
+          )
+          audit_artifact=audit_artifact_candidates[0]
+          audit_artifact_id=int(audit_artifact["id"])
+          audit_artifact_digest=audit_artifact["digest"]
+          assert re.fullmatch(r"sha256:[0-9a-f]{64}",audit_artifact_digest)
+          assert audit_artifact["workflow_run"]["id"]==audit_run_id
+          assert audit_artifact["workflow_run"]["repository_id"]==REPO_ID
+          assert audit_artifact["workflow_run"]["head_sha"]==current_main_sha
+
+          audit_archive=download(
+              f"{API_BASE}/actions/artifacts/{audit_artifact_id}/zip",
+              1048576,
+          )
+          assert sha256_bytes(audit_archive)==audit_artifact_digest.removeprefix("sha256:")
+
+          with zipfile.ZipFile(io.BytesIO(audit_archive)) as audit_zip:
+              audit_names=audit_zip.namelist()
+              assert audit_names==["xen-kani-fv-002-independent-audit-receipt.json"]
+              audit_info=audit_zip.getinfo(audit_names[0])
+              assert audit_info.file_size<=MAX_MEMBER_BYTES
+              audit_receipt=strict_json(
+                  audit_zip.read(audit_names[0]),
+                  "independent-audit-receipt.json",
+              )
+
+          assert audit_receipt["schema"]=="xenia.formal.kani-fv-002.independent-candidate-audit-receipt.v1"
+          assert audit_receipt["decision"]=="AUDITED_CANDIDATE"
+          assert audit_receipt["pr_number"]==PR_NUMBER
+          assert audit_receipt["head_sha"]==head_sha
+          assert audit_receipt["base_sha"]==current_main_sha
+          assert audit_receipt["auditor_workflow_path"]==INDEPENDENT_AUDIT_WORKFLOW_PATH
+          assert audit_receipt["auditor_execution_sha"]==audit_run["head_sha"]
+          assert audit_receipt["candidate_path"]==os.environ["VERIFIER_WORKFLOW_PATH"]
+          assert audit_receipt["candidate_blob_sha1"]==os.environ["EXPECTED_VERIFIER_WORKFLOW_BLOB"]
+          assert audit_receipt["scope_decision"]=="IN_SCOPE"
+          assert audit_receipt["freshness_recheck"]=="passed"
+          assert audit_receipt["main_branch_protected"] is True
+          assert audit_receipt["main_tip_signed_verified"] is True
+
+          exact_head_status=audit_receipt.get("exact_head_status",{})
+          assert exact_head_status.get("context")==os.environ["INDEPENDENT_AUDIT_STATUS_CONTEXT"]
+          assert exact_head_status.get("state")=="success"
+          assert exact_head_status.get("status_id")==audit_status["id"]
+          assert exact_head_status.get("status_url")==audit_status["url"]
+          assert exact_head_status.get("target_url")==target_url
+          assert exact_head_status.get("target_run_id")==audit_run_id
+          assert exact_head_status.get("target_run_attempt")==audit_run["run_attempt"]
 
           verifier_source=get(
               f"/contents/{urllib.parse.quote(VERIFIER_WORKFLOW_PATH,safe='/')}",
