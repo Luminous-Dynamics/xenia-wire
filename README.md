@@ -79,10 +79,10 @@ can ignore all of this and just use the sealing layer with `default-features
 
 Because it's a pre-release, add it with the `@` form — `cargo add
 --version ...` rejects pre-release specifiers. Use the latest `0.2.0-alpha.N`
-on [crates.io](https://crates.io/crates/xenia-wire) (currently `alpha.8`):
+on [crates.io](https://crates.io/crates/xenia-wire) (currently `alpha.9`):
 
 ```console
-$ cargo add 'xenia-wire@0.2.0-alpha.8'
+$ cargo add 'xenia-wire@0.2.0-alpha.9'
 ```
 
 Once a stable `0.2.0` ships, `cargo add xenia-wire` will just work.
