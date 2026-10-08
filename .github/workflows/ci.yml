@@ -169,9 +169,11 @@ jobs:
       # and re-explores the same shallow inputs each time. Keyed on
       # run_id so every run always saves a fresh entry (a fixed key would
       # never update after its first write); restore-keys falls back to
-      # the most recent prior entry. Shared with fuzz-deep below via the
-      # same key prefix, so the weekly deep run's discoveries feed back
-      # into every PR's smoke run and vice versa.
+      # the most recent prior entry in the cache scope, with the default
+      # branch available as a fallback for pull requests. GitHub scopes
+      # pull_request-created caches to the PR merge ref, so the trusted
+      # default-branch fuzz-deep corpus can feed PR smoke runs, but PR
+      # smoke discoveries cannot flow back into default-branch fuzz-deep.
       - name: Cache fuzz corpus
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4 tag resolved 2026-10-08
         with:
