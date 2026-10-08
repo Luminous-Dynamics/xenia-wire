@@ -1,0 +1,479 @@
+name: Trusted XEN-KANI-FV-002 Admission
+
+on:
+  workflow_run:
+    workflows: ["XEN-KANI-FV-002 Replay Kernel"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: trusted-xen-kani-fv-002-${{ github.event.workflow_run.pull_requests[0].number }}
+  cancel-in-progress: true
+
+env:
+  BASE_SHA: 057dd03043b8863d8f8280abf333331cc9ddf317
+  EXPECTED_HEAD_REPO: Luminous-Dynamics/xenia-wire
+  EXPECTED_KERNEL_BLOB: b6b1a9dc12f3824b5e52cd694222f6fefefd3558
+  EXPECTED_TRIGGER_WORKFLOW_ID: 373424313
+  EXPECTED_TRIGGER_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-replay-kernel-v2.yml
+  EXPECTED_TRIGGER_BRANCH: formal/xen-kani-fv-002-replay-kernel
+  KANI_VERSION: 0.68.0
+  EXPECTED_KANI_RUST_TOOLCHAIN: nightly-2026-08-21
+  EXPECTED_KANI_RUST_COMMIT_HASH: 8925ea358a0f265ca61026aadc7ecc506c545cbe
+
+jobs:
+  trusted-admission:
+    if: (github.event.workflow_run.event == 'pull_request' || github.event.workflow_run.event == 'push') && github.event.workflow_run.pull_requests[0].number != null && github.event.workflow_run.head_branch == 'formal/xen-kani-fv-002-replay-kernel'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
+      HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+      TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
+      TRIGGER_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+      TRIGGER_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - name: Prepare trusted verifier workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/xen-kani-trusted/src
+          cat > /tmp/xen-kani-trusted/Cargo.toml <<'EOF'
+          [package]
+          name = "xen_kani_trusted_subject"
+          version = "0.1.0"
+          edition = "2021"
+          EOF
+
+      - name: Verify triggering workflow identity and provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/actions/runs/$TRIGGER_RUN_ID"             -o /tmp/trigger-run.json
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          d=json.loads(Path("/tmp/trigger-run.json").read_text())
+          assert d["id"]==int(os.environ["TRIGGER_RUN_ID"])
+          assert d["run_attempt"]==int(os.environ["TRIGGER_RUN_ATTEMPT"])
+          assert d["name"]=="XEN-KANI-FV-002 Replay Kernel"
+          assert d["path"]==os.environ["EXPECTED_TRIGGER_WORKFLOW_PATH"]
+          assert d["workflow_id"]==int(os.environ["EXPECTED_TRIGGER_WORKFLOW_ID"])
+          assert d["head_branch"]==os.environ["EXPECTED_TRIGGER_BRANCH"]
+          assert d["event"]=="pull_request"
+          assert d["head_sha"]==os.environ["HEAD_SHA"]
+          assert d["head_repository"]["full_name"]==os.environ["HEAD_REPO"]
+          assert os.environ["HEAD_REPO"]==os.environ["EXPECTED_HEAD_REPO"]
+          assert d["pull_requests"] and d["pull_requests"][0]["number"]==int(os.environ["PR_NUMBER"])
+          assert d["conclusion"]==os.environ["TRIGGER_CONCLUSION"]
+          PY
+
+      - name: Verify triggering PR identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/pulls/$PR_NUMBER"             -o /tmp/pr.json
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          d=json.loads(Path("/tmp/pr.json").read_text())
+          assert d["number"]==int(os.environ["PR_NUMBER"])
+          assert d["base"]["ref"]=="main"
+          assert d["base"]["repo"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]
+          assert d["head"]["sha"]==os.environ["HEAD_SHA"]
+          assert d["head"]["repo"]["full_name"]==os.environ["EXPECTED_HEAD_REPO"]
+          assert d["head"]["repo"]["full_name"]==os.environ["HEAD_REPO"]
+          PY
+
+      - name: Fetch PR replay kernel as data
+        id: fetch-subject
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github.raw+json"             "https://api.github.com/repos/$HEAD_REPO/contents/src/replay_kernel.rs?ref=$HEAD_SHA"             -o /tmp/xen-kani-trusted/src/replay_kernel.rs
+
+          cp /tmp/xen-kani-trusted/src/replay_kernel.rs /tmp/xen-kani-trusted/src/lib.rs
+          printf '%s\n' "$HEAD_SHA" > /tmp/xen-kani-trusted/head.sha
+          printf '%s\n' "$PR_NUMBER" > /tmp/xen-kani-trusted/pr.number
+
+          blob_sha="$(git hash-object /tmp/xen-kani-trusted/src/replay_kernel.rs)"
+          printf '%s\n' "$blob_sha" > /tmp/xen-kani-trusted/kernel.blob
+          printf 'head=%s\nrepo=%s\nblob=%s\n' "$HEAD_SHA" "$HEAD_REPO" "$blob_sha" | tee /tmp/trusted-subject.txt
+
+          test -s /tmp/xen-kani-trusted/src/replay_kernel.rs
+          test "$(wc -c < /tmp/xen-kani-trusted/src/replay_kernel.rs)" -gt 1000
+          test "$blob_sha" = "$EXPECTED_KERNEL_BLOB"
+
+      - name: Verify PR scope independently
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $GITHUB_TOKEN"             -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/compare/$BASE_SHA...$HEAD_SHA"             -o /tmp/compare.json
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          d=json.loads(Path("/tmp/compare.json").read_text())
+          expected={
+              ".github/workflows/xen-kani-fv-002-replay-kernel-v2.yml",
+              "Cargo.toml",
+              "docs/formal/xen-kani-fv-002-replay-kernel-v1.json",
+              "src/lib.rs",
+              "src/replay_kernel.rs",
+              "src/replay_window.rs",
+          }
+          observed={x["filename"] for x in d.get("files",[])}
+          assert d["status"]=="ahead"
+          assert d["base_commit"]["sha"]=="057dd03043b8863d8f8280abf333331cc9ddf317"
+          assert observed==expected, f"trusted scope mismatch: {sorted(observed)}"
+          PY
+
+      - name: Verify complete tree delta independently
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/commits/$BASE_SHA" \
+            -o /tmp/base-commit.json
+
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$HEAD_REPO/commits/$HEAD_SHA" \
+            -o /tmp/head-commit.json
+
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          base=json.loads(Path("/tmp/base-commit.json").read_text())
+          head=json.loads(Path("/tmp/head-commit.json").read_text())
+          assert base["sha"]==os.environ["BASE_SHA"]
+          assert head["sha"]==os.environ["HEAD_SHA"]
+          Path("/tmp/base-tree-sha").write_text(base["commit"]["tree"]["sha"]+"\n")
+          Path("/tmp/head-tree-sha").write_text(head["commit"]["tree"]["sha"]+"\n")
+          PY
+
+          BASE_TREE="$(cat /tmp/base-tree-sha)"
+          HEAD_TREE="$(cat /tmp/head-tree-sha)"
+
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/git/trees/$BASE_TREE?recursive=1" \
+            -o /tmp/base-tree.json
+
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$HEAD_REPO/git/trees/$HEAD_TREE?recursive=1" \
+            -o /tmp/head-tree.json
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          base=json.loads(Path("/tmp/base-tree.json").read_text())
+          head=json.loads(Path("/tmp/head-tree.json").read_text())
+
+          assert base.get("truncated") is False, "base tree response truncated"
+          assert head.get("truncated") is False, "head tree response truncated"
+
+          def index(doc):
+              return {
+                  item["path"]:(item.get("mode"),item.get("type"),item.get("sha"))
+                  for item in doc["tree"]
+              }
+
+          b=index(base)
+          h=index(head)
+          changed=sorted(path for path in set(b)|set(h) if b.get(path)!=h.get(path))
+          expected=sorted({
+              ".github/workflows/xen-kani-fv-002-replay-kernel-v2.yml",
+              "Cargo.toml",
+              "docs/formal/xen-kani-fv-002-replay-kernel-v1.json",
+              "src/lib.rs",
+              "src/replay_kernel.rs",
+              "src/replay_window.rs",
+          })
+          assert changed==expected, f"complete tree delta mismatch: {changed}"
+          for path in expected:
+              assert h[path][1]=="blob", f"head path is not a blob: {path}"
+          Path("/tmp/trusted-tree-delta.txt").write_text(
+              "base_tree="+Path("/tmp/base-tree-sha").read_text().strip()+"\n"
+              "head_tree="+Path("/tmp/head-tree-sha").read_text().strip()+"\n"
+              "changed="+",".join(changed)+"\n"
+          )
+          PY
+
+      - name: Verify independent harness manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          source=Path("/tmp/xen-kani-trusted/src/replay_kernel.rs").read_text()
+          expected={
+              "kernel_duplicate_rejected",
+              "kernel_first_sequence_initializes_exactly",
+              "kernel_stale_boundary_is_rejected",
+              "kernel_higher_sequence_is_monotonic",
+              "kernel_cross_word_shift_preserves_in_window_history",
+              "kernel_exact_word_shift_preserves_in_window_history",
+              "kernel_max_width_multiword_shift_preserves_history",
+              "kernel_exact_window_jump_resets_history",
+              "kernel_max_width_near_window_shift_preserves_history_boundary",
+              "kernel_symbolic_shift_preserves_or_discards_history_exactly",
+              "kernel_supported_widths_do_not_panic",
+              "kernel_supported_width_boundary_is_exact",
+              "kernel_bitmap_tail_is_zero_for_supported_widths",
+              "kernel_u64_max_advance_preserves_previous_sequence",
+          }
+          lines=source.splitlines()
+          discovered=set()
+          for i, line in enumerate(lines):
+              if line.strip()!="#[kani::proof]":
+                  continue
+              window=lines[i+1:i+6]
+              for candidate in window:
+                  match=re.match(r'^\s*fn\s+([A-Za-z0-9_]+)\s*\(', candidate)
+                  if match:
+                      discovered.add(match.group(1))
+                      break
+          assert discovered==expected, f"harness manifest mismatch: discovered={sorted(discovered)}"
+          assert source.count("#[kani::proof]")==14
+          for forbidden in (
+              "include!(",
+              "include_bytes!(",
+              "extern "",
+              "std::process",
+              "std::fs",
+              "proc_macro",
+              "unsafe",
+          ):
+              assert forbidden not in source, f"forbidden escape hatch present: {forbidden}"
+          assert "pub(crate) fn transition(" in source
+          assert "#[cfg(kani)]\nmod kani_proofs {" in source
+          assert not source.rstrip().endswith("#[kani::proof]")
+          PY
+
+      - name: Install pinned Kani
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo install --locked kani-verifier --version "$KANI_VERSION"
+          cargo kani setup
+          cargo kani --version --verbose | tee /tmp/kani-version.txt
+          grep -q "kani-0.68.0" /tmp/kani-version.txt
+          rustup run "$EXPECTED_KANI_RUST_TOOLCHAIN" rustc -Vv | tee /tmp/kani-rustc.txt
+          grep -q "commit-hash: $EXPECTED_KANI_RUST_COMMIT_HASH" /tmp/kani-rustc.txt
+
+      - name: Run all trusted clean proofs
+        shell: bash
+        working-directory: /tmp/xen-kani-trusted
+        run: |
+          set -euo pipefail
+          cat > /tmp/harnesses.txt <<'EOF'
+          kernel_duplicate_rejected
+          kernel_first_sequence_initializes_exactly
+          kernel_stale_boundary_is_rejected
+          kernel_higher_sequence_is_monotonic
+          kernel_cross_word_shift_preserves_in_window_history
+          kernel_exact_word_shift_preserves_in_window_history
+          kernel_max_width_multiword_shift_preserves_history
+          kernel_exact_window_jump_resets_history
+          kernel_max_width_near_window_shift_preserves_history_boundary
+          kernel_symbolic_shift_preserves_or_discards_history_exactly
+          kernel_supported_widths_do_not_panic
+          kernel_supported_width_boundary_is_exact
+          kernel_bitmap_tail_is_zero_for_supported_widths
+          kernel_u64_max_advance_preserves_previous_sequence
+          EOF
+
+          : > /tmp/trusted-clean-results.jsonl
+          while IFS= read -r harness; do
+            echo "=== trusted clean proof: $harness ==="
+            set +e
+            cargo kani -Z unstable-options --tests --default-unwind 20               --harness "$harness"               --export-json "/tmp/$harness.json"               > "/tmp/$harness.log" 2>&1
+            status=$?
+            set -e
+            printf '%s\n' "$status" > "/tmp/$harness.exit"
+            cat "/tmp/$harness.log"
+            test "$status" -eq 0
+
+            python3 - "$harness" "/tmp/$harness.json" <<'PY'
+          import json, sys
+          from pathlib import Path
+          harness=sys.argv[1]
+          d=json.loads(Path(sys.argv[2]).read_text())
+          vr=d.get("verification_results",{})
+          results=vr.get("results",[]) if isinstance(vr,dict) else []
+          candidates=[
+              x for x in results
+              if isinstance(x,dict)
+              and (
+                  x.get("harness_id")==harness
+                  or str(x.get("harness_id","")).endswith("::"+harness)
+              )
+          ]
+          assert len(candidates)==1
+          target=candidates[0]
+          assert str(target.get("status","")).upper()=="SUCCESS"
+          checks=target.get("checks",[])
+          assert checks
+          assert all(str(x.get("status","")).upper()=="SUCCESS" for x in checks if isinstance(x,dict))
+          summary=vr.get("summary",{})
+          assert summary.get("total_harnesses")==1
+          assert summary.get("executed")==1
+          assert summary.get("successful")==1
+          assert summary.get("failed")==0
+          pd=[
+              x.get("property_details",{})
+              for x in d.get("property_details",[])
+              if isinstance(x,dict)
+              and (
+                  x.get("harness_id")==harness
+                  or str(x.get("harness_id","")).endswith("::"+harness)
+              )
+          ]
+          assert len(pd)==1
+          assert pd[0].get("failed")==0
+          assert pd[0].get("unreachable")==0
+          assert pd[0].get("undetermined")==0
+          counts=0
+          for key in ("passed","failed","unreachable","undetermined","solver_error","satisfied","unsatisfiable","covered","uncovered"):
+              counts += int(pd[0].get(key) or 0)
+          assert counts==pd[0].get("total_properties")
+          print(json.dumps({"harness":harness,"status":"Success","properties":pd[0].get("total_properties")}))
+          PY
+          done < /tmp/harnesses.txt
+
+      - name: Run trusted hostile control
+        working-directory: /tmp/xen-kani-trusted
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp src/lib.rs /tmp/replay_kernel.clean.rs
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path("src/lib.rs")
+          s=p.read_text()
+          old="if offset >= window_bits as u64 {"
+          new="if offset > window_bits as u64 {"
+          assert s.count(old)==1
+          p.write_text(s.replace(old,new,1))
+          PY
+          test "$(git hash-object src/lib.rs)" != "$(cat /tmp/xen-kani-trusted/kernel.blob)"
+          set +e
+          cargo kani -Z unstable-options --tests --default-unwind 20             --harness kernel_stale_boundary_is_rejected             --export-json /tmp/hostile.json             > /tmp/hostile.log 2>&1
+          status=$?
+          set -e
+          printf '%s\n' "$status" > /tmp/hostile.exit
+          cat /tmp/hostile.log
+          test "$status" -ne 0
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("/tmp/hostile.json").read_text())
+          vr=d.get("verification_results",{})
+          results=vr.get("results",[]) if isinstance(vr,dict) else []
+          candidates=[
+              x for x in results
+              if isinstance(x,dict)
+              and (
+                  x.get("harness_id")=="kernel_stale_boundary_is_rejected"
+                  or str(x.get("harness_id","")).endswith("::kernel_stale_boundary_is_rejected")
+              )
+          ]
+          assert len(candidates)==1
+          t=candidates[0]
+          assert str(t.get("status","")).upper()=="FAILURE"
+          failed=[x for x in t.get("checks",[]) if isinstance(x,dict) and str(x.get("status","")).upper()=="FAILURE"]
+          assert failed
+          PY
+          mv /tmp/replay_kernel.clean.rs src/lib.rs
+          test "$(git hash-object src/lib.rs)" = "$(cat /tmp/xen-kani-trusted/kernel.blob)"
+
+      - name: Retain trusted receipt
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+
+          def git(*args):
+              return subprocess.check_output(["git", *args], text=True).strip()
+
+          def read_optional(path, default=None):
+              p=Path(path)
+              return p.read_text(errors="replace").strip() if p.exists() else default
+
+          receipt={
+              "schema":"xenia.formal.kani-replay-kernel.trusted-admission.v1",
+              "github_run_id":int(os.environ["GITHUB_RUN_ID"]),
+              "github_run_attempt":int(os.environ["GITHUB_RUN_ATTEMPT"]),
+              "triggering_run_id":int(os.environ["TRIGGER_RUN_ID"]),
+              "triggering_run_attempt":int(os.environ["TRIGGER_RUN_ATTEMPT"]),
+              "triggering_conclusion":os.environ["TRIGGER_CONCLUSION"],
+              "triggering_workflow":"XEN-KANI-FV-002 Replay Kernel",
+              "triggering_workflow_path":os.environ["EXPECTED_TRIGGER_WORKFLOW_PATH"],
+              "triggering_branch":os.environ["HEAD_BRANCH"],
+              "triggering_workflow_id":int(os.environ["EXPECTED_TRIGGER_WORKFLOW_ID"]),
+              "pr_number":int(os.environ["PR_NUMBER"]),
+              "head_sha":os.environ["HEAD_SHA"],
+              "head_repo":os.environ["HEAD_REPO"],
+              "head_repo_expected":os.environ["EXPECTED_HEAD_REPO"],
+              "base_sha_anchor":os.environ["BASE_SHA"],
+              "pr_base_ref":"main",
+              "kernel_blob":read_optional("/tmp/xen-kani-trusted/kernel.blob"),
+              "kernel_blob_expected":os.environ["EXPECTED_KERNEL_BLOB"],
+              "kernel_frozen_binding":read_optional("/tmp/xen-kani-trusted/kernel.blob")==os.environ["EXPECTED_KERNEL_BLOB"],
+              "base_tree_sha":Path("/tmp/base-tree-sha").read_text().strip() if Path("/tmp/base-tree-sha").exists() else None,
+              "head_tree_sha":Path("/tmp/head-tree-sha").read_text().strip() if Path("/tmp/head-tree-sha").exists() else None,
+              "complete_tree_delta_verified":Path("/tmp/trusted-tree-delta.txt").exists(),
+              "kani_version":read_optional("/tmp/kani-version.txt"),
+              "kani_rust_toolchain":os.environ["EXPECTED_KANI_RUST_TOOLCHAIN"],
+              "kani_rust_commit_hash":os.environ["EXPECTED_KANI_RUST_COMMIT_HASH"],
+              "clean_harness_count":14,
+              "hostile_control_exit_status":int(read_optional("/tmp/hostile.exit", "125")),
+              "hostile_control_structured_failure":Path("/tmp/hostile.json").exists(),
+          }
+          Path("/tmp/trusted-admission.json").write_text(json.dumps(receipt,indent=2,sort_keys=True)+"\n")
+          print(Path("/tmp/trusted-admission.json").read_text())
+          PY
+
+      - name: Upload trusted evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: trusted-xen-kani-fv-002-${{ github.event.workflow_run.pull_requests[0].number }}-${{ github.event.workflow_run.head_sha }}
+          path: |
+            /tmp/trusted-subject.txt
+            /tmp/trigger-run.json
+            /tmp/base-tree-sha
+            /tmp/head-tree-sha
+            /tmp/trusted-tree-delta.txt
+            /tmp/xen-kani-trusted/kernel.blob
+            /tmp/kani-version.txt
+            /tmp/kani-rustc.txt
+            /tmp/trusted-admission.json
+            /tmp/hostile.json
+            /tmp/hostile.log
+            /tmp/hostile.exit
+          if-no-files-found: warn
+          retention-days: 30
