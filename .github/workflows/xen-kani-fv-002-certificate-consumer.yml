@@ -34,7 +34,7 @@ env:
   EXPECTED_EVIDENCE_CONTRACT_BLOB: ce3e1447cc6b9bd1f0fc361b4fb81c5fe1450b0b
   EXPECTED_VERIFIER_WORKFLOW_BLOB: 88582c047b8f651dddcb5acac3a74b0af50a9ea0
   INDEPENDENT_AUDIT_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-independent-candidate-audit.yml
-  EXPECTED_INDEPENDENT_AUDIT_WORKFLOW_BLOB: 4e72a05ae9ddd101b350666ddd6f8ffc377a24eb
+  EXPECTED_INDEPENDENT_AUDIT_WORKFLOW_BLOB: dec0769e0776a73cc15b89dd8979143336927c84
   EXPECTED_INDEPENDENT_AUDIT_TRIGGER_BLOB: f0b2b6682f84c960e36bcc5a19f821d103d014c3
   EXPECTED_CI_WORKFLOW_ID: "262609031"
   EXPECTED_CI_WORKFLOW_NAME: CI
@@ -498,13 +498,14 @@ jobs:
           target_url=audit_status.get("target_url")
           assert isinstance(target_url,str)
           audit_url_match=re.fullmatch(
-              r"https://github.com/Luminous-Dynamics/xenia-wire/actions/runs/([1-9][0-9]*)",
+              r"https://github.com/Luminous-Dynamics/xenia-wire/actions/runs/([1-9][0-9]*)/attempts/([1-9][0-9]*)",
               target_url,
           )
           assert audit_url_match, f"unexpected audit status target_url: {target_url!r}"
           audit_run_id=int(audit_url_match.group(1))
+          audit_run_attempt=int(audit_url_match.group(2))
 
-          audit_run=get(f"/actions/runs/{audit_run_id}")
+          audit_run=get(f"/actions/runs/{audit_run_id}/attempts/{audit_run_attempt}")
           assert audit_run["id"]==audit_run_id
           assert audit_run["name"]=="XEN-KANI-FV-002 Independent Candidate Audit"
           assert audit_run["path"]==INDEPENDENT_AUDIT_WORKFLOW_PATH
@@ -931,7 +932,7 @@ jobs:
           PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
           CONSUMER_RUN_ID: ${{ github.run_id }}
           CONSUMER_RUN_ATTEMPT: ${{ github.run_attempt }}
-          CONSUMER_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CONSUMER_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
           CONSUMER_STEP_OUTCOME: ${{ steps.consume-certificate.outcome }}
           RECEIPT_UPLOAD_OUTCOME: ${{ steps.retain-consumer-decision.outcome }}
           STATUS_CONTEXT: XEN-KANI-FV-002 / Certificate Consumer
