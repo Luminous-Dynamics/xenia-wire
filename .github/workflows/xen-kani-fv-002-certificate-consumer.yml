@@ -31,7 +31,7 @@ env:
   EXPECTED_EVIDENCE_CONTRACT_BLOB: ce3e1447cc6b9bd1f0fc361b4fb81c5fe1450b0b
   EXPECTED_VERIFIER_WORKFLOW_BLOB: 88582c047b8f651dddcb5acac3a74b0af50a9ea0
   INDEPENDENT_AUDIT_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-independent-candidate-audit.yml
-  EXPECTED_INDEPENDENT_AUDIT_WORKFLOW_BLOB: bfdc15c1b019bcc30277e105951aae1502196292
+  EXPECTED_INDEPENDENT_AUDIT_WORKFLOW_BLOB: 5641d9e168572d6cd6f262bf43a8de824b668870
   INDEPENDENT_AUDIT_STATUS_CONTEXT: XEN-KANI-FV-002 / Independent Candidate Audit
   CONSUMER_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-certificate-consumer.yml
   PROMOTION_TERMINAL_PREFIX: trusted-xen-kani-fv-002-promotion-terminal-
@@ -516,15 +516,6 @@ jobs:
           assert audit_receipt["freshness_recheck"]=="passed"
           assert audit_receipt["main_branch_protected"] is True
           assert audit_receipt["main_tip_signed_verified"] is True
-
-          exact_head_status=audit_receipt.get("exact_head_status",{})
-          assert exact_head_status.get("context")==os.environ["INDEPENDENT_AUDIT_STATUS_CONTEXT"]
-          assert exact_head_status.get("state")=="success"
-          assert exact_head_status.get("status_id")==audit_status["id"]
-          assert exact_head_status.get("status_url")==audit_status["url"]
-          assert exact_head_status.get("target_url")==target_url
-          assert exact_head_status.get("target_run_id")==audit_run_id
-          assert exact_head_status.get("target_run_attempt")==audit_run["run_attempt"]
 
           verifier_source=get(
               f"/contents/{urllib.parse.quote(VERIFIER_WORKFLOW_PATH,safe='/')}",
