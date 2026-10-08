@@ -12,6 +12,11 @@ on:
     # Weekly deep fuzz run (see fuzz-deep job) -- Sundays 06:00 UTC.
     - cron: "0 6 * * 0"
 
+# Explicitly deny inherited GITHUB_TOKEN authority; jobs below only receive
+# the read access they actually need unless a job declares a narrower override.
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
