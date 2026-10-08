@@ -51,6 +51,7 @@ jobs:
           test "$GITHUB_EVENT_NAME" = "workflow_run"
           test "$GITHUB_REPOSITORY" = "$REPOSITORY"
           test "$GITHUB_REF" = "refs/heads/main"
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
           test "$PR_HEAD_REPO" = "$REPOSITORY"
           test "$CI_RUN_HEAD_REPO" = "$REPOSITORY"
           test "$CI_RUN_NAME" = "CI"
@@ -141,6 +142,9 @@ jobs:
           assert re.fullmatch(r"[0-9a-f]{40}",current_main_sha)
           assert main_ref["object"]["type"]=="commit"
           assert current_main_sha==main_commit_sha
+          assert current_main_sha==os.environ["GITHUB_SHA"], (
+              f"workflow_run execution SHA is not current main tip: execution={os.environ['GITHUB_SHA']} current_main={current_main_sha}"
+          )
           assert current_main_sha==pr["base"]["sha"], (
               f"PR base is stale relative to current main: "
               f"pr_base={pr['base']['sha']} current_main={current_main_sha}"
@@ -344,6 +348,7 @@ jobs:
           final_main_sha=final_main["object"]["sha"]
           assert final_main["object"]["type"]=="commit"
           assert final_main_sha==current_main_sha
+          assert final_main_sha==os.environ["GITHUB_SHA"]
           assert final_main_branch["name"]=="main"
           assert final_main_branch["protected"] is True
           assert final_main_branch["commit"]["sha"]==current_main_sha
