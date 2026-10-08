@@ -680,6 +680,7 @@ jobs:
           assert artifact_run_meta["id"]==producer_run_id
           assert artifact_run_meta["repository_id"]==REPO_ID
           assert artifact_run_meta["head_repository_id"]==REPO_ID
+          assert artifact_run_meta["head_branch"]=="main"
           assert artifact_run_meta["head_sha"]==current_main_sha
 
           archive_url=f"{API_BASE}/actions/artifacts/{artifact_id}/zip"
