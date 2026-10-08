@@ -245,3 +245,83 @@ jobs:
         # ever updates its own clap dependency.
         run: cargo audit --deny warnings --ignore RUSTSEC-2025-0141 --ignore RUSTSEC-2021-0139 --ignore RUSTSEC-2024-0375 --ignore RUSTSEC-2021-0145
 
+
+
+  workflow-lint:
+    name: Workflow corpus lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 tag resolved 2026-10-08
+      - name: Validate workflow YAML and embedded Python
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import ast
+          import subprocess
+          import textwrap
+          from pathlib import Path
+
+          ruby_script = r'''\
+          require "yaml"
+          document = Psych.parse(STDIN.read)
+          walk = nil
+          walk = lambda do |node, location|
+            if node.is_a?(Psych::Nodes::Mapping)
+              children = node.children || []
+              abort "odd mapping child count at #{location}" if children.length.odd?
+              seen = {}
+              children.each_slice(2).with_index do |(key, value), index|
+                if key.is_a?(Psych::Nodes::Scalar)
+                  name = key.value.to_s
+                  abort "duplicate YAML mapping key at #{location}: #{name.inspect}" if seen.key?(name)
+                  seen[name] = true
+                end
+                walk.call(key, "#{location}.key#{index}")
+                walk.call(value, "#{location}.value#{index}") if value
+              end
+            elsif node.respond_to?(:children) && node.children
+              node.children.each_with_index do |child, index|
+                walk.call(child, "#{location}[#{index}]")
+              end
+            end
+          end
+          walk.call(document.root, "root")
+          '''
+
+          for path in sorted(Path(".github/workflows").glob("*.y*ml")):
+              text = path.read_text(encoding="utf-8")
+              yaml = subprocess.run(
+                  ["ruby", "-e", ruby_script],
+                  input=text,
+                  capture_output=True,
+                  text=True,
+              )
+              if yaml.returncode != 0:
+                  raise SystemExit(f"{path}: invalid YAML or duplicate mapping key: {yaml.stderr.strip()}")
+
+              lines = text.splitlines()
+              index = 0
+              python_blocks = 0
+              while index < len(lines):
+                  if "python3 - <<'PY'" not in lines[index]:
+                      index += 1
+                      continue
+                  start = index + 1
+                  end = None
+                  for candidate in range(start, len(lines)):
+                      if lines[candidate].strip() == "PY":
+                          end = candidate
+                          break
+                  if end is None:
+                      raise SystemExit(f"{path}: embedded Python heredoc has no closing PY")
+                  source = textwrap.dedent("\\n".join(lines[start:end]) + "\\n")
+                  try:
+                      ast.parse(source, filename=str(path))
+                  except SyntaxError as exc:
+                      raise SystemExit(f"{path}: embedded Python syntax error: {exc}") from exc
+                  python_blocks += 1
+                  index = end + 1
+
+              print(f"validated {path} yaml python_blocks={python_blocks}")
+          PY
