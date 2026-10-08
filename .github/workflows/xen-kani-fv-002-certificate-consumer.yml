@@ -579,11 +579,10 @@ jobs:
           assert audit_receipt["ci_workflow_path"]==".github/workflows/ci.yml"
           assert audit_receipt["ci_workflow_blob"]==os.environ["EXPECTED_INDEPENDENT_AUDIT_TRIGGER_BLOB"]
           assert isinstance(audit_receipt["main_status_writer_paths"],list)
-          assert set(audit_receipt["main_status_writer_paths"]).issubset({
+          assert set(audit_receipt["main_status_writer_paths"])=={
               os.environ["INDEPENDENT_AUDIT_WORKFLOW_PATH"],
               os.environ["CONSUMER_WORKFLOW_PATH"],
-          })
-          assert os.environ["INDEPENDENT_AUDIT_WORKFLOW_PATH"] in audit_receipt["main_status_writer_paths"]
+          }
           assert audit_receipt["scope_decision"]=="IN_SCOPE"
           assert audit_receipt["freshness_recheck"]=="passed"
           assert audit_receipt["main_branch_protected"] is True
