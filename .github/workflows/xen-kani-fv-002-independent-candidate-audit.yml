@@ -95,6 +95,16 @@ jobs:
           permission_scan_ruby=r"""
           require "yaml"
           document=Psych.parse(STDIN.read)
+          root=document.root
+          abort "workflow document root must be a mapping" unless root.is_a?(Psych::Nodes::Mapping)
+          root_children=root.children || []
+          abort "odd workflow root mapping child count" if root_children.length.odd?
+          root_keys=root_children.each_slice(2).map(&:first)
+          has_root_permissions=root_keys.any? do |key|
+            key.is_a?(Psych::Nodes::Scalar) && key.value.to_s=="permissions"
+          end
+          abort "workflow must declare explicit top-level permissions" unless has_root_permissions
+
           status_write=false
           write_all=false
           walk=nil
@@ -359,7 +369,7 @@ jobs:
 
           write_all_probe=subprocess.run(
               ["ruby","-rjson","-e",permission_scan_ruby],
-              input='name: probe\njobs:\n  p:\n    permissions: "write-all"\n',
+              input='name: probe\npermissions: read\njobs:\n  p:\n    permissions: "write-all"\n',
               capture_output=True,
               text=True,
           )
