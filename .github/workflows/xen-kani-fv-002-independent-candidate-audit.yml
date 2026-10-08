@@ -434,7 +434,7 @@ jobs:
           AUDIT_RUN_ID: ${{ github.run_id }}
           AUDIT_RUN_ATTEMPT: ${{ github.run_attempt }}
           RECEIPT_UPLOAD_OUTCOME: ${{ steps.retain-audit-receipt.outcome }}
-          AUDIT_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          AUDIT_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
           STATUS_CONTEXT: XEN-KANI-FV-002 / Independent Candidate Audit
           AUDIT_STEP_OUTCOME: ${{ steps.audit-candidate-verifier-snapshot.outcome }}
         run: |
@@ -466,7 +466,7 @@ jobs:
           assert state in {"success","failure"}
           assert len(description)<=140
           assert context=="XEN-KANI-FV-002 / Independent Candidate Audit"
-          assert re.fullmatch(r"https://github.com/Luminous-Dynamics/xenia-wire/actions/runs/[1-9][0-9]*",target_url)
+          assert re.fullmatch(r"https://github.com/Luminous-Dynamics/xenia-wire/actions/runs/[1-9][0-9]*/attempts/[1-9][0-9]*",target_url)
           assert re.fullmatch(r"[1-9][0-9]*",run_id)
           assert re.fullmatch(r"[1-9][0-9]*",run_attempt)
           print(json.dumps({
