@@ -521,6 +521,7 @@ jobs:
           assert isinstance(data,list)
           matching=[x for x in data if isinstance(x,dict) and x.get("context","").lower()==context.lower()]
           assert matching, f"no persisted status for exact context: {context}"
+          matching.sort(key=lambda item: int(item.get("id",0)),reverse=True)
           latest=matching[0]
           assert latest.get("sha")==head_sha
           assert latest.get("state")==state
