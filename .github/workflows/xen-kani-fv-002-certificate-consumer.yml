@@ -125,6 +125,8 @@ jobs:
           assert ci_run["workflow_id"]==int(os.environ["EXPECTED_CI_WORKFLOW_ID"])
           assert ci_run["path"]==os.environ["EXPECTED_CI_WORKFLOW_PATH"]
           assert ci_run["event"]=="pull_request"
+          assert ci_run["status"]=="completed"
+          assert ci_run["conclusion"]=="success"
           assert ci_run["run_attempt"]==int(os.environ["CI_RUN_ATTEMPT"])
           assert ci_run["head_sha"]==os.environ["HEAD_SHA"]
           assert ci_run["head_repository"]["id"]==REPO_ID
