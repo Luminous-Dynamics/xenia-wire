@@ -320,6 +320,10 @@ jobs:
               "docs/formal/xen-kani-fv-002-replay-kernel-v1.json",
               ".github/workflows/xen-kani-fv-002-replay-kernel-v2.yml",
           }
+          self_protection_paths={
+              os.environ["CONSUMER_WORKFLOW_PATH"],
+              os.environ["CANONICALIZATION_VECTORS_PATH"],
+          }
           changed_files=[]
           first_files=get(f"/pulls/{PR_NUMBER}/files",per_page=100,page=1)
           total_file_count=0
@@ -338,6 +342,19 @@ jobs:
               assert page<=30, "pull request changed-file surface reached the API's 3000-file cap"
           assert len(changed_files)==total_file_count
           assert len(changed_files)<3000, "changed-file API cap prevents complete scope determination"
+          self_protection_files=sorted({
+              candidate
+              for file in changed_files
+              for candidate in (file.get("filename"),file.get("previous_filename"))
+              if candidate in self_protection_paths
+          })
+          if self_protection_files:
+              raise AssertionError(
+                  "trusted certificate consumer self-protection surface changed; "
+                  "current main-anchored consumer cannot qualify that mutation: "
+                  + ",".join(self_protection_files)
+              )
+
           applicable_files=sorted({
               candidate
               for file in changed_files
