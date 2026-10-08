@@ -401,6 +401,7 @@ jobs:
           AUDIT_RUN_ATTEMPT: ${{ github.run_attempt }}
           AUDIT_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           STATUS_CONTEXT: XEN-KANI-FV-002 / Independent Candidate Audit
+          AUDIT_STEP_OUTCOME: ${{ steps.audit-candidate-verifier-snapshot.outcome }}
         run: |
           set -euo pipefail
           [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
@@ -410,7 +411,7 @@ jobs:
 
           STATUS_STATE=failure
           STATUS_DESCRIPTION="Independent audit failed; no admission evidence produced."
-          if [[ "${{ steps.audit-candidate-verifier-snapshot.outcome }}" == "success" ]]; then
+          if [[ "$AUDIT_STEP_OUTCOME" == "success" ]]; then
             STATUS_STATE=success
             if [[ -f /tmp/xen-kani-fv-002-independent-audit-receipt.json ]]; then
               decision="$(python3 -c 'import json; print(json.load(open("/tmp/xen-kani-fv-002-independent-audit-receipt.json"))["decision"])')"
