@@ -1,5 +1,61 @@
 name: XEN-KANI-FV-002 Independent Candidate Audit
 
+          permission_scan_ruby=r"""
+          require "yaml"
+          document=Psych.parse(STDIN.read)
+          status_write=false
+          write_all=false
+          walk=nil
+          walk=lambda do |node,location|
+            if node.is_a?(Psych::Nodes::Mapping)
+              children=node.children || []
+              abort "odd mapping child count at #{location}" if children.length.odd?
+              seen={}
+              children.each_slice(2).with_index do |(key,value),index|
+                if key.is_a?(Psych::Nodes::Scalar)
+                  key_name=key.value.to_s
+                  abort "duplicate YAML mapping key at #{location}: #{key_name.inspect}" if seen.key?(key_name)
+                  seen[key_name]=true
+                  if key_name=="permissions"
+                    if value.is_a?(Psych::Nodes::Alias)
+                      abort "permissions aliases are unsupported"
+                    elsif value.is_a?(Psych::Nodes::Scalar)
+                      write_all=true if value.value.to_s=="write-all"
+                    elsif value.is_a?(Psych::Nodes::Mapping)
+                      permission_children=value.children || []
+                      abort "odd permissions mapping child count at #{location}.permissions" if permission_children.length.odd?
+                      permission_seen={}
+                      permission_children.each_slice(2) do |permission_key,permission_value|
+                        next unless permission_key.is_a?(Psych::Nodes::Scalar)
+                        permission_name=permission_key.value.to_s
+                        abort "duplicate permissions key: #{permission_name.inspect}" if permission_seen.key?(permission_name)
+                        permission_seen[permission_name]=true
+                        if permission_name=="statuses" || permission_name=="status"
+                          if permission_value.is_a?(Psych::Nodes::Scalar) && permission_value.value.to_s=="write"
+                            status_write=true
+                          elsif permission_value.is_a?(Psych::Nodes::Alias)
+                            abort "status permission aliases are unsupported"
+                          end
+                        end
+                      end
+                    end
+                  end
+                end
+                walk.call(key,"#{location}.key#{index}")
+                walk.call(value,"#{location}.value#{index}") if value
+              end
+            elsif node.is_a?(Psych::Nodes::Alias)
+              # Alias values outside permissions are irrelevant to this authority scan.
+            elsif node.respond_to?(:children) && node.children
+              node.children.each_with_index do |child,index|
+                walk.call(child,"#{location}[#{index}]")
+              end
+            end
+          end
+          walk.call(document.root,"root")
+          puts JSON.generate({"status_write"=>status_write,"write_all"=>write_all})
+          """
+
 on:
   workflow_run:
     workflows: ["CI"]
@@ -223,15 +279,18 @@ jobs:
               main_text=base64.b64decode(
                   main_source["content"].replace("\n","")
               ).decode("utf-8")
-              main_uncommented=re.sub(r"(?m)#.*$","",main_text)
-              main_status_write=bool(re.search(
-                  r"(?mi)(?:^|[,{\s])status(?:es)?\s*:\s*[\"']?write[\"']?(?:$|[},\s])",
-                  main_uncommented,
-              ))
-              main_write_all=bool(re.search(
-                  r"(?mi)(?:^|[,{\s])permissions\s*:\s*[\"']?write-all[\"']?(?:$|[},\s])",
-                  main_uncommented,
-              ))
+              permission_result=subprocess.run(
+                  ["ruby","-rjson","-e",permission_scan_ruby],
+                  input=main_text,
+                  capture_output=True,
+                  text=True,
+              )
+              assert permission_result.returncode==0, permission_result.stderr
+              main_permissions=json.loads(permission_result.stdout)
+              assert main_permissions["status_write"] in (True,False)
+              assert main_permissions["write_all"] in (True,False)
+              main_status_write=main_permissions["status_write"]
+              main_write_all=main_permissions["write_all"]
               if not (main_status_write or main_write_all):
                   continue
               main_status_writer_paths.append(main_path)
@@ -245,6 +304,26 @@ jobs:
               os.environ["AUDIT_WORKFLOW_PATH"],
               os.environ["CONSUMER_WORKFLOW_PATH"],
           })
+
+              inline_permission_probe=subprocess.run(
+                  ["ruby","-rjson","-e",permission_scan_ruby],
+                  input='name: probe\npermissions: { "contents": "read", "statuses": "write" }\n',
+                  capture_output=True,
+                  text=True,
+              )
+              assert inline_permission_probe.returncode==0, inline_permission_probe.stderr
+              inline_permissions=json.loads(inline_permission_probe.stdout)
+              assert inline_permissions=={"status_write":True,"write_all":False}
+
+              write_all_probe=subprocess.run(
+                  ["ruby","-rjson","-e",permission_scan_ruby],
+                  input='name: probe\njobs:\n  p:\n    permissions: "write-all"\n',
+                  capture_output=True,
+                  text=True,
+              )
+              assert write_all_probe.returncode==0, write_all_probe.stderr
+              write_all_permissions=json.loads(write_all_probe.stdout)
+              assert write_all_permissions=={"status_write":False,"write_all":True}
 
           workflow_scope_violations=[]
           for item in files:
@@ -262,16 +341,18 @@ jobs:
               assert source["path"]==current_path
               decoded=base64.b64decode(source["content"].replace("\n",""))
               workflow_text=decoded.decode("utf-8")
-              uncommented=re.sub(r"(?m)#.*$","",workflow_text)
-              grants_status_write=bool(re.search(
-                  r"(?mi)(?:^|[,{\\s])status(?:es)?\\s*:\s*[\"']?write[\"']?(?:$|[},\\s])",
-                  uncommented,
-              ))
-              grants_write_all=bool(re.search(
-                  r"(?mi)(?:^|[,{\\s])permissions\\s*:\s*[\"']?write-all[\"']?(?:$|[},\\s])",
-                  uncommented,
-              ))
-
+              permission_result=subprocess.run(
+                  ["ruby","-rjson","-e",permission_scan_ruby],
+                  input=workflow_text,
+                  capture_output=True,
+                  text=True,
+              )
+              assert permission_result.returncode==0, permission_result.stderr
+              workflow_permissions=json.loads(permission_result.stdout)
+              assert workflow_permissions["status_write"] in (True,False)
+              assert workflow_permissions["write_all"] in (True,False)
+              grants_status_write=workflow_permissions["status_write"]
+              grants_write_all=workflow_permissions["write_all"]
               if not (grants_status_write or grants_write_all):
                   continue
 
