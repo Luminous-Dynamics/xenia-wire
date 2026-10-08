@@ -1,63 +1,5 @@
 name: XEN-KANI-FV-002 Independent Candidate Audit
 
-          permission_scan_ruby=r"""
-          require "yaml"
-          document=Psych.parse(STDIN.read)
-          status_write=false
-          write_all=false
-          walk=nil
-          walk=lambda do |node,location|
-            if node.is_a?(Psych::Nodes::Mapping)
-              children=node.children || []
-              abort "odd mapping child count at #{location}" if children.length.odd?
-              seen={}
-              children.each_slice(2).with_index do |(key,value),index|
-                if key.is_a?(Psych::Nodes::Scalar)
-                  key_name=key.value.to_s
-                  abort "duplicate YAML mapping key at #{location}: #{key_name.inspect}" if seen.key?(key_name)
-                  seen[key_name]=true
-                  if key_name=="permissions"
-                    if value.is_a?(Psych::Nodes::Alias)
-                      abort "permissions aliases are unsupported"
-                    elsif value.is_a?(Psych::Nodes::Scalar)
-                      write_all=true if value.value.to_s=="write-all"
-                    elsif value.is_a?(Psych::Nodes::Mapping)
-                      permission_children=value.children || []
-                      abort "odd permissions mapping child count at #{location}.permissions" if permission_children.length.odd?
-                      permission_seen={}
-                      permission_children.each_slice(2) do |permission_key,permission_value|
-                        abort "permission mapping aliases are unsupported" if permission_key.is_a?(Psych::Nodes::Alias)
-                        next unless permission_key.is_a?(Psych::Nodes::Scalar)
-                        permission_name=permission_key.value.to_s
-                        abort "duplicate permissions key: #{permission_name.inspect}" if permission_seen.key?(permission_name)
-                        permission_seen[permission_name]=true
-                        abort "permissions merge keys are unsupported" if permission_name=="<<"
-                        if permission_name=="statuses" || permission_name=="status"
-                          if permission_value.is_a?(Psych::Nodes::Scalar) && permission_value.value.to_s=="write"
-                            status_write=true
-                          elsif permission_value.is_a?(Psych::Nodes::Alias)
-                            abort "status permission aliases are unsupported"
-                          end
-                        end
-                      end
-                    end
-                  end
-                end
-                walk.call(key,"#{location}.key#{index}")
-                walk.call(value,"#{location}.value#{index}") if value
-              end
-            elsif node.is_a?(Psych::Nodes::Alias)
-              # Alias values outside permissions are irrelevant to this authority scan.
-            elsif node.respond_to?(:children) && node.children
-              node.children.each_with_index do |child,index|
-                walk.call(child,"#{location}[#{index}]")
-              end
-            end
-          end
-          walk.call(document.root,"root")
-          puts JSON.generate({"status_write"=>status_write,"write_all"=>write_all})
-          """
-
 on:
   workflow_run:
     workflows: ["CI"]
@@ -149,6 +91,64 @@ jobs:
           EXPECTED_BLOB=os.environ["EXPECTED_CANDIDATE_BLOB"]
           API_BASE=f"https://api.github.com/repos/{REPO}"
           TOKEN=os.environ["GITHUB_TOKEN"]
+
+          permission_scan_ruby=r"""
+          require "yaml"
+          document=Psych.parse(STDIN.read)
+          status_write=false
+          write_all=false
+          walk=nil
+          walk=lambda do |node,location|
+            if node.is_a?(Psych::Nodes::Mapping)
+              children=node.children || []
+              abort "odd mapping child count at #{location}" if children.length.odd?
+              seen={}
+              children.each_slice(2).with_index do |(key,value),index|
+                if key.is_a?(Psych::Nodes::Scalar)
+                  key_name=key.value.to_s
+                  abort "duplicate YAML mapping key at #{location}: #{key_name.inspect}" if seen.key?(key_name)
+                  seen[key_name]=true
+                  if key_name=="permissions"
+                    if value.is_a?(Psych::Nodes::Alias)
+                      abort "permissions aliases are unsupported"
+                    elsif value.is_a?(Psych::Nodes::Scalar)
+                      write_all=true if value.value.to_s=="write-all"
+                    elsif value.is_a?(Psych::Nodes::Mapping)
+                      permission_children=value.children || []
+                      abort "odd permissions mapping child count at #{location}.permissions" if permission_children.length.odd?
+                      permission_seen={}
+                      permission_children.each_slice(2) do |permission_key,permission_value|
+                        abort "permission mapping aliases are unsupported" if permission_key.is_a?(Psych::Nodes::Alias)
+                        next unless permission_key.is_a?(Psych::Nodes::Scalar)
+                        permission_name=permission_key.value.to_s
+                        abort "duplicate permissions key: #{permission_name.inspect}" if permission_seen.key?(permission_name)
+                        permission_seen[permission_name]=true
+                        abort "permissions merge keys are unsupported" if permission_name=="<<"
+                        if permission_name=="statuses" || permission_name=="status"
+                          if permission_value.is_a?(Psych::Nodes::Scalar) && permission_value.value.to_s=="write"
+                            status_write=true
+                          elsif permission_value.is_a?(Psych::Nodes::Alias)
+                            abort "status permission aliases are unsupported"
+                          end
+                        end
+                      end
+                    end
+                  end
+                end
+                walk.call(key,"#{location}.key#{index}")
+                walk.call(value,"#{location}.value#{index}") if value
+              end
+            elsif node.is_a?(Psych::Nodes::Alias)
+              # Alias values outside permissions are irrelevant to this authority scan.
+            elsif node.respond_to?(:children) && node.children
+              node.children.each_with_index do |child,index|
+                walk.call(child,"#{location}[#{index}]")
+              end
+            end
+          end
+          walk.call(document.root,"root")
+          puts JSON.generate({"status_write"=>status_write,"write_all"=>write_all})
+          """
 
           def get(path):
               request=urllib.request.Request(
