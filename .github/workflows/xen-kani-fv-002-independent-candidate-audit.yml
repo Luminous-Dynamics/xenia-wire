@@ -150,9 +150,12 @@ jobs:
           puts JSON.generate({"status_write"=>status_write,"write_all"=>write_all})
           """
 
-          def get(path):
+          def get(path, **query):
+              url=API_BASE+path
+              if query:
+                  url += "?" + urllib.parse.urlencode(query)
               request=urllib.request.Request(
-                  API_BASE+path,
+                  url,
                   headers={
                       "Authorization":"Bearer "+TOKEN,
                       "Accept":"application/vnd.github+json",
