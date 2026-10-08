@@ -17,6 +17,7 @@ env:
   REPOSITORY: Luminous-Dynamics/xenia-wire
   REPOSITORY_ID: "1213976974"
   CANDIDATE_PATH: .github/workflows/xen-kani-fv-002-trusted-admission.yml
+  AUDIT_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-independent-candidate-audit.yml
   EXPECTED_CANDIDATE_BLOB: 88582c047b8f651dddcb5acac3a74b0af50a9ea0
   EXPECTED_BASE_BRANCH: main
 
@@ -137,11 +138,22 @@ jobs:
               )
           assert files
 
-          touches_candidate=any(
-              item.get("filename")==CANDIDATE_PATH
-              or item.get("previous_filename")==CANDIDATE_PATH
-              for item in files
-          )
+          def path_touched(path):
+              return any(
+                  item.get("filename")==path
+                  or item.get("previous_filename")==path
+                  for item in files
+              )
+
+          touches_audit=path_touched(os.environ["AUDIT_WORKFLOW_PATH"])
+          touches_candidate=path_touched(CANDIDATE_PATH)
+
+          if touches_audit:
+              raise AssertionError(
+                  "independent audit workflow itself changed in the candidate PR; "
+                  "the current main-anchored auditor cannot qualify that change"
+              )
+
           if not touches_candidate:
               print(json.dumps({
                   "decision":"NOT_APPLICABLE",
@@ -149,6 +161,7 @@ jobs:
                   "base_sha":pr["base"]["sha"],
                   "head_sha":HEAD_SHA,
                   "candidate_path":CANDIDATE_PATH,
+                  "audit_workflow_path":os.environ["AUDIT_WORKFLOW_PATH"],
                   "changed_file_count":len(files),
                   "reason":"candidate verifier workflow is outside the PR delta",
               },sort_keys=True,indent=2))
@@ -306,6 +319,7 @@ jobs:
               "ci_run_id":int(os.environ["CI_RUN_ID"]),
               "ci_run_attempt":int(os.environ["CI_RUN_ATTEMPT"]),
               "candidate_path":CANDIDATE_PATH,
+              "audit_workflow_path":os.environ["AUDIT_WORKFLOW_PATH"],
               "candidate_blob_sha1":git_blob_sha1,
               "candidate_content_sha256":content_sha256,
               "changed_file_count":len(files),
