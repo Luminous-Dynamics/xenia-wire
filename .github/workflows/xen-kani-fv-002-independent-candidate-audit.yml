@@ -138,6 +138,19 @@ jobs:
               )
           assert files
 
+          receipt_path="/tmp/xen-kani-fv-002-independent-audit-receipt.json"
+
+          def emit_receipt(document):
+              payload=dict(document)
+              payload["schema"]="xenia.formal.kani-fv-002.independent-candidate-audit-receipt.v1"
+              payload["auditor_workflow_path"]=os.environ["AUDIT_WORKFLOW_PATH"]
+              payload["auditor_execution_sha"]=os.environ["GITHUB_SHA"]
+              Path(receipt_path).write_text(
+                  json.dumps(payload,sort_keys=True,indent=2)+"\n",
+                  encoding="utf-8",
+              )
+              print(json.dumps(payload,sort_keys=True,indent=2))
+
           def path_touched(path):
               return any(
                   item.get("filename")==path
@@ -155,16 +168,19 @@ jobs:
               )
 
           if not touches_candidate:
-              print(json.dumps({
+              emit_receipt({
                   "decision":"NOT_APPLICABLE",
                   "pr_number":PR_NUMBER,
                   "base_sha":pr["base"]["sha"],
                   "head_sha":HEAD_SHA,
+                  "ci_run_id":int(os.environ["CI_RUN_ID"]),
+                  "ci_run_attempt":int(os.environ["CI_RUN_ATTEMPT"]),
                   "candidate_path":CANDIDATE_PATH,
-                  "audit_workflow_path":os.environ["AUDIT_WORKFLOW_PATH"],
                   "changed_file_count":len(files),
+                  "scope_source":"pull_request_files",
+                  "scope_ceiling":3000,
                   "reason":"candidate verifier workflow is outside the PR delta",
-              },sort_keys=True,indent=2))
+              })
               raise SystemExit(0)
 
           assert len(files)==1
@@ -311,7 +327,7 @@ jobs:
           assert final_candidate["path"]==CANDIDATE_PATH
           assert final_candidate["sha"]==EXPECTED_BLOB
 
-          print(json.dumps({
+          emit_receipt({
               "decision":"AUDITED_CANDIDATE",
               "pr_number":PR_NUMBER,
               "base_sha":pr["base"]["sha"],
@@ -319,7 +335,6 @@ jobs:
               "ci_run_id":int(os.environ["CI_RUN_ID"]),
               "ci_run_attempt":int(os.environ["CI_RUN_ATTEMPT"]),
               "candidate_path":CANDIDATE_PATH,
-              "audit_workflow_path":os.environ["AUDIT_WORKFLOW_PATH"],
               "candidate_blob_sha1":git_blob_sha1,
               "candidate_content_sha256":content_sha256,
               "changed_file_count":len(files),
@@ -333,5 +348,16 @@ jobs:
               "yaml_duplicate_key_check":"passed",
               "run_blocks_checked":len(run_blocks),
               "action_pin_check":"passed",
-          },sort_keys=True,indent=2))
+          })
           PY
+
+      - name: Retain independent audit receipt
+        if: always() && steps.audit-candidate-verifier-snapshot.outcome == 'success'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: xen-kani-fv-002-independent-audit-${{ github.event.workflow_run.pull_requests[0].number || github.run_id }}-${{ github.event.workflow_run.head_sha }}
+          path: /tmp/xen-kani-fv-002-independent-audit-receipt.json
+          if-no-files-found: error
+          retention-days: 90
+          overwrite: false
+          include-hidden-files: false
