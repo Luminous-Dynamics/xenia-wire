@@ -277,25 +277,6 @@ jobs:
           }
 
           MAX_MAIN_WORKFLOW_FILES=300
-          candidate_main_entries=[
-              item for item in main_workflows
-              if isinstance(item,dict) and item.get("path")==os.environ["CANDIDATE_PATH"]
-          ]
-          assert len(candidate_main_entries)==1, (
-              "active candidate verifier workflow must exist exactly once in main workflow directory"
-          )
-          assert candidate_main_entries[0].get("type")=="file"
-          candidate_main_source=get(
-              f"/contents/{urllib.parse.quote(os.environ["CANDIDATE_PATH"],safe="/")}",
-              ref=current_main_sha,
-          )
-          assert candidate_main_source["type"]=="file"
-          assert candidate_main_source["path"]==os.environ["CANDIDATE_PATH"]
-          candidate_main_text=base64.b64decode(
-              candidate_main_source["content"].replace("\n","")
-          ).decode("utf-8")
-          assert f"name: {os.environ["EXPECTED_CANDIDATE_WORKFLOW_NAME"]}" in candidate_main_text
-          assert "workflow_run:" in candidate_main_text
           main_status_writer_paths=[]
           main_workflows=[]
           for page in range(1,4):
@@ -316,6 +297,25 @@ jobs:
               )
 
           assert 0 < len(main_workflows) <= MAX_MAIN_WORKFLOW_FILES
+          candidate_main_entries=[
+              item for item in main_workflows
+              if isinstance(item,dict) and item.get("path")==os.environ["CANDIDATE_PATH"]
+          ]
+          assert len(candidate_main_entries)==1, (
+              "active candidate verifier workflow must exist exactly once in main workflow directory"
+          )
+          assert candidate_main_entries[0].get("type")=="file"
+          candidate_main_source=get(
+              "/contents/"+urllib.parse.quote(os.environ["CANDIDATE_PATH"],safe="/"),
+              ref=current_main_sha,
+          )
+          assert candidate_main_source["type"]=="file"
+          assert candidate_main_source["path"]==os.environ["CANDIDATE_PATH"]
+          candidate_main_text=base64.b64decode(
+              candidate_main_source["content"].replace("\n","")
+          ).decode("utf-8")
+          assert "name: Trusted XEN-KANI-FV-002 Admission" in candidate_main_text
+          assert "workflow_run:" in candidate_main_text
           main_workflow_paths=[
               item.get("path")
               for item in main_workflows
