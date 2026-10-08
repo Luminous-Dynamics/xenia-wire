@@ -367,7 +367,871 @@ jobs:
           )
           head_sha=os.environ["HEAD_SHA"]
           base_sha=pr["base"]["sha"]
-                  assert isinstance(head_sha,str),                  assert re.fullmatch(r"[0-9a-f]{40}",head_sha),,                  if not main_governance_ok:,                      governance_statuses=get(,                          f"/commits/{head_sha}/statuses",,                          context=STATUS_CONTEXT,,                          per_page=100,,                      ),                      governance_matching=[,                          item for item in governance_statuses,                          if isinstance(item,dict),                          and item.get("context","").lower()==STATUS_CONTEXT.lower(),                      ],                      governance_matching.sort(key=lambda item: int(item.get("id",0)),reverse=True),                      if governance_matching and governance_matching[0].get("state")=="success":,                          post_failure(,                              head_sha,,                              "certificate status stale: main governance root is invalid",,                          ),                          stale+=1,                      continue,,                  base_sha=pr["base"]["sha"]
+          assert re.fullmatch(r"[0-9a-f]{40}",head_sha)
+          assert re.fullmatch(r"[0-9a-f]{40}",base_sha)
+
+          qualification_paths={
+              "src/replay_kernel.rs",
+              "src/replay_kernel_kani.rs",
+              "src/replay_window.rs",
+              "fuzz/fuzz_targets/fuzz_replay_window.rs",
+              "src/lib.rs",
+              "Cargo.toml",
+              "docs/formal/xen-kani-fv-002-replay-kernel-v1.json",
+              ".github/workflows/xen-kani-fv-002-replay-kernel-v2.yml",
+          }
+          self_protection_paths={
+              os.environ["CONSUMER_WORKFLOW_PATH"],
+              os.environ["CANONICALIZATION_VECTORS_PATH"],
+              os.environ["EXPECTED_CI_WORKFLOW_PATH"],
+          }
+          changed_files=[]
+          first_files=get(f"/pulls/{PR_NUMBER}/files",per_page=100,page=1)
+          total_file_count=0
+          page=1
+          while True:
+              files=first_files if page==1 else get(f"/pulls/{PR_NUMBER}/files",per_page=100,page=page)
+              batch=files if isinstance(files,list) else []
+              if not batch:
+                  break
+              assert len(batch)<=100
+              changed_files.extend(batch)
+              total_file_count += len(batch)
+              if len(batch)<100:
+                  break
+              page += 1
+              assert page<=30, "pull request changed-file surface reached the API's 3000-file cap"
+          assert len(changed_files)==total_file_count
+          assert len(changed_files)<3000, "changed-file API cap prevents complete scope determination"
+          self_protection_files=sorted({
+              candidate
+              for file in changed_files
+              for candidate in (file.get("filename"),file.get("previous_filename"))
+              if candidate in self_protection_paths
+          })
+          if self_protection_files:
+              raise AssertionError(
+                  "trusted certificate consumer self-protection surface changed; "
+                  "current main-anchored consumer cannot qualify that mutation: "
+                  + ",".join(self_protection_files)
+              )
+
+          applicable_files=sorted({
+              candidate
+              for file in changed_files
+              for candidate in (file.get("filename"),file.get("previous_filename"))
+              if candidate in qualification_paths
+          })
+          main=get("/branches/main")
+          assert main["name"]=="main"
+          assert main["protected"] is True
+          current_main_sha=main["commit"]["sha"]
+          assert re.fullmatch(r"[0-9a-f]{40}",current_main_sha)
+          assert current_main_sha==os.environ["GITHUB_SHA"], (
+              f"consumer execution SHA is not current main tip: execution={os.environ['GITHUB_SHA']} current_main={current_main_sha}"
+          )
+          assert base_sha==current_main_sha, (
+              f"stale PR base: base={base_sha} current_main={current_main_sha}"
+          )
+
+          main_commit=get(f"/commits/{current_main_sha}")
+          assert main_commit["sha"]==current_main_sha
+          verify_repo(main_commit,"repository")
+          verification=main_commit["commit"]["verification"]
+          assert verification["verified"] is True
+          assert verification["reason"]=="valid"
+          assert verification.get("signature")
+          assert verification.get("payload")
+          assert verification.get("verified_at")
+
+          if not applicable_files:
+              decision={
+                  "schema":"xenia.formal.kani-replay-kernel.certificate-consumer.v1",
+                  "decision":"NOT_APPLICABLE",
+                   "main_sha":current_main_sha,
+                  "scope":"OUT_OF_SCOPE",
+                  "pr_number":PR_NUMBER,
+                  "head_sha":head_sha,
+                  "changed_file_count":len(changed_files),
+                  "qualification_files_observed":[],
+                   "main_protected":True,
+                   "main_tip_signature_verified":True,
+              }
+              Path("/tmp/xen-kani-fv-002-consumer-decision.json").write_text(
+                  json.dumps(decision,indent=2,sort_keys=True)+"\n"
+              )
+              Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text(
+                  "## XEN-KANI-FV-002 Certificate Consumer\n\n"
+                  "Decision: NOT_APPLICABLE\n\n"
+                  f"PR #{PR_NUMBER}\n"
+                  f"Subject head: {head_sha}\n"
+                  f"Changed files inspected: {len(changed_files)}\n"
+                  "No XEN-KANI-FV-002 qualification subject or qualification workflow path changed.\n"
+              )
+              print(json.dumps(decision,indent=2,sort_keys=True))
+              raise SystemExit(0)
+
+
+
+          independent_audit_source=get(
+              f"/contents/{urllib.parse.quote(INDEPENDENT_AUDIT_WORKFLOW_PATH,safe='/')}",
+              ref=current_main_sha,
+          )
+          assert independent_audit_source["type"]=="file"
+          assert independent_audit_source["path"]==INDEPENDENT_AUDIT_WORKFLOW_PATH
+          assert independent_audit_source["sha"]==os.environ["EXPECTED_INDEPENDENT_AUDIT_WORKFLOW_BLOB"]
+
+          statuses=get(
+              f"/commits/{head_sha}/statuses",
+              context=os.environ["INDEPENDENT_AUDIT_STATUS_CONTEXT"],
+              per_page=100,
+          )
+          status_items=statuses if isinstance(statuses,list) else []
+          matching_statuses=[
+              item for item in status_items
+              if isinstance(item,dict)
+              and item.get("context","").lower()==os.environ["INDEPENDENT_AUDIT_STATUS_CONTEXT"].lower()
+          ]
+          matching_statuses.sort(key=lambda item: int(item.get("id",0)),reverse=True)
+          assert matching_statuses, (
+              f"no independent audit status for PR head {head_sha}"
+          )
+          audit_status=matching_statuses[0]
+          assert audit_status["sha"]==head_sha
+          assert audit_status["state"]=="success"
+          assert audit_status["context"].lower()==os.environ["INDEPENDENT_AUDIT_STATUS_CONTEXT"].lower()
+          target_url=audit_status.get("target_url")
+          assert isinstance(target_url,str)
+          audit_url_match=re.fullmatch(
+              r"https://github.com/Luminous-Dynamics/xenia-wire/actions/runs/([1-9][0-9]*)/attempts/([1-9][0-9]*)",
+              target_url,
+          )
+          assert audit_url_match, f"unexpected audit status target_url: {target_url!r}"
+          audit_run_id=int(audit_url_match.group(1))
+          audit_run_attempt=int(audit_url_match.group(2))
+
+          audit_run=get(f"/actions/runs/{audit_run_id}/attempts/{audit_run_attempt}")
+          assert audit_run["id"]==audit_run_id
+          assert audit_run["name"]=="XEN-KANI-FV-002 Independent Candidate Audit"
+          assert audit_run["path"]==INDEPENDENT_AUDIT_WORKFLOW_PATH
+          assert audit_run["event"]=="workflow_run"
+          assert audit_run["status"]=="completed"
+          assert audit_run["conclusion"]=="success"
+          assert audit_run["head_branch"]=="main"
+          assert audit_run["head_sha"]==current_main_sha
+          assert audit_run["repository"]["id"]==REPO_ID
+          assert audit_run["repository"]["full_name"]==REPO
+          assert audit_run["pull_requests"] and len(audit_run["pull_requests"])==1
+          assert audit_run["pull_requests"][0]["number"]==PR_NUMBER
+          assert audit_run["pull_requests"][0]["head"]["sha"]==head_sha
+          assert audit_run["pull_requests"][0]["head"]["repo"]["id"]==REPO_ID
+
+          audit_artifacts=get(
+              f"/actions/runs/{audit_run_id}/artifacts",
+              per_page=100,
+              page=1,
+          )
+          expected_audit_artifact_name=(
+              f"xen-kani-fv-002-independent-audit-{PR_NUMBER}-{head_sha}-{audit_run_id}-{audit_run['run_attempt']}"
+          )
+          audit_artifact_candidates=[
+              item for item in audit_artifacts.get("artifacts",[])
+              if isinstance(item,dict)
+              and item.get("name")==expected_audit_artifact_name
+              and item.get("expired") is False
+          ]
+          assert len(audit_artifact_candidates)==1, (
+              f"expected exactly one independent audit receipt artifact, "
+              f"observed={len(audit_artifact_candidates)}"
+          )
+          audit_artifact=audit_artifact_candidates[0]
+          audit_artifact_id=int(audit_artifact["id"])
+          audit_artifact_digest=audit_artifact["digest"]
+          assert re.fullmatch(r"sha256:[0-9a-f]{64}",audit_artifact_digest)
+          assert audit_artifact["workflow_run"]["id"]==audit_run_id
+          assert audit_artifact["workflow_run"]["repository_id"]==REPO_ID
+          assert audit_artifact["workflow_run"]["head_sha"]==current_main_sha
+
+          audit_archive=download(
+              f"{API_BASE}/actions/artifacts/{audit_artifact_id}/zip",
+              1048576,
+          )
+          assert sha256_bytes(audit_archive)==audit_artifact_digest.removeprefix("sha256:")
+
+          with zipfile.ZipFile(io.BytesIO(audit_archive)) as audit_zip:
+              audit_names=audit_zip.namelist()
+              assert audit_names==["xen-kani-fv-002-independent-audit-receipt.json"]
+              audit_info=audit_zip.getinfo(audit_names[0])
+              assert audit_info.file_size<=MAX_MEMBER_BYTES
+              audit_receipt=strict_json(
+                  audit_zip.read(audit_names[0]),
+                  "independent-audit-receipt.json",
+              )
+
+          assert audit_receipt["schema"]=="xenia.formal.kani-fv-002.independent-candidate-audit-receipt.v1"
+          assert audit_receipt["decision"]=="AUDITED_CANDIDATE"
+          assert audit_receipt["pr_number"]==PR_NUMBER
+          assert audit_receipt["head_sha"]==head_sha
+          assert audit_receipt["base_sha"]==current_main_sha
+          assert audit_receipt["auditor_workflow_path"]==INDEPENDENT_AUDIT_WORKFLOW_PATH
+          assert audit_receipt["auditor_execution_sha"]==audit_run["head_sha"]
+          assert audit_receipt["audit_run_id"]==audit_run_id
+          assert audit_receipt["audit_run_attempt"]==audit_run["run_attempt"]
+          assert audit_receipt["candidate_path"]==os.environ["VERIFIER_WORKFLOW_PATH"]
+          assert audit_receipt["candidate_blob_sha1"]==os.environ["EXPECTED_VERIFIER_WORKFLOW_BLOB"]
+          assert audit_receipt["ci_workflow_path"]==".github/workflows/ci.yml"
+          assert audit_receipt["ci_workflow_blob"]==os.environ["EXPECTED_INDEPENDENT_AUDIT_TRIGGER_BLOB"]
+          assert isinstance(audit_receipt["main_status_writer_paths"],list)
+          assert set(audit_receipt["main_status_writer_paths"])=={
+              os.environ["INDEPENDENT_AUDIT_WORKFLOW_PATH"],
+              os.environ["CONSUMER_WORKFLOW_PATH"],
+          }
+          assert audit_receipt["scope_decision"]=="IN_SCOPE"
+          assert audit_receipt["freshness_recheck"]=="passed"
+          assert audit_receipt["main_branch_protected"] is True
+          assert audit_receipt["main_tip_signed_verified"] is True
+
+          verifier_source=get(
+              f"/contents/{urllib.parse.quote(VERIFIER_WORKFLOW_PATH,safe='/')}",
+              ref=current_main_sha,
+          )
+          assert verifier_source["type"]=="file"
+          assert verifier_source["name"]=="xen-kani-fv-002-trusted-admission.yml"
+          assert verifier_source["path"]==VERIFIER_WORKFLOW_PATH
+          assert verifier_source["sha"]==os.environ["EXPECTED_VERIFIER_WORKFLOW_BLOB"]
+
+          verifier_runs=get(
+              f"/actions/workflows/{VERIFIER_WORKFLOW_ID}/runs",
+              head_sha=current_main_sha,
+              event="workflow_run",
+              status="completed",
+              per_page=100,
+              page=1,
+          )
+          verifier_candidates=[
+              run for run in verifier_runs.get("workflow_runs",[])
+              if isinstance(run,dict)
+              and run.get("id")
+              and run.get("name")==VERIFIER_WORKFLOW_NAME
+              and run.get("path")==VERIFIER_WORKFLOW_PATH
+              and run.get("workflow_id")==VERIFIER_WORKFLOW_ID
+              and run.get("event")=="workflow_run"
+              and run.get("status")=="completed"
+              and run.get("conclusion")=="success"
+              and run.get("head_branch")=="main"
+              and run.get("head_sha")==current_main_sha
+              and run.get("repository",{}).get("id")==REPO_ID
+              and run.get("repository",{}).get("full_name")==REPO
+          ]
+          assert verifier_candidates, (
+              f"no successful trusted verifier run for current main tip {current_main_sha}"
+          )
+          verifier_candidates.sort(
+              key=lambda run:(parse_time(run["updated_at"]),int(run["id"])),
+              reverse=True,
+          )
+          producer_run=verifier_candidates[0]
+          producer_run_id=int(producer_run["id"])
+          producer_run_attempt=int(producer_run["run_attempt"])
+          producer_attempt=get(f"/actions/runs/{producer_run_id}/attempts/{producer_run_attempt}")
+          assert producer_attempt["id"]==producer_run_id
+          assert producer_attempt["run_attempt"]==producer_run_attempt
+          assert producer_attempt["workflow_id"]==VERIFIER_WORKFLOW_ID
+          assert producer_attempt["path"]==VERIFIER_WORKFLOW_PATH
+          assert producer_attempt["event"]=="workflow_run"
+          assert producer_attempt["status"]=="completed"
+          assert producer_attempt["conclusion"]=="success"
+          assert producer_attempt["head_branch"]=="main"
+          assert producer_attempt["head_sha"]==current_main_sha
+          assert producer_attempt["repository"]["id"]==REPO_ID
+          assert producer_attempt["repository"]["full_name"]==REPO
+
+          expected_artifact_name=(
+              f"{PREFIX}{PR_NUMBER}-{head_sha}-{producer_run_id}-{producer_run_attempt}"
+          )
+          producer_artifacts=get(
+              f"/actions/runs/{producer_run_id}/artifacts",
+              per_page=100,
+              page=1,
+          )
+          assert len(producer_artifacts.get("artifacts",[]))<=100
+          producer_candidates=[
+              artifact for artifact in producer_artifacts.get("artifacts",[])
+              if isinstance(artifact,dict)
+              and artifact.get("name")==expected_artifact_name
+              and artifact.get("expired") is False
+          ]
+          assert len(producer_candidates)==1, (
+              f"expected exactly one promotion-terminal artifact from producer run, "
+              f"observed={len(producer_candidates)}"
+          )
+          artifact=producer_candidates[0]
+          artifact_id=int(artifact["id"])
+          artifact_name=artifact["name"]
+          artifact_digest=artifact["digest"]
+          assert re.fullmatch(r"sha256:[0-9a-f]{64}",artifact_digest)
+          assert artifact["expired"] is False
+          artifact_run_meta=artifact["workflow_run"]
+          assert artifact_run_meta["id"]==producer_run_id
+          assert artifact_run_meta["repository_id"]==REPO_ID
+          assert artifact_run_meta["head_repository_id"]==REPO_ID
+          assert artifact_run_meta["head_sha"]==current_main_sha
+
+          archive_url=f"{API_BASE}/actions/artifacts/{artifact_id}/zip"
+          archive=download(archive_url,MAX_BYTES)
+          assert sha256_bytes(archive)==artifact_digest.removeprefix("sha256:")
+
+          MAX_MEMBER_BYTES=int(os.environ["MAX_CERTIFICATE_MEMBER_BYTES"])
+          MAX_TOTAL_UNCOMPRESSED_BYTES=int(os.environ["MAX_CERTIFICATE_TOTAL_UNCOMPRESSED_BYTES"])
+
+          with zipfile.ZipFile(io.BytesIO(archive)) as z:
+              infos=z.infolist()
+              names=[info.filename for info in infos]
+              assert names
+              assert len(names)==len(set(names))
+              assert all(
+                  name
+                  and "\x00" not in name
+                  and "\\" not in name
+                  and not name.startswith("/")
+                  and ".." not in name.split("/")
+                  for name in names
+              )
+              total_uncompressed=0
+              for info in infos:
+                  assert not (info.flag_bits & 0x1), f"encrypted ZIP member forbidden: {info.filename!r}"
+                  assert info.file_size<=MAX_MEMBER_BYTES, (
+                      f"ZIP member exceeds bounded expansion: {info.filename!r} "
+                      f"size={info.file_size}"
+                  )
+                  total_uncompressed += info.file_size
+                  assert total_uncompressed<=MAX_TOTAL_UNCOMPRESSED_BYTES, (
+                      f"ZIP total expansion exceeds bounded size: {total_uncompressed}"
+                  )
+
+              def read_member(name):
+                  info=z.getinfo(name)
+                  with z.open(info) as member:
+                      data=member.read(MAX_MEMBER_BYTES+1)
+                  assert len(data)<=MAX_MEMBER_BYTES, (
+                      f"ZIP member exceeded bounded read: {name!r}: {len(data)}"
+                  )
+                  return data
+
+              expected_members={
+                  "promotion-terminal.json",
+                  "terminal-main-branch.json",
+                  "terminal-main-commit.json",
+                  "trusted-artifact.json",
+                  "trusted-artifact-provenance.txt",
+                  "trusted-artifact-download.sha256",
+                  "trusted-artifact-members.txt",
+                  "terminal-pr.json",
+              }
+              assert set(names)==expected_members, (
+                  f"promotion-terminal member mismatch: "
+                  f"unexpected={sorted(set(names)-expected_members)} "
+                  f"missing={sorted(expected_members-set(names))}"
+              )
+              terminal=strict_json(read_member("promotion-terminal.json"),"promotion-terminal.json")
+              terminal_main_branch=strict_json(read_member("terminal-main-branch.json"),"terminal-main-branch.json")
+              terminal_main_commit=strict_json(read_member("terminal-main-commit.json"),"terminal-main-commit.json")
+              trusted_artifact=strict_json(read_member("trusted-artifact.json"),"trusted-artifact.json")
+              terminal_pr=strict_json(read_member("terminal-pr.json"),"terminal-pr.json")
+              provenance=read_member("trusted-artifact-provenance.txt").decode("utf-8")
+              evidence_zip_digest=read_member("trusted-artifact-download.sha256").decode("utf-8").strip()
+              evidence_members=read_member("trusted-artifact-members.txt").decode("utf-8").splitlines()
+
+          assert terminal["schema"]==os.environ["PROMOTION_TERMINAL_SCHEMA"]
+          canonical_terminal=canonical_certificate_bytes(terminal)
+          promotion_certificate_payload_digest="sha256:"+sha256_bytes(canonical_terminal)
+          assert re.fullmatch(r"sha256:[0-9a-f]{64}",promotion_certificate_payload_digest)
+          assert terminal["promotion_eligible"] is True
+          assert terminal["verifier_workflow_id"]==VERIFIER_WORKFLOW_ID
+          assert terminal["verifier_workflow_path"]==VERIFIER_WORKFLOW_PATH
+          assert terminal["verifier_workflow_blob"]==os.environ["EXPECTED_VERIFIER_WORKFLOW_BLOB"]
+          assert terminal["verifier_workflow_commit"]==producer_run["head_sha"]
+          assert terminal["pr_number"]==PR_NUMBER
+          assert terminal["head_sha"]==head_sha
+          assert terminal["head_repo"]==REPO
+          assert terminal["head_repo_id"]==REPO_ID
+          assert terminal["qualified_head_sha_expected"]==os.environ["EXPECTED_QUALIFIED_HEAD_SHA"]
+          assert terminal["qualified_head_sha_verified"] is True
+          assert head_sha==os.environ["EXPECTED_QUALIFIED_HEAD_SHA"]
+          assert terminal["base_sha_anchor"]==os.environ["EXPECTED_BASE_SHA_ANCHOR"]
+          assert terminal["kernel_blob"]==os.environ["EXPECTED_KERNEL_BLOB"]
+          assert terminal["proof_blob"]==os.environ["EXPECTED_PROOF_BLOB"]
+          assert terminal["evidence_contract_blob"]==os.environ["EXPECTED_EVIDENCE_CONTRACT_BLOB"]
+          assert terminal["pr_base_ref"]=="main"
+          assert terminal["triggering_workflow"]==os.environ["EXPECTED_TRIGGER_WORKFLOW_NAME"]
+          assert terminal["triggering_workflow_id"]==int(os.environ["EXPECTED_TRIGGER_WORKFLOW_ID"])
+          assert terminal["triggering_workflow_path"]==os.environ["EXPECTED_TRIGGER_WORKFLOW_PATH"]
+          assert terminal["triggering_branch"]==os.environ["EXPECTED_TRIGGER_BRANCH"]
+          assert terminal["triggering_conclusion"]=="success"
+          assert terminal["final_trigger_run_verified"] is True
+          assert terminal["final_trigger_attempt_verified"] is True
+          assert terminal["final_trigger_jobs_verified"] is True
+          assert terminal["final_trigger_job_steps_verified"] is True
+          assert terminal["final_trigger_freshness_verified"] is True
+          assert terminal["final_pr_freshness_verified"] is True
+          assert terminal["pre_transport_promotion_eligible"] is True
+          assert terminal["main_branch_protection_verified"] is True
+          assert terminal["final_main_branch_protection_verified"] is True
+          assert terminal["terminal_main_branch_protection_verified"] is True
+          assert terminal["github_ref_protected"] is True
+          assert terminal["terminal_main_branch_signed_tip_verified"] is True
+          assert terminal["terminal_commit_signature_verified"] is True
+          assert terminal["evidence_artifact_verified"] is True
+
+          evidence_artifact_id=int(terminal["evidence_artifact_id"])
+          evidence_artifact_digest=terminal["evidence_artifact_digest"]
+          assert re.fullmatch(r"sha256:[0-9a-f]{64}",evidence_artifact_digest)
+          assert trusted_artifact["id"]==evidence_artifact_id
+          assert trusted_artifact["digest"]==evidence_artifact_digest
+          assert trusted_artifact["workflow_run"]["id"]==producer_run_id
+          assert trusted_artifact["workflow_run"]["repository_id"]==REPO_ID
+          assert trusted_artifact["workflow_run"]["head_repository_id"]==REPO_ID
+          assert trusted_artifact["workflow_run"]["head_sha"]==current_main_sha
+          assert evidence_zip_digest==evidence_artifact_digest.removeprefix("sha256:")
+
+          nested=get(f"/actions/artifacts/{evidence_artifact_id}")
+          assert nested["id"]==evidence_artifact_id
+          assert nested["expired"] is False
+          assert nested["digest"]==evidence_artifact_digest
+          assert nested["workflow_run"]["id"]==producer_run_id
+          assert nested["workflow_run"]["repository_id"]==REPO_ID
+          assert nested["workflow_run"]["head_repository_id"]==REPO_ID
+          assert nested["workflow_run"]["head_sha"]==current_main_sha
+
+          assert terminal_main_branch["name"]=="main"
+          assert terminal_main_branch["protected"] is True
+          assert terminal_main_branch["commit"]["sha"]==current_main_sha
+          branch_verification=terminal_main_branch["commit"]["commit"]["verification"]
+          assert branch_verification["verified"] is True
+          assert branch_verification["reason"]=="valid"
+
+          assert terminal_main_commit["sha"]==current_main_sha
+          assert terminal_main_commit["repository"]["id"]==REPO_ID
+          commit_verification=terminal_main_commit["commit"]["verification"]
+          assert commit_verification["verified"] is True
+          assert commit_verification["reason"]=="valid"
+
+          assert terminal_pr["number"]==PR_NUMBER
+          assert terminal_pr["state"]=="open"
+          assert terminal_pr["merged"] is False
+          assert terminal_pr["base"]["ref"]=="main"
+          assert terminal_pr["base"]["repo"]["id"]==REPO_ID
+          assert terminal_pr["head"]["repo"]["id"]==REPO_ID
+          assert terminal_pr["head"]["sha"]==head_sha
+
+          for line in (
+              f"workflow_run_id={producer_run_id}",
+              f"workflow_run_attempt={producer_run['run_attempt']}",
+              f"workflow_run_head_sha={producer_run['head_sha']}",
+              f"verifier_run_head_sha={producer_run['head_sha']}",
+          ):
+              assert line in provenance
+
+          consumer_pr=get(f"/pulls/{PR_NUMBER}")
+          consumer_main=get("/branches/main")
+          assert consumer_pr["number"]==PR_NUMBER
+          assert consumer_pr["state"]=="open"
+          assert consumer_pr["merged"] is False
+          assert consumer_pr["base"]["ref"]=="main"
+          assert consumer_pr["base"]["sha"]==consumer_main["commit"]["sha"]
+          assert consumer_pr["head"]["sha"]==head_sha
+          verify_repo(consumer_pr,"base")
+          verify_repo(consumer_pr,"head")
+          assert consumer_main["name"]=="main"
+          assert consumer_main["protected"] is True
+          assert consumer_main["commit"]["sha"]==current_main_sha
+
+          consumer_commit=get(f"/commits/{consumer_main['commit']['sha']}")
+          consumer_verification=consumer_commit["commit"]["verification"]
+          assert consumer_verification["verified"] is True
+          assert consumer_verification["reason"]=="valid"
+          assert consumer_verification.get("signature")
+          assert consumer_verification.get("payload")
+          assert consumer_verification.get("verified_at")
+
+          decision={
+              "schema":"xenia.formal.kani-replay-kernel.certificate-consumer.v1",
+              "decision":"QUALIFIED_FOR_MERGE",
+              "pr_number":PR_NUMBER,
+              "head_sha":head_sha,
+              "main_sha":current_main_sha,
+              "producer_run_id":producer_run_id,
+              "producer_run_attempt":producer_run["run_attempt"],
+              "independent_audit_run_id":audit_run_id,
+              "independent_audit_run_attempt":audit_run["run_attempt"],
+              "independent_audit_artifact_id":audit_artifact_id,
+              "independent_audit_artifact_digest":audit_artifact["digest"],
+              "promotion_terminal_artifact_id":artifact_id,
+              "promotion_terminal_artifact_digest":artifact_digest,
+              "promotion_certificate_payload_digest":promotion_certificate_payload_digest,
+              "promotion_certificate_canonicalization":os.environ["PROMOTION_CERTIFICATE_CANONICALIZATION"],
+              "promotion_certificate_canonicalization_selftest_verified":True,
+              "promotion_certificate_canonicalization_vectors_verified":True,
+              "promotion_certificate_canonicalization_vectors_blob":os.environ["EXPECTED_CANONICALIZATION_VECTORS_BLOB"],
+              "verifier_run_candidates_observed":len(verifier_candidates),
+              "promotion_terminal_candidates":len(producer_candidates),
+              "certificate_verifier_workflow_id":VERIFIER_WORKFLOW_ID,
+              "certificate_verifier_workflow_blob":os.environ["EXPECTED_VERIFIER_WORKFLOW_BLOB"],
+              "certificate_subject_qualified_head_sha":os.environ["EXPECTED_QUALIFIED_HEAD_SHA"],
+              "certificate_subject_base_sha_anchor":os.environ["EXPECTED_BASE_SHA_ANCHOR"],
+              "certificate_subject_kernel_blob":os.environ["EXPECTED_KERNEL_BLOB"],
+              "certificate_subject_proof_blob":os.environ["EXPECTED_PROOF_BLOB"],
+              "certificate_subject_evidence_contract_blob":os.environ["EXPECTED_EVIDENCE_CONTRACT_BLOB"],
+              "certificate_trigger_workflow_id":int(os.environ["EXPECTED_TRIGGER_WORKFLOW_ID"]),
+              "certificate_trigger_workflow_path":os.environ["EXPECTED_TRIGGER_WORKFLOW_PATH"],
+              "certificate_trigger_branch":os.environ["EXPECTED_TRIGGER_BRANCH"],
+              "certificate_verifier_workflow_commit":producer_run["head_sha"],
+              "consumer_workflow_ref":os.environ["GITHUB_WORKFLOW_REF"],
+              "consumer_workflow_sha":os.environ["GITHUB_WORKFLOW_SHA"],
+              "consumer_workflow_blob":consumer_workflow["sha"],
+              "scope":"IN_SCOPE",
+              "qualification_files_observed":applicable_files,
+              "main_protected":True,
+              "main_tip_signature_verified":True,
+              "certificate_subject_verified":True,
+              "certificate_evidence_artifact_verified":True,
+              "decision_freshness_rechecked":True,
+          }
+          Path("/tmp/xen-kani-fv-002-consumer-decision.json").write_text(
+              json.dumps(decision,indent=2,sort_keys=True)+"\n"
+          )
+          Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text(
+              "## XEN-KANI-FV-002 Certificate Consumer\n\n"
+              "Decision: QUALIFIED_FOR_MERGE\n\n"
+              f"PR #{PR_NUMBER}\n"
+              f"Subject head: {head_sha}\n"
+              f"Main tip: {current_main_sha}\n"
+              f"Qualification paths changed: {', '.join(applicable_files)}\n"
+              f"Producer run: {producer_run_id} attempt {producer_run['run_attempt']}\n"
+              f"Promotion terminal artifact: {artifact_id} / {artifact_digest}\n"
+              f"Promotion certificate payload: {promotion_certificate_payload_digest}\n"
+              f"Promotion certificate canonicalization: {os.environ["PROMOTION_CERTIFICATE_CANONICALIZATION"]}\n"
+              f"Verifier runs observed for current main: {len(verifier_candidates)}\n"
+              f"Certificate artifacts observed in selected verifier run: {len(producer_candidates)}\n"
+              "Main protection: verified\n"
+              "Main tip signature: verified\n"
+              "Final freshness recheck: verified\n"
+          )
+          print(json.dumps(decision,indent=2,sort_keys=True))
+          PY
+
+      - name: Retain certificate consumer decision
+        id: retain-consumer-decision
+        if: always() && steps.consume-certificate.outcome == 'success'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: xen-kani-fv-002-certificate-consumer-${{ github.event.workflow_run.pull_requests[0].number }}-${{ github.event.workflow_run.head_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/xen-kani-fv-002-consumer-decision.json
+          if-no-files-found: error
+          retention-days: 90
+          overwrite: false
+          include-hidden-files: false
+
+      - name: Publish exact-head certificate consumer status
+        id: publish-certificate-status
+        if: github.event.workflow_run.event == 'pull_request'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          CONSUMER_RUN_ID: ${{ github.run_id }}
+          CONSUMER_RUN_ATTEMPT: ${{ github.run_attempt }}
+          CONSUMER_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+          CONSUMER_STEP_OUTCOME: ${{ steps.consume-certificate.outcome }}
+          RECEIPT_UPLOAD_OUTCOME: ${{ steps.retain-consumer-decision.outcome }}
+          STATUS_CONTEXT: XEN-KANI-FV-002 / Certificate Consumer
+        run: |
+          set -euo pipefail
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
+          [[ "$CONSUMER_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$CONSUMER_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+
+          STATUS_STATE=failure
+          STATUS_DESCRIPTION="Certificate consumer failed; no merge qualification produced."
+          if [[ "$CONSUMER_STEP_OUTCOME" == "success" && "$RECEIPT_UPLOAD_OUTCOME" == "success" ]]; then
+            if [[ -f /tmp/xen-kani-fv-002-consumer-decision.json ]]; then
+              decision="$(python3 -c 'import json; print(json.load(open("/tmp/xen-kani-fv-002-consumer-decision.json"))["decision"])')"
+              case "$decision" in
+                QUALIFIED_FOR_MERGE|NOT_APPLICABLE)
+                  STATUS_STATE=success
+                  STATUS_DESCRIPTION="Certificate consumer decision: $decision."
+                  ;;
+                *)
+                  STATUS_DESCRIPTION="Certificate consumer emitted unrecognized decision: $decision."
+                  ;;
+              esac
+            else
+              echo "successful consumer step produced no decision receipt" >&2
+              exit 1
+            fi
+          fi
+
+          python3 - "$HEAD_SHA" "$STATUS_STATE" "$STATUS_DESCRIPTION" "$STATUS_CONTEXT" "$CONSUMER_RUN_URL" "$CONSUMER_RUN_ID" "$CONSUMER_RUN_ATTEMPT" > /tmp/xen-kani-fv-002-consumer-status-payload.json <<'PY'
+          import json
+          import re
+          import sys
+          head_sha,state,description,context,target_url,run_id,run_attempt=sys.argv[1:]
+          assert re.fullmatch(r"[0-9a-f]{40}",head_sha)
+          assert state in {"success","failure"}
+          assert len(description)<=140
+          assert context=="XEN-KANI-FV-002 / Certificate Consumer"
+          assert re.fullmatch(r"https://github.com/Luminous-Dynamics/xenia-wire/actions/runs/[1-9][0-9]*/attempts/[1-9][0-9]*",target_url)
+          assert re.fullmatch(r"[1-9][0-9]*",run_id)
+          assert re.fullmatch(r"[1-9][0-9]*",run_attempt)
+          print(json.dumps({
+              "state":state,
+              "target_url":target_url,
+              "description":description,
+              "context":context,
+          },sort_keys=True))
+          PY
+
+          curl --fail-with-body --silent --show-error \
+            -X POST \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/statuses/$HEAD_SHA" \
+            --data-binary @/tmp/xen-kani-fv-002-consumer-status-payload.json \
+            -o /tmp/xen-kani-fv-002-consumer-status-response.json
+
+          python3 - "$HEAD_SHA" "$STATUS_STATE" "$STATUS_CONTEXT" "$CONSUMER_RUN_URL" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          head_sha,state,context,target_url=sys.argv[1:]
+          d=json.loads(Path("/tmp/xen-kani-fv-002-consumer-status-response.json").read_text())
+          assert d.get("sha")==head_sha
+          assert d.get("state")==state
+          assert d.get("context")==context
+          assert d.get("target_url")==target_url
+          assert d.get("id")
+          assert str(d.get("creator",{}).get("login","")).strip()
+          PY
+
+          encoded_context="$(python3 -c 'import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))' "$STATUS_CONTEXT")"
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/commits/$HEAD_SHA/statuses?context=$encoded_context&per_page=100" \
+            -o /tmp/xen-kani-fv-002-consumer-statuses.json
+
+          python3 - "$HEAD_SHA" "$STATUS_STATE" "$STATUS_CONTEXT" "$CONSUMER_RUN_URL" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          head_sha,state,context,target_url=sys.argv[1:]
+          data=json.loads(Path("/tmp/xen-kani-fv-002-consumer-statuses.json").read_text())
+          assert isinstance(data,list)
+          matching=[x for x in data if isinstance(x,dict) and x.get("context","").lower()==context.lower()]
+          assert matching
+          matching.sort(key=lambda item: int(item.get("id",0)),reverse=True)
+          latest=matching[0]
+          assert latest.get("sha")==head_sha
+          assert latest.get("state")==state
+          assert latest.get("target_url")==target_url
+          assert latest.get("context","").lower()==context.lower()
+          PY
+
+  certificate-freshness-watchdog:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Revalidate live certificate-consumer statuses
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          WATCHDOG_RUN_ID: ${{ github.run_id }}
+          WATCHDOG_RUN_ATTEMPT: ${{ github.run_attempt }}
+          WATCHDOG_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+          GITHUB_SHA_OBSERVED: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = "schedule"
+          test "$GITHUB_REPOSITORY" = "$REPOSITORY"
+          test "$GITHUB_REF" = "refs/heads/main"
+          [[ "$GITHUB_SHA_OBSERVED" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$WATCHDOG_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$WATCHDOG_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+
+          python3 - <<'PY'
+          import base64
+          import hashlib
+          import io
+          import json
+          import os
+          import re
+          import urllib.parse
+          import urllib.request
+          import zipfile
+          from datetime import datetime, timezone
+
+          REPO=os.environ["REPOSITORY"]
+          REPO_ID=int(os.environ["REPOSITORY_ID"])
+          TOKEN=os.environ["GITHUB_TOKEN"]
+          STATUS_CONTEXT=os.environ["CERTIFICATE_STATUS_CONTEXT"]
+          CONSUMER_PATH=os.environ["CONSUMER_WORKFLOW_PATH"]
+          AUDIT_PATH=os.environ["INDEPENDENT_AUDIT_WORKFLOW_PATH"]
+          HEAD_EXECUTION_SHA=os.environ["GITHUB_SHA_OBSERVED"]
+          WATCHDOG_URL=os.environ["WATCHDOG_RUN_URL"]
+          API_BASE=f"https://api.github.com/repos/{REPO}"
+
+          qualification_paths={
+              "src/replay_kernel.rs",
+              "src/replay_kernel_kani.rs",
+              "src/replay_window.rs",
+              "fuzz/fuzz_targets/fuzz_replay_window.rs",
+              "src/lib.rs",
+              "Cargo.toml",
+              "docs/formal/xen-kani-fv-002-replay-kernel-v1.json",
+              ".github/workflows/xen-kani-fv-002-replay-kernel-v2.yml",
+          }
+          self_protection_paths={
+              CONSUMER_PATH,
+              os.environ["CANONICALIZATION_VECTORS_PATH"],
+              os.environ["EXPECTED_CI_WORKFLOW_PATH"],
+          }
+
+          def get(path, **query):
+              url=API_BASE+path
+              if query:
+                  url += "?"+urllib.parse.urlencode(query)
+              req=urllib.request.Request(url,headers={
+                  "Authorization":"Bearer "+TOKEN,
+                  "Accept":"application/vnd.github+json",
+                  "X-GitHub-Api-Version":"2026-03-10",
+              })
+              with urllib.request.urlopen(req,timeout=30) as response:
+                  return json.loads(response.read())
+
+          class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self,req,fp,code,msg,headers,newurl):
+                  redirected=super().redirect_request(req,fp,code,msg,headers,newurl)
+                  if redirected is None:
+                      return None
+                  if urllib.parse.urlsplit(req.full_url).netloc != urllib.parse.urlsplit(newurl).netloc:
+                      redirected.headers.pop("Authorization",None)
+                      redirected.headers.pop("authorization",None)
+                  return redirected
+
+          OPENER=urllib.request.build_opener(SafeRedirectHandler)
+
+          def download(url,max_bytes):
+              req=urllib.request.Request(url,headers={
+                  "Authorization":"Bearer "+TOKEN,
+                  "Accept":"application/vnd.github+json",
+                  "X-GitHub-Api-Version":"2026-03-10",
+              })
+              with OPENER.open(req,timeout=60) as response:
+                  data=response.read(max_bytes+1)
+              assert len(data)<=max_bytes, f"bounded download exceeded: {len(data)}"
+              return data
+
+          def strict_json(data,label):
+              def pairs(items):
+                  out={}
+                  for key,value in items:
+                      assert key not in out, f"{label}: duplicate JSON key {key!r}"
+                      out[key]=value
+                  return out
+              return json.loads(data.decode("utf-8"),object_pairs_hook=pairs)
+
+          def sha256(data):
+              return hashlib.sha256(data).hexdigest()
+
+          def post_failure(head_sha,reason):
+              payload={
+                  "state":"failure",
+                  "target_url":WATCHDOG_URL,
+                  "description":reason[:140],
+                  "context":STATUS_CONTEXT,
+              }
+              req=urllib.request.Request(
+                  f"{API_BASE}/statuses/{head_sha}",
+                  data=json.dumps(payload,sort_keys=True).encode(),
+                  method="POST",
+                  headers={
+                      "Authorization":"Bearer "+TOKEN,
+                      "Accept":"application/vnd.github+json",
+                      "Content-Type":"application/json",
+                      "X-GitHub-Api-Version":"2026-03-10",
+                  },
+              )
+              with urllib.request.urlopen(req,timeout=30) as response:
+                  result=json.loads(response.read())
+              assert result.get("sha")==head_sha
+              assert result.get("state")=="failure"
+              assert result.get("context")==STATUS_CONTEXT
+              assert result.get("target_url")==WATCHDOG_URL
+              return result
+
+          main=get("/branches/main")
+          assert main["name"]=="main"
+          current_main_sha=main["commit"]["sha"]
+          assert current_main_sha==HEAD_EXECUTION_SHA
+          main_commit=get(f"/commits/{current_main_sha}")
+          verification=main_commit["commit"]["verification"]
+          main_governance_ok=(
+              main["protected"] is True
+              and verification.get("verified") is True
+              and verification.get("reason")=="valid"
+          )
+
+          prs=[]
+          for page in range(1,31):
+              batch=get("/pulls",state="open",base="main",per_page=100,page=page)
+              assert isinstance(batch,list)
+              prs.extend(batch)
+              if len(batch)<100:
+                  break
+              if page==30:
+                  raise AssertionError("open PR enumeration reached 3000-item ceiling; watchdog cannot prove complete scope")
+
+          stale=0
+          checked=0
+          for pr in prs:
+              number=pr.get("number")
+              head_sha=pr.get("head",{}).get("sha")
+              try:
+                  assert pr.get("state")=="open" and pr.get("merged") is False
+                  assert pr.get("base",{}).get("ref")=="main"
+                  assert pr.get("base",{}).get("repo",{}).get("id")==REPO_ID
+                  assert pr.get("base",{}).get("repo",{}).get("full_name")==REPO
+                  assert pr.get("head",{}).get("repo",{}).get("id")==REPO_ID
+                  assert pr.get("head",{}).get("repo",{}).get("full_name")==REPO
+                  assert isinstance(head_sha,str)
+                  assert re.fullmatch(r"[0-9a-f]{40}",head_sha)
+
+                  if not main_governance_ok:
+                      governance_statuses=get(
+                          f"/commits/{head_sha}/statuses",
+                          context=STATUS_CONTEXT,
+                          per_page=100,
+                      )
+                      governance_matching=[
+                          item for item in governance_statuses
+                          if isinstance(item,dict)
+                          and item.get("context","").lower()==STATUS_CONTEXT.lower()
+                      ]
+                      governance_matching.sort(key=lambda item: int(item.get("id",0)),reverse=True)
+                      if governance_matching and governance_matching[0].get("state")=="success":
+                          post_failure(
+                              head_sha,
+                              "certificate status stale: main governance root is invalid",
+                          )
+                          stale+=1
+                      continue
+
+                  base_sha=pr["base"]["sha"]
                   files=[]
                   for page in range(1,31):
                       batch=get(f"/pulls/{number}/files",per_page=100,page=page)
