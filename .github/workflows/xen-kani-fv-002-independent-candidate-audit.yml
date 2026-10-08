@@ -109,6 +109,22 @@ jobs:
           pr=get(f"/pulls/{PR_NUMBER}")
           assert pr["number"]==PR_NUMBER
           assert pr["state"]=="open"
+
+          main_branch=get("/branches/main")
+          assert main_branch["name"]=="main"
+          assert main_branch["protected"] is True, (
+              "main branch protection is required before an independent trust-root audit can qualify"
+          )
+          main_commit_sha=main_branch["commit"]["sha"]
+          assert re.fullmatch(r"[0-9a-f]{40}",main_commit_sha)
+          main_commit=get(f"/commits/{main_commit_sha}")
+          assert main_commit["sha"]==main_commit_sha
+          main_verification=main_commit["commit"]["verification"]
+          assert main_verification["verified"] is True
+          assert main_verification["reason"]=="valid"
+          assert main_verification.get("signature")
+          assert main_verification.get("payload")
+          assert main_verification.get("verified_at")
           assert pr["merged"] is False
           assert pr["base"]["ref"]==os.environ["EXPECTED_BASE_BRANCH"]
           assert pr["base"]["repo"]["id"]==REPO_ID
@@ -120,6 +136,8 @@ jobs:
           main_ref=get("/git/ref/heads/main")
           current_main_sha=main_ref["object"]["sha"]
           assert re.fullmatch(r"[0-9a-f]{40}",current_main_sha)
+          assert main_ref["object"]["type"]=="commit"
+          assert current_main_sha==main_commit_sha
           assert current_main_sha==pr["base"]["sha"], (
               f"PR base is stale relative to current main: "
               f"pr_base={pr['base']['sha']} current_main={current_main_sha}"
@@ -310,6 +328,7 @@ jobs:
 
           final_pr=get(f"/pulls/{PR_NUMBER}")
           final_main=get("/git/ref/heads/main")
+          final_main_branch=get("/branches/main")
           assert final_pr["number"]==PR_NUMBER
           assert final_pr["state"]=="open"
           assert final_pr["merged"] is False
@@ -320,8 +339,20 @@ jobs:
           assert final_pr["head"]["repo"]["full_name"]==REPO
           assert final_pr["head"]["sha"]==HEAD_SHA
           final_main_sha=final_main["object"]["sha"]
+          assert final_main["object"]["type"]=="commit"
           assert final_main_sha==current_main_sha
+          assert final_main_branch["name"]=="main"
+          assert final_main_branch["protected"] is True
+          assert final_main_branch["commit"]["sha"]==current_main_sha
           assert final_pr["base"]["sha"]==current_main_sha
+
+          final_main_commit=get(f"/commits/{final_main_sha}")
+          final_main_verification=final_main_commit["commit"]["verification"]
+          assert final_main_verification["verified"] is True
+          assert final_main_verification["reason"]=="valid"
+          assert final_main_verification.get("signature")
+          assert final_main_verification.get("payload")
+          assert final_main_verification.get("verified_at")
 
           final_candidate=get(f"/contents/{encoded_path}?ref={urllib.parse.quote(HEAD_SHA,safe='')}")
           assert final_candidate["type"]=="file"
@@ -344,6 +375,8 @@ jobs:
               "initial_main_sha":current_main_sha,
               "final_main_sha":final_main_sha,
               "freshness_recheck":"passed",
+              "main_branch_protected":True,
+              "main_tip_signed_verified":True,
               "candidate_size_bytes":len(raw),
               "scope_decision":"IN_SCOPE",
               "yaml_duplicate_key_check":"passed",
