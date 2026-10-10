@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 import sys
 from pathlib import Path
+import tempfile
 
 HEREDOC = re.compile(
     r"""^(?P<indent> *)(?:if[ \t]+)?(?:(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|[^ \t]+))[ \t]+)*python(?:3)?[ \t]+-[ \t]+(?:.*?[ \t]+)?<<(?:(?P<single>'[A-Za-z_][A-Za-z0-9_]*')|(?P<double>"[A-Za-z_][A-Za-z0-9_]*")|(?P<bare>[A-Za-z_][A-Za-z0-9_]*))[ \t]*$"""
@@ -90,7 +91,76 @@ def compile_embedded_python(path: Path) -> tuple[int, list[str]]:
     return checked, errors
 
 
+
+def run_self_tests() -> None:
+    """Exercise shell forms that have previously escaped the workflow scanner."""
+    with tempfile.TemporaryDirectory(prefix="xenia-workflow-python-test-") as directory:
+        fixture = Path(directory) / "fixture.yml"
+        fixture.write_text(
+            "\n".join(
+                [
+                    "jobs:",
+                    "  check:",
+                    "    steps:",
+                    "      - run: |",
+                    "        python3 - <<'PY'",
+                    "        print('plain heredoc')",
+                    "        PY",
+                    "        python3 - \"$harness\" \"/tmp/out.json\" <<'PY'",
+                    "        import json",
+                    "        print(json.dumps({'ok': True}))",
+                    "        PY",
+                    "        python - <<PY",
+                    "        print('bare marker')",
+                    "        PY",
+                    "        if true; then",
+                    "            if HARNESS=\"$harness\" OUT=\"$out\" python3 - <<'PY'",
+                    "        print('nested shell heredoc')",
+                    "        PY",
+                    "        fi",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        checked, errors = compile_embedded_python(fixture)
+        if checked != 4 or errors:
+            raise AssertionError(
+                f"heredoc parser self-test failed: checked={checked}, errors={errors}"
+            )
+
+        malformed = Path(directory) / "malformed.yml"
+        malformed.write_text(
+            "\n".join(
+                [
+                    "jobs:",
+                    "  check:",
+                    "    steps:",
+                    "      - run: |",
+                    "        python3 - <<'BAD'",
+                    "        if True print('syntax error')",
+                    "        BAD",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        checked_bad, errors_bad = compile_embedded_python(malformed)
+        if checked_bad != 1 or not any(
+            "embedded Python syntax error" in error for error in errors_bad
+        ):
+            raise AssertionError(
+                "heredoc parser failed to reject a deliberately malformed Python body"
+            )
+
+
 def main() -> int:
+    try:
+        run_self_tests()
+    except Exception as exc:
+        print(f"FAIL: embedded Python scanner self-test: {exc}", file=sys.stderr)
+        return 2
+
     root = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
     workflow_dir = root / ".github" / "workflows"
     if not workflow_dir.is_dir():
