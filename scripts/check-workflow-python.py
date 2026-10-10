@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 HEREDOC = re.compile(
-    r"""^(?P<indent> *)python(?:3)?[ \t]+-[ \t]+(?:.*?[ \t]+)?<<(?:(?P<single>'[A-Za-z_][A-Za-z0-9_]*')|(?P<double>"[A-Za-z_][A-Za-z0-9_]*")|(?P<bare>[A-Za-z_][A-Za-z0-9_]*))[ \t]*$"""
+    r"""^(?P<indent> *)(?:if[ \t]+)?(?:(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|[^ \t]+))[ \t]+)*python(?:3)?[ \t]+-[ \t]+(?:.*?[ \t]+)?<<(?:(?P<single>'[A-Za-z_][A-Za-z0-9_]*')|(?P<double>"[A-Za-z_][A-Za-z0-9_]*")|(?P<bare>[A-Za-z_][A-Za-z0-9_]*))[ \t]*$"""
 )
 
 
