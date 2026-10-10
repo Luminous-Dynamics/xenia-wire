@@ -12,14 +12,11 @@ use crate::replay_kernel::{ReplayState, transition};
 const WORD_BITS: u32 = u64::BITS;
 
 fn any_window_bits() -> u32 {
-    let selector: u8 = kani::any();
-    match selector % 5 {
-        0 => 64,
-        1 => 128,
-        2 => 256,
-        3 => 512,
-        _ => 1024,
-    }
+    // Match the entire public API domain: every 64-bit multiple from 64
+    // through 1024, not just five representative window widths.
+    let words: u8 = kani::any();
+    kani::assume(words >= 1 && words <= 16);
+    u32::from(words) * WORD_BITS
 }
 
 #[kani::proof]
