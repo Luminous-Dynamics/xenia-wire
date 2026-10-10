@@ -492,12 +492,15 @@ jobs:
 
           touches_audit=path_touched(os.environ["AUDIT_WORKFLOW_PATH"])
           touches_trigger=path_touched(os.environ["TRIGGER_WORKFLOW_PATH"])
+          touches_consumer=path_touched(os.environ["CONSUMER_WORKFLOW_PATH"])
           touches_candidate=path_touched(CANDIDATE_PATH)
 
-          if touches_audit or touches_trigger:
+          if touches_audit or touches_trigger or touches_consumer:
               raise AssertionError(
-                  "an independent trust-root workflow changed in the candidate PR; "
-                  "the current main-anchored auditor cannot qualify that change"
+                  "an independent trust-root or certificate-consumer workflow changed "
+                  "in the candidate PR; the current main-anchored auditor cannot qualify "
+                  "that change. The consumer's first integration is a reviewed bootstrap, "
+                  "not a NOT_APPLICABLE success from the candidate-verifier audit"
               )
 
           if not touches_candidate:
