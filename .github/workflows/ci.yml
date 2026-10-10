@@ -278,6 +278,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          test "$(git hash-object scripts/check-workflow-python.py)" = "98ba451ed6999a35f4e79ade6c460c999503a6a4"
           python3 scripts/check-workflow-python.py .
           python3 - <<'PY'
           import re
