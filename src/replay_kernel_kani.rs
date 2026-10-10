@@ -203,7 +203,17 @@ fn kernel_supported_width_boundary_is_exact() {
     let base = width as u64 + 1;
     let mut state = ReplayState::new();
     assert!(transition(&mut state, width, base));
+
+    let highest_before = state.highest;
+    let initialized_before = state.initialized;
+    let bitmap_before = state.bitmap;
     assert!(!transition(&mut state, width, base - width as u64));
+    assert!(state.highest == highest_before);
+    assert!(state.initialized == initialized_before);
+    for i in 0..state.bitmap.len() {
+        assert!(state.bitmap[i] == bitmap_before[i]);
+    }
+
     assert!(transition(&mut state, width, base - width as u64 + 1));
 }
 
