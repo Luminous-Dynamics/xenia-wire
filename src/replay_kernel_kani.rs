@@ -1,0 +1,244 @@
+// Copyright (c) 2024-2026 Tristan Stoltz / Luminous Dynamics
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
+//! Kani harnesses for the replay transition kernel.
+//!
+//! Kept separate from the production kernel so proof-harness evolution does
+//! not alter the production subject blob. This module is compiled only under
+//! Kani and exercises the crate-private production transition API.
+
+use crate::replay_kernel::{ReplayState, transition};
+
+const WORD_BITS: u32 = u64::BITS;
+
+fn any_window_bits() -> u32 {
+    // Match the entire public API domain: every 64-bit multiple from 64
+    // through 1024, not just five representative window widths.
+    let words: u8 = kani::any();
+    kani::assume(words >= 1 && words <= 16);
+    u32::from(words) * WORD_BITS
+}
+
+#[kani::proof]
+#[kani::unwind(20)]
+fn kernel_duplicate_rejected() {
+    let mut state = ReplayState::new();
+    let seq: u64 = kani::any();
+    assert!(transition(&mut state, 64, seq));
+
+    let highest_before = state.highest;
+    let initialized_before = state.initialized;
+    let bitmap_before = state.bitmap;
+
+    assert!(!transition(&mut state, 64, seq));
+    assert!(state.highest == highest_before);
+    assert!(state.initialized == initialized_before);
+    for i in 0..state.bitmap.len() {
+        assert!(state.bitmap[i] == bitmap_before[i]);
+    }
+}
+
+#[kani::proof]
+#[kani::unwind(20)]
+fn kernel_first_sequence_initializes_exactly() {
+    let mut state = ReplayState::new();
+    let seq: u64 = kani::any();
+    assert!(transition(&mut state, 64, seq));
+    assert!(state.initialized);
+    assert!(state.highest == seq);
+    assert!(state.bitmap[0] == 1);
+    for i in 1..state.bitmap.len() {
+        assert!(state.bitmap[i] == 0);
+    }
+}
+
+#[kani::proof]
+#[kani::unwind(20)]
+fn kernel_stale_boundary_is_rejected() {
+    let mut state = ReplayState::new();
+    assert!(transition(&mut state, 64, 100));
+
+    let highest_before = state.highest;
+    let bitmap_before = state.bitmap;
+
+    assert!(!transition(&mut state, 64, 36));
+    assert!(state.highest == highest_before);
+    for i in 0..state.bitmap.len() {
+        assert!(state.bitmap[i] == bitmap_before[i]);
+    }
+
+    assert!(transition(&mut state, 64, 37));
+}
+
+#[kani::proof]
+#[kani::unwind(20)]
+fn kernel_higher_sequence_is_monotonic() {
+    let mut state = ReplayState::new();
+    let first: u64 = kani::any();
+    let next: u64 = kani::any();
+    kani::assume(next > first);
+    assert!(transition(&mut state, 64, first));
+    assert!(transition(&mut state, 64, next));
+    assert!(state.highest == next);
+}
+
+#[kani::proof]
+#[kani::unwind(20)]
+fn kernel_cross_word_shift_preserves_in_window_history() {
+    let mut state = ReplayState::new();
+    assert!(transition(&mut state, 128, 100));
+    assert!(transition(&mut state, 128, 99));
+    assert!(transition(&mut state, 128, 164)); // exact 65-bit cross-word shift
+    assert!(!transition(&mut state, 128, 99)); // old bit moved to offset 65
+    assert!(transition(&mut state, 128, 98)); // unseen, still in window
+    assert!(!transition(&mut state, 128, 98));
+}
+
+#[kani::proof]
+#[kani::unwind(20)]
+fn kernel_exact_word_shift_preserves_in_window_history() {
+    let mut state = ReplayState::new();
+    assert!(transition(&mut state, 128, 100));
+    assert!(transition(&mut state, 128, 99));
+    assert!(transition(&mut state, 128, 164)); // exact 64-bit word shift
+    assert!(!transition(&mut state, 128, 100)); // old highest moved to offset 64
+    assert!(!transition(&mut state, 128, 99)); // old offset 1 moved to offset 65
+    assert!(transition(&mut state, 128, 98)); // unseen, still in window
+    assert!(!transition(&mut state, 128, 98));
+}
+
+#[kani::proof]
+#[kani::unwind(20)]
+fn kernel_max_width_multiword_shift_preserves_history() {
+    let mut state = ReplayState::new();
+    assert!(transition(&mut state, 1024, 1000));
+    assert!(transition(&mut state, 1024, 999));
+    assert!(transition(&mut state, 1024, 1513)); // exact 513-bit multiword shift
+    assert!(!transition(&mut state, 1024, 1000)); // moved to offset 513
+    assert!(!transition(&mut state, 1024, 999)); // moved to offset 514
+    assert!(transition(&mut state, 1024, 998)); // unseen, still in window
+    assert!(!transition(&mut state, 1024, 998));
+}
+
+#[kani::proof]
+#[kani::unwind(20)]
+fn kernel_exact_window_jump_resets_history() {
+    let mut state = ReplayState::new();
+    assert!(transition(&mut state, 64, 100));
+    assert!(transition(&mut state, 64, 99));
+    assert!(transition(&mut state, 64, 164)); // exact 64-bit jump resets history
+    assert!(transition(&mut state, 64, 163)); // fresh history remains usable
+    assert!(!transition(&mut state, 64, 164)); // new highest duplicate rejected
+    assert!(!transition(&mut state, 64, 99)); // old history was discarded
+}
+
+#[kani::proof]
+#[kani::unwind(20)]
+fn kernel_max_width_near_window_shift_preserves_history_boundary() {
+    let mut state = ReplayState::new();
+    assert!(transition(&mut state, 1024, 1000));
+    assert!(transition(&mut state, 1024, 999));
+    assert!(transition(&mut state, 1024, 2023)); // exact 1023-bit shift
+    assert!(!transition(&mut state, 1024, 999)); // old offset 1 moved to offset 1024 and is rejected
+    assert!(!transition(&mut state, 1024, 1000)); // old highest moved to offset 1023 and remains in-window
+    assert!(transition(&mut state, 1024, 1001)); // unseen, in-window at offset 1022
+    assert!(!transition(&mut state, 1024, 1001));
+}
+
+#[kani::proof]
+#[kani::unwind(20)]
+fn kernel_symbolic_shift_preserves_or_discards_history_exactly() {
+    let mut state = ReplayState::new();
+    assert!(transition(&mut state, 1024, 5000));
+    assert!(transition(&mut state, 1024, 4999)); // mark offset 1
+    assert!(transition(&mut state, 1024, 3977)); // mark offset 1023
+
+    let delta: u64 = kani::any();
+    kani::assume(delta > 0);
+    kani::assume(delta < 1024);
+
+    assert!(transition(&mut state, 1024, 5000 + delta));
+    assert!(state.highest == 5000 + delta);
+
+    // After an in-window shift, the bitmap must contain exactly the new
+    // highest plus the two surviving prior entries:
+    //   old highest     -> offset delta
+    //   old offset 1    -> offset 1 + delta, while still in-window
+    // The old offset-1023 entry is always beyond offset 1023 and therefore
+    // must disappear from the fixed window.
+    let mut expected = [0u64; 16];
+    let new_word = (delta / WORD_BITS as u64) as usize;
+    let new_bit = (delta % WORD_BITS as u64) as u32;
+    expected[new_word] |= 1u64 << new_bit;
+
+    let moved_offset = delta + 1;
+    if moved_offset < 1024 {
+        let word_idx = (moved_offset / WORD_BITS as u64) as usize;
+        let bit_idx = (moved_offset % WORD_BITS as u64) as u32;
+        expected[word_idx] |= 1u64 << bit_idx;
+    }
+
+    expected[0] |= 1;
+    for i in 0..state.bitmap.len() {
+        assert!(state.bitmap[i] == expected[i]);
+    }
+}
+
+#[kani::proof]
+#[kani::unwind(20)]
+fn kernel_supported_widths_do_not_panic() {
+    let mut state = ReplayState::new();
+    let width = any_window_bits();
+    let first: u64 = kani::any();
+    let second: u64 = kani::any();
+    kani::assume(second >= first);
+    let _ = transition(&mut state, width, first);
+    let _ = transition(&mut state, width, second);
+}
+
+#[kani::proof]
+#[kani::unwind(20)]
+fn kernel_supported_width_boundary_is_exact() {
+    let width = any_window_bits();
+    let base = width as u64 + 1;
+    let mut state = ReplayState::new();
+    assert!(transition(&mut state, width, base));
+
+    let highest_before = state.highest;
+    let initialized_before = state.initialized;
+    let bitmap_before = state.bitmap;
+    assert!(!transition(&mut state, width, base - width as u64));
+    assert!(state.highest == highest_before);
+    assert!(state.initialized == initialized_before);
+    for i in 0..state.bitmap.len() {
+        assert!(state.bitmap[i] == bitmap_before[i]);
+    }
+
+    assert!(transition(&mut state, width, base - width as u64 + 1));
+}
+
+#[kani::proof]
+#[kani::unwind(20)]
+fn kernel_bitmap_tail_is_zero_for_supported_widths() {
+    let width = any_window_bits();
+    let words = (width / WORD_BITS) as usize;
+    let mut state = ReplayState::new();
+    let first: u64 = kani::any();
+    let second: u64 = kani::any();
+    kani::assume(second >= first);
+    let _ = transition(&mut state, width, first);
+    let _ = transition(&mut state, width, second);
+    for i in words..state.bitmap.len() {
+        assert!(state.bitmap[i] == 0);
+    }
+}
+
+#[kani::proof]
+#[kani::unwind(20)]
+fn kernel_u64_max_advance_preserves_previous_sequence() {
+    let mut state = ReplayState::new();
+    assert!(transition(&mut state, 64, u64::MAX - 1));
+    assert!(transition(&mut state, 64, u64::MAX));
+    assert!(!transition(&mut state, 64, u64::MAX));
+    assert!(!transition(&mut state, 64, u64::MAX - 1));
+}
