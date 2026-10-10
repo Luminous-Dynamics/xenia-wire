@@ -52,30 +52,4 @@ jobs:
           end
           RB
 
-          python3 - <<'PY'
-          import ast
-          import textwrap
-          from pathlib import Path
-
-          for path in sorted(Path(".github/workflows").glob("*.y*ml")):
-              lines = path.read_text(encoding="utf-8").splitlines()
-              index = 0
-              count = 0
-              while index < len(lines):
-                  if "python3 - <<'PY'" not in lines[index]:
-                      index += 1
-                      continue
-                  start = index + 1
-                  end = None
-                  for candidate in range(start, len(lines)):
-                      if lines[candidate].strip() == "PY":
-                          end = candidate
-                          break
-                  if end is None:
-                      raise SystemExit(f"{path}: embedded Python heredoc missing closing PY")
-                  source = textwrap.dedent("\n".join(lines[start:end]) + "\n")
-                  ast.parse(source, filename=str(path))
-                  count += 1
-                  index = end + 1
-              print(f"embedded Python OK {path} blocks={count}")
-          PY
+          python3 scripts/check-workflow-python.py .
