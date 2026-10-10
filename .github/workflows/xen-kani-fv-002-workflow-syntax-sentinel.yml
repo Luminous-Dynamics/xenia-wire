@@ -1,0 +1,55 @@
+name: XEN-KANI-FV-002 Workflow Syntax Sentinel
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  syntax:
+    name: Workflow syntax and embedded-source check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 pinned 2026-10-08
+        with:
+          persist-credentials: false
+      - name: Parse every workflow and embedded Python
+        shell: bash
+        run: |
+          set -euo pipefail
+          ruby -ryaml -rjson - <<'RB'
+          require "pathname"
+
+          Pathname(".github/workflows").glob("*.y*ml").sort.each do |path|
+            document = Psych.parse_file(path.to_s)
+            abort "#{path}: workflow root is not a mapping" unless document.root.is_a?(Psych::Nodes::Mapping)
+            seen = {}
+            walk = nil
+            walk = lambda do |node, location|
+              if node.is_a?(Psych::Nodes::Mapping)
+                children = node.children || []
+                abort "#{path}: odd mapping child count at #{location}" if children.length.odd?
+                children.each_slice(2).with_index do |(key, value), index|
+                  if key.is_a?(Psych::Nodes::Scalar)
+                    name = key.value.to_s
+                    abort "#{path}: duplicate YAML key #{name.inspect} at #{location}" if seen[[location, name]]
+                    seen[[location, name]] = true
+                  end
+                  walk.call(key, "#{location}.key#{index}")
+                  walk.call(value, "#{location}.value#{index}") if value
+                end
+              elsif node.respond_to?(:children) && node.children
+                node.children.each_with_index { |child, index| walk.call(child, "#{location}[#{index}]") }
+              end
+            end
+            walk.call(document.root, "root")
+            puts "YAML OK #{path}"
+          end
+          RB
+
+          python3 scripts/check-workflow-python.py .

@@ -638,8 +638,7 @@ jobs:
               "mutation":"offset >= window_bits becomes offset > window_bits",
               "structured_export_error":export_error
           }
-          Path("/tmp/hostile-receipt.json").write_text(json.dumps(receipt,indent=2,sort_keys=True)+"
-")
+          Path("/tmp/hostile-receipt.json").write_text(json.dumps(receipt,indent=2,sort_keys=True)+"\n")
           print(Path("/tmp/hostile-receipt.json").read_text())
           PY
 
