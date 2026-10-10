@@ -155,7 +155,7 @@ def run_self_tests() -> None:
 
         bad_indent = Path(directory) / "bad-indent.yml"
         bad_indent.write_text(
-            "\\n".join(
+            "\n".join(
                 [
                     "jobs:",
                     "  check:",
@@ -167,7 +167,7 @@ def run_self_tests() -> None:
                     "        INDENT",
                 ]
             )
-            + "\\n",
+            + "\n",
             encoding="utf-8",
         )
         checked_indent, errors_indent = compile_embedded_python(bad_indent)
