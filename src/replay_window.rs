@@ -372,7 +372,7 @@ mod tests {
 
     #[test]
     fn supported_widths_preserve_boundary_semantics() {
-        for bits in [64, 128, 256, 512, 1024] {
+        for bits in [64, 128, 192, 256, 320, 384, 448, 512, 576, 640, 704, 768, 832, 896, 960, 1024] {
             let mut w = ReplayWindow::with_window_bits(bits);
             let base = bits as u64 + 1000;
             assert!(w.accept(SRC, 0x10, EPOCH, base));
