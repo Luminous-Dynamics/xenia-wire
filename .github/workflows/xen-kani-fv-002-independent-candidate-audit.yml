@@ -1,0 +1,891 @@
+name: XEN-KANI-FV-002 Independent Candidate Audit
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  group: xenia-kani-fv-002-independent-audit-${{ github.event.workflow_run.pull_requests[0].number || github.run_id }}
+  cancel-in-progress: false
+
+env:
+  REPOSITORY: Luminous-Dynamics/xenia-wire
+  REPOSITORY_ID: "1213976974"
+  CANDIDATE_PATH: .github/workflows/xen-kani-fv-002-trusted-admission.yml
+  EXPECTED_CANDIDATE_WORKFLOW_NAME: Trusted XEN-KANI-FV-002 Admission
+  AUDIT_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-independent-candidate-audit.yml
+  TRIGGER_WORKFLOW_PATH: .github/workflows/ci.yml
+  CONSUMER_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-certificate-consumer.yml
+  AUDIT_STATUS_CONTEXT: XEN-KANI-FV-002 / Independent Candidate Audit
+  EXPECTED_CANDIDATE_BLOB: 273db5c17698c430f14bebb263ab27b3015f2da5
+  EXPECTED_CANDIDATE_WORKFLOW_ID: "373418900"
+  EXPECTED_BASE_BRANCH: main
+  EXPECTED_CI_WORKFLOW_PATH: .github/workflows/ci.yml
+  EXPECTED_CI_WORKFLOW_BLOB: ad147595580196fa1996c233b9281b895bccbfcc
+  EXPECTED_RUBY_VERSION: "3.2.3"
+  EXPECTED_PSYCH_VERSION: "5.0.2"
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Audit candidate verifier snapshot
+        id: audit-candidate-verifier-snapshot
+        if: github.event.workflow_run.event == 'pull_request'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          PR_HEAD_SHA: ${{ github.event.workflow_run.pull_requests[0].head.sha }}
+          PR_HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
+          CI_RUN_ID: ${{ github.event.workflow_run.id }}
+          CI_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          CI_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          CI_RUN_HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
+          CI_RUN_WORKFLOW_ID: ${{ github.event.workflow_run.workflow_id }}
+          CI_RUN_NAME: ${{ github.event.workflow_run.name }}
+          CI_RUN_PATH: ${{ github.event.workflow_run.path }}
+          CI_RUN_EVENT: ${{ github.event.workflow_run.event }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = "workflow_run"
+          test "$GITHUB_REPOSITORY" = "$REPOSITORY"
+          test "$GITHUB_REF" = "refs/heads/main"
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$PR_HEAD_REPO" = "$REPOSITORY"
+          test "$CI_RUN_HEAD_REPO" = "$REPOSITORY"
+          test "$CI_RUN_NAME" = "CI"
+          test "$CI_RUN_EVENT" = "pull_request"
+          test "$CI_RUN_WORKFLOW_ID" = "262609031"
+          test "$CI_RUN_PATH" = ".github/workflows/ci.yml"
+          test "$CI_RUN_HEAD_SHA" = "$PR_HEAD_SHA"
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
+          [[ "$PR_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$CI_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$CI_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          test "$(ruby -e "print RUBY_VERSION")" = "$EXPECTED_RUBY_VERSION"
+          test "$(ruby -rpsych -e "print Psych::VERSION")" = "$EXPECTED_PSYCH_VERSION"
+
+          python3 - <<'PY'
+          import base64
+          import hashlib
+          import json
+          import os
+          import re
+          import subprocess
+          import tempfile
+          import urllib.parse
+          import urllib.request
+
+          REPO=os.environ["REPOSITORY"]
+          REPO_ID=int(os.environ["REPOSITORY_ID"])
+          PR_NUMBER=int(os.environ["PR_NUMBER"])
+          HEAD_SHA=os.environ["PR_HEAD_SHA"]
+          CANDIDATE_PATH=os.environ["CANDIDATE_PATH"]
+          EXPECTED_BLOB=os.environ["EXPECTED_CANDIDATE_BLOB"]
+          API_BASE=f"https://api.github.com/repos/{REPO}"
+          TOKEN=os.environ["GITHUB_TOKEN"]
+
+          permission_scan_ruby=r"""
+          require "yaml"
+          document=Psych.parse(STDIN.read)
+          root=document.root
+          abort "workflow document root must be a mapping" unless root.is_a?(Psych::Nodes::Mapping)
+          root_children=root.children || []
+          abort "odd workflow root mapping child count" if root_children.length.odd?
+          root_keys=root_children.each_slice(2).map(&:first)
+          has_root_permissions=root_keys.any? do |key|
+            key.is_a?(Psych::Nodes::Scalar) && key.value.to_s=="permissions"
+          end
+          abort "workflow must declare explicit top-level permissions" unless has_root_permissions
+
+          status_write=false
+          write_all=false
+          walk=nil
+          walk=lambda do |node,location|
+            if node.is_a?(Psych::Nodes::Mapping)
+              children=node.children || []
+              abort "odd mapping child count at #{location}" if children.length.odd?
+              seen={}
+              children.each_slice(2).with_index do |(key,value),index|
+                if key.is_a?(Psych::Nodes::Scalar)
+                  key_name=key.value.to_s
+                  abort "duplicate YAML mapping key at #{location}: #{key_name.inspect}" if seen.key?(key_name)
+                  seen[key_name]=true
+                  if key_name=="permissions"
+                    if value.is_a?(Psych::Nodes::Alias)
+                      abort "permissions aliases are unsupported"
+                    elsif value.is_a?(Psych::Nodes::Scalar)
+                      write_all=true if value.value.to_s=="write-all"
+                    elsif value.is_a?(Psych::Nodes::Mapping)
+                      permission_children=value.children || []
+                      abort "odd permissions mapping child count at #{location}.permissions" if permission_children.length.odd?
+                      permission_seen={}
+                      permission_children.each_slice(2) do |permission_key,permission_value|
+                        abort "permission mapping aliases are unsupported" if permission_key.is_a?(Psych::Nodes::Alias)
+                        next unless permission_key.is_a?(Psych::Nodes::Scalar)
+                        permission_name=permission_key.value.to_s
+                        abort "duplicate permissions key: #{permission_name.inspect}" if permission_seen.key?(permission_name)
+                        permission_seen[permission_name]=true
+                        abort "permissions merge keys are unsupported" if permission_name=="<<"
+                        if permission_name=="statuses" || permission_name=="status"
+                          if permission_value.is_a?(Psych::Nodes::Scalar) && permission_value.value.to_s=="write"
+                            status_write=true
+                          elsif permission_value.is_a?(Psych::Nodes::Alias)
+                            abort "status permission aliases are unsupported"
+                          end
+                        end
+                      end
+                    end
+                  end
+                end
+                walk.call(key,"#{location}.key#{index}")
+                walk.call(value,"#{location}.value#{index}") if value
+              end
+            elsif node.is_a?(Psych::Nodes::Alias)
+              # Alias values outside permissions are irrelevant to this authority scan.
+            elsif node.respond_to?(:children) && node.children
+              node.children.each_with_index do |child,index|
+                walk.call(child,"#{location}[#{index}]")
+              end
+            end
+          end
+          walk.call(document.root,"root")
+          puts JSON.generate({"status_write"=>status_write,"write_all"=>write_all})
+          """
+
+          def get(path, **query):
+              url=API_BASE+path
+              if query:
+                  url += "?" + urllib.parse.urlencode(query)
+              request=urllib.request.Request(
+                  url,
+                  headers={
+                      "Authorization":"Bearer "+TOKEN,
+                      "Accept":"application/vnd.github+json",
+                      "X-GitHub-Api-Version":"2026-03-10",
+                  },
+              )
+              with urllib.request.urlopen(request,timeout=30) as response:
+                  return json.loads(response.read())
+
+          ci=get(f"/actions/runs/{os.environ['CI_RUN_ID']}")
+          assert ci["id"]==int(os.environ["CI_RUN_ID"])
+          assert ci["name"]=="CI"
+          assert ci["workflow_id"]==int(os.environ["CI_RUN_WORKFLOW_ID"])
+          assert ci["path"]==".github/workflows/ci.yml"
+          assert ci["event"]=="pull_request"
+          assert ci["status"]=="completed"
+          assert ci["conclusion"]=="success"
+          assert ci["run_attempt"]==int(os.environ["CI_RUN_ATTEMPT"])
+          assert ci["head_sha"]==HEAD_SHA
+          assert ci["head_repository"]["full_name"]==REPO
+          assert ci["pull_requests"] and len(ci["pull_requests"])==1
+          assert ci["pull_requests"][0]["number"]==PR_NUMBER
+          assert ci["pull_requests"][0]["head"]["sha"]==HEAD_SHA
+          assert ci["pull_requests"][0]["head"]["repo"]["full_name"]==REPO
+
+          pr=get(f"/pulls/{PR_NUMBER}")
+          assert pr["number"]==PR_NUMBER
+          assert pr["state"]=="open"
+
+          main_branch=get("/branches/main")
+          assert main_branch["name"]=="main"
+          assert main_branch["protected"] is True, (
+              "main branch protection is required before an independent trust-root audit can qualify"
+          )
+          main_commit_sha=main_branch["commit"]["sha"]
+          assert re.fullmatch(r"[0-9a-f]{40}",main_commit_sha)
+          main_commit=get(f"/commits/{main_commit_sha}")
+          assert main_commit["sha"]==main_commit_sha
+          main_verification=main_commit["commit"]["verification"]
+          assert main_verification["verified"] is True
+          assert main_verification["reason"]=="valid"
+          assert main_verification.get("signature")
+          assert main_verification.get("payload")
+          assert main_verification.get("verified_at")
+
+          ci_source=get(
+              f"/contents/{urllib.parse.quote(os.environ['EXPECTED_CI_WORKFLOW_PATH'],safe='/')}",
+              ref=main_commit_sha,
+          )
+          assert ci_source["type"]=="file"
+          assert ci_source["path"]==os.environ["EXPECTED_CI_WORKFLOW_PATH"]
+          assert ci_source["sha"]==os.environ["EXPECTED_CI_WORKFLOW_BLOB"]
+
+          assert pr["merged"] is False
+          assert pr["base"]["ref"]==os.environ["EXPECTED_BASE_BRANCH"]
+          assert pr["base"]["repo"]["id"]==REPO_ID
+          assert pr["base"]["repo"]["full_name"]==REPO
+          assert pr["head"]["repo"]["id"]==REPO_ID
+          assert pr["head"]["repo"]["full_name"]==REPO
+          assert pr["head"]["sha"]==HEAD_SHA
+
+          main_ref=get("/git/ref/heads/main")
+          current_main_sha=main_ref["object"]["sha"]
+          assert re.fullmatch(r"[0-9a-f]{40}",current_main_sha)
+          assert main_ref["object"]["type"]=="commit"
+          assert current_main_sha==main_commit_sha
+          assert current_main_sha==os.environ["GITHUB_SHA"], (
+              f"workflow_run execution SHA is not current main tip: execution={os.environ['GITHUB_SHA']} current_main={current_main_sha}"
+          )
+          assert current_main_sha==pr["base"]["sha"], (
+              f"PR base is stale relative to current main: "
+              f"pr_base={pr['base']['sha']} current_main={current_main_sha}"
+          )
+
+          files=[]
+          for page in range(1,31):
+              page_files=get(f"/pulls/{PR_NUMBER}/files?per_page=100&page={page}")
+              assert isinstance(page_files,list)
+              files.extend(page_files)
+              if len(page_files)<100:
+                  break
+          if len(files)>=3000:
+              raise AssertionError(
+                  f"pull request file list reached GitHub's 3000-file response ceiling; "
+                  f"scope is incomplete and must fail closed: count={len(files)}"
+              )
+          assert files
+
+          receipt_path="/tmp/xen-kani-fv-002-independent-audit-receipt.json"
+
+          def emit_receipt(document):
+              payload=dict(document)
+              payload["schema"]="xenia.formal.kani-fv-002.independent-candidate-audit-receipt.v1"
+              payload["auditor_workflow_path"]=os.environ["AUDIT_WORKFLOW_PATH"]
+              payload["auditor_execution_sha"]=os.environ["GITHUB_SHA"]
+              payload["audit_run_id"]=int(os.environ["GITHUB_RUN_ID"])
+              payload["audit_run_attempt"]=int(os.environ["GITHUB_RUN_ATTEMPT"])
+              Path(receipt_path).write_text(
+                  json.dumps(payload,sort_keys=True,indent=2)+"\n",
+                  encoding="utf-8",
+              )
+              print(json.dumps(payload,sort_keys=True,indent=2))
+
+
+          authorized_status_writer_paths={
+              os.environ["AUDIT_WORKFLOW_PATH"],
+              os.environ["CONSUMER_WORKFLOW_PATH"],
+          }
+
+          MAX_MAIN_WORKFLOW_FILES=300
+          main_status_writer_paths=[]
+          main_workflows=[]
+          for page in range(1,4):
+              page_workflows=get(
+                  "/contents/.github/workflows",
+                  ref=current_main_sha,
+                  per_page=100,
+                  page=page,
+              )
+              assert isinstance(page_workflows,list)
+              assert len(page_workflows)<=100
+              main_workflows.extend(page_workflows)
+              if len(page_workflows)<100:
+                  break
+          else:
+              raise AssertionError(
+                  "main workflow directory reached the bounded 300-file inventory ceiling"
+              )
+
+          assert 0 < len(main_workflows) <= MAX_MAIN_WORKFLOW_FILES
+          candidate_main_entries=[
+              item for item in main_workflows
+              if isinstance(item,dict) and item.get("path")==os.environ["CANDIDATE_PATH"]
+          ]
+          assert len(candidate_main_entries)==1, (
+              "active candidate verifier workflow must exist exactly once in main workflow directory"
+          )
+          assert candidate_main_entries[0].get("type")=="file"
+          candidate_main_source=get(
+              "/contents/"+urllib.parse.quote(os.environ["CANDIDATE_PATH"],safe="/"),
+              ref=current_main_sha,
+          )
+          assert candidate_main_source["type"]=="file"
+          assert candidate_main_source["path"]==os.environ["CANDIDATE_PATH"]
+          candidate_main_text=base64.b64decode(
+              candidate_main_source["content"].replace("\n","")
+          ).decode("utf-8")
+          assert "name: Trusted XEN-KANI-FV-002 Admission" in candidate_main_text
+          assert "workflow_run:" in candidate_main_text
+          candidate_runs=get(
+              "/actions/runs",
+              event="workflow_run",
+              branch="main",
+              per_page=100,
+              page=1,
+          )
+          assert isinstance(candidate_runs,dict)
+          candidate_run_identities=[
+              run for run in candidate_runs.get("workflow_runs",[])
+              if isinstance(run,dict)
+              and run.get("name")==os.environ["EXPECTED_CANDIDATE_WORKFLOW_NAME"]
+              and run.get("path")==os.environ["CANDIDATE_PATH"]
+              and run.get("head_branch")=="main"
+          ]
+          assert candidate_run_identities, (
+              "active candidate verifier workflow has no recorded workflow_run execution on current main tip"
+          )
+          assert all(
+              int(run.get("workflow_id",0))==int(os.environ["EXPECTED_CANDIDATE_WORKFLOW_ID"])
+              for run in candidate_run_identities
+          ), "candidate verifier workflow entity ID changed or is ambiguous"
+          main_workflow_paths=[
+              item.get("path")
+              for item in main_workflows
+              if isinstance(item,dict) and item.get("type")=="file"
+          ]
+          assert len(main_workflow_paths)==len(set(main_workflow_paths))
+          assert all(
+              isinstance(item.get("path"),str) for item in main_workflows
+          )
+
+          for main_item in main_workflows:
+              if main_item.get("type")!="file":
+                  continue
+              main_path=main_item.get("path")
+              if not isinstance(main_path,str):
+                  raise AssertionError("main workflow entry has no path")
+              if not (main_path.endswith(".yml") or main_path.endswith(".yaml")):
+                  continue
+              main_source=get(
+                  f"/contents/{urllib.parse.quote(main_path,safe='/')}",
+                  ref=current_main_sha,
+              )
+              assert main_source["type"]=="file"
+              assert main_source["path"]==main_path
+              main_text=base64.b64decode(
+                  main_source["content"].replace("\n","")
+              ).decode("utf-8")
+              permission_result=subprocess.run(
+                  ["ruby","-rjson","-e",permission_scan_ruby],
+                  input=main_text,
+                  capture_output=True,
+                  text=True,
+              )
+              assert permission_result.returncode==0, permission_result.stderr
+              main_permissions=json.loads(permission_result.stdout)
+              assert main_permissions["status_write"] in (True,False)
+              assert main_permissions["write_all"] in (True,False)
+              main_status_write=main_permissions["status_write"]
+              main_write_all=main_permissions["write_all"]
+              if not (main_status_write or main_write_all):
+                  continue
+              main_status_writer_paths.append(main_path)
+              assert main_path in {
+                  os.environ["AUDIT_WORKFLOW_PATH"],
+                  os.environ["CONSUMER_WORKFLOW_PATH"],
+              }, f"unexpected status-authority workflow on main: {main_path}"
+              assert not main_write_all, f"write-all status authority is forbidden: {main_path}"
+
+          assert set(main_status_writer_paths).issubset({
+              os.environ["AUDIT_WORKFLOW_PATH"],
+              os.environ["CONSUMER_WORKFLOW_PATH"],
+          })
+
+          inline_permission_probe=subprocess.run(
+              ["ruby","-rjson","-e",permission_scan_ruby],
+              input='name: probe\npermissions: { "contents": "read", "statuses": "write" }\n',
+              capture_output=True,
+              text=True,
+          )
+          assert inline_permission_probe.returncode==0, inline_permission_probe.stderr
+          inline_permissions=json.loads(inline_permission_probe.stdout)
+          assert inline_permissions=={"status_write":True,"write_all":False}
+
+          merge_permission_probe=subprocess.run(
+              ["ruby","-rjson","-e",permission_scan_ruby],
+              input='name: probe\ndefaults: &p\n  statuses: write\npermissions:\n  <<: *p\n',
+              capture_output=True,
+              text=True,
+          )
+          assert merge_permission_probe.returncode!=0, "permissions merge key unexpectedly accepted"
+
+          write_all_probe=subprocess.run(
+              ["ruby","-rjson","-e",permission_scan_ruby],
+              input='name: probe\npermissions: read\njobs:\n  p:\n    permissions: "write-all"\n',
+              capture_output=True,
+              text=True,
+          )
+          assert write_all_probe.returncode==0, write_all_probe.stderr
+          write_all_permissions=json.loads(write_all_probe.stdout)
+          assert write_all_permissions=={"status_write":False,"write_all":True}
+
+          workflow_scope_violations=[]
+          for item in files:
+              current_path=item.get("filename")
+              previous_path=item.get("previous_filename")
+              candidate_path=current_path or previous_path
+              if not isinstance(candidate_path,str) or not candidate_path.startswith(".github/workflows/"):
+                  continue
+
+              source=get(
+                  f"/contents/{urllib.parse.quote(current_path,safe='/')}",
+                  ref=HEAD_SHA,
+              )
+              assert source["type"]=="file"
+              assert source["path"]==current_path
+              decoded=base64.b64decode(source["content"].replace("\n",""))
+              workflow_text=decoded.decode("utf-8")
+              permission_result=subprocess.run(
+                  ["ruby","-rjson","-e",permission_scan_ruby],
+                  input=workflow_text,
+                  capture_output=True,
+                  text=True,
+              )
+              assert permission_result.returncode==0, permission_result.stderr
+              workflow_permissions=json.loads(permission_result.stdout)
+              assert workflow_permissions["status_write"] in (True,False)
+              assert workflow_permissions["write_all"] in (True,False)
+              grants_status_write=workflow_permissions["status_write"]
+              grants_write_all=workflow_permissions["write_all"]
+              if not (grants_status_write or grants_write_all):
+                  continue
+
+              if current_path not in authorized_status_writer_paths:
+                  workflow_scope_violations.append(
+                      f"unauthorized status-writing workflow: {current_path}"
+                  )
+                  continue
+
+              if previous_path is not None and previous_path != current_path:
+                  workflow_scope_violations.append(
+                      f"status-writing workflow was renamed: {previous_path} -> {current_path}"
+                  )
+                  continue
+
+              if grants_write_all:
+                  workflow_scope_violations.append(
+                      f"broad write-all permissions are forbidden on status-writing trust roots: {current_path}"
+                  )
+                  continue
+
+              if current_path==os.environ["AUDIT_WORKFLOW_PATH"]:
+                  assert "XEN-KANI-FV-002 / Independent Candidate Audit" in workflow_text
+                  assert "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/statuses/" in workflow_text
+              elif current_path==os.environ["CONSUMER_WORKFLOW_PATH"]:
+                  assert "XEN-KANI-FV-002 / Certificate Consumer" in workflow_text
+                  assert "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/statuses/" in workflow_text
+
+          if workflow_scope_violations:
+              raise AssertionError(
+                  "PR changes introduce an unauthorized status-authority surface: "
+                  + " | ".join(sorted(workflow_scope_violations))
+              )
+
+          def path_touched(path):
+              return any(
+                  item.get("filename")==path
+                  or item.get("previous_filename")==path
+                  for item in files
+              )
+
+          touches_audit=path_touched(os.environ["AUDIT_WORKFLOW_PATH"])
+          touches_trigger=path_touched(os.environ["TRIGGER_WORKFLOW_PATH"])
+          touches_candidate=path_touched(CANDIDATE_PATH)
+
+          if touches_audit or touches_trigger:
+              raise AssertionError(
+                  "an independent trust-root workflow changed in the candidate PR; "
+                  "the current main-anchored auditor cannot qualify that change"
+              )
+
+          if not touches_candidate:
+              emit_receipt({
+                  "decision":"NOT_APPLICABLE",
+                  "pr_number":PR_NUMBER,
+                  "base_sha":pr["base"]["sha"],
+                  "head_sha":HEAD_SHA,
+                  "ci_run_id":int(os.environ["CI_RUN_ID"]),
+                  "ci_run_attempt":int(os.environ["CI_RUN_ATTEMPT"]),
+                  "ci_workflow_path":os.environ["EXPECTED_CI_WORKFLOW_PATH"],
+                  "ci_workflow_blob":os.environ["EXPECTED_CI_WORKFLOW_BLOB"],
+                  "candidate_path":CANDIDATE_PATH,
+                  "changed_file_count":len(files),
+                  "scope_source":"pull_request_files",
+                  "scope_ceiling":3000,
+                  "main_status_writer_paths":sorted(main_status_writer_paths),
+                  "reason":"candidate verifier workflow is outside the PR delta",
+              })
+              raise SystemExit(0)
+
+          assert len(files)==1
+          assert files[0]["filename"]==CANDIDATE_PATH
+          assert files[0]["status"]=="modified"
+          assert files[0].get("previous_filename") in (None,CANDIDATE_PATH)
+
+          encoded_path=urllib.parse.quote(CANDIDATE_PATH,safe="/")
+          candidate=get(f"/contents/{encoded_path}?ref={urllib.parse.quote(HEAD_SHA,safe='')}")
+          assert candidate["type"]=="file"
+          assert candidate["path"]==CANDIDATE_PATH
+          assert candidate["sha"]==EXPECTED_BLOB
+          raw=base64.b64decode(candidate["content"].replace("\n",""))
+          assert raw
+          assert len(raw)<=1048576
+
+          git_blob_sha1=hashlib.sha1(
+              b"blob "+str(len(raw)).encode()+b"\0"+raw
+          ).hexdigest()
+          assert git_blob_sha1==EXPECTED_BLOB
+          content_sha256=hashlib.sha256(raw).hexdigest()
+
+          with tempfile.NamedTemporaryFile("wb",delete=False) as handle:
+              handle.write(raw)
+              candidate_path=handle.name
+
+          ruby=r'''
+          require "yaml"
+          document=Psych.parse_file(ARGV.fetch(0))
+          walk=nil
+          walk=lambda do |node,location|
+            if node.is_a?(Psych::Nodes::Mapping)
+              children=node.children || []
+              abort "odd mapping child count at #{location}" if children.length.odd?
+              seen={}
+              children.each_slice(2).with_index do |(key,value),index|
+                if key.is_a?(Psych::Nodes::Scalar)
+                  abort "duplicate YAML mapping key at #{location}: #{key.value.inspect}" if seen.key?(key.value)
+                  seen[key.value]=true
+                end
+                walk.call(key,"#{location}.key#{index}")
+                walk.call(value,"#{location}.value#{index}") if value
+              end
+            elsif node.respond_to?(:children) && node.children
+              node.children.each_with_index do |child,index|
+                walk.call(child,"#{location}[#{index}]")
+              end
+            end
+          end
+          walk.call(document.root,"root")
+          puts "YAML_OK"
+          '''
+          result=subprocess.run(["ruby","-e",ruby,candidate_path],capture_output=True,text=True)
+          assert result.returncode==0, result.stderr
+          assert result.stdout.strip()=="YAML_OK"
+
+          text_value=raw.decode("utf-8")
+          forbidden=("pull_request_target","issue_comment:","workflow_dispatch:","repository_dispatch:","secrets.")
+          for surface in forbidden:
+              assert surface not in text_value, f"forbidden trust surface present: {surface}"
+
+          for required in (
+              "name: Trusted XEN-KANI-FV-002 Admission",
+              "workflow_run:",
+              'workflows: ["XEN-KANI-FV-002 Replay Kernel"]',
+              'branches: ["formal/xen-kani-fv-002-replay-kernel"]',
+              "pull_request:",
+              'paths:\n      - ".github/workflows/xen-kani-fv-002-trusted-admission.yml"',
+              "cache-mode: none",
+              "cancel-in-progress: false",
+              "permissions:\n  actions: read\n  contents: read\n  pull-requests: read",
+              "EXPECTED_HEAD_REPO: Luminous-Dynamics/xenia-wire",
+              "EXPECTED_HEAD_REPO_ID: 1213976974",
+              "EXPECTED_TRIGGER_WORKFLOW_ID: 373424313",
+              "EXPECTED_TRIGGER_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-replay-kernel-v2.yml",
+              "EXPECTED_TRIGGER_WORKFLOW_BLOB: 705dfb24f88da39daa10bc25047e6717bc0e6ff1",
+              "EXPECTED_QUALIFIED_HEAD_SHA: 63aacd4806ef9f07afd758165a6d8faf4dfcee1f",
+              "EXPECTED_KERNEL_BLOB: d1bc8a1f8fc0883856d5073fa37b1658a7ea63ad",
+              "EXPECTED_PROOF_BLOB: a9fd2a3e57f1b59a82d26c49a7586db262244245",
+              "EXPECTED_EVIDENCE_CONTRACT_BLOB: 22c77f38adf8162629e191b2a823b922e9ddeb97",
+              "EXPECTED_KANI_RELEASE_ASSET_DIGEST: sha256:32e2b484d73ede0bbf64a2cf0879c4259422497d8aec4ee67d448de9ae7843d3",
+              "EXPECTED_KANI_CRATE_SHA256: 842fabd2ba8b13babab862e21fef2946b581d493f23062d5ce86266630f1d1ae",
+              "EXECUTING_WORKFLOW_AUDIT_MARKER: XEN-KANI-FV-002-VERIFIER-SNAPSHOT-20261008-01",
+              "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f",
+          ):
+              assert required in text_value, f"required candidate invariant absent: {required}"
+
+          uses=re.findall(r"^\s+uses:\s+([^\s#]+)",text_value,re.MULTILINE)
+          expected_uses=[
+              "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f",
+              "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f",
+              "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f",
+              "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f",
+          ]
+          assert uses==expected_uses
+          assert all(re.fullmatch(r"[^@]+@[0-9a-f]{40}",item) for item in uses)
+
+          lines=text_value.splitlines()
+          run_blocks=[]
+          index=0
+          while index<len(lines):
+              if lines[index]=="        run: |":
+                  body=[]
+                  index+=1
+                  while index<len(lines):
+                      line=lines[index]
+                      if line.startswith("      - name: "):
+                          break
+                      body.append(line[8:] if line.startswith("        ") else line)
+                      index+=1
+                  run_blocks.append("\n".join(body)+"\n")
+                  continue
+              index+=1
+          assert run_blocks
+          for block_index,block in enumerate(run_blocks,1):
+              nonempty=[line.strip() for line in block.splitlines() if line.strip()]
+              assert nonempty and nonempty[0]=="set -euo pipefail", f"candidate run block {block_index} is not fail-closed"
+              assert "$"+"{{ github." not in block, f"candidate run block {block_index} interpolates GitHub context directly"
+
+          assert text_value.count("  trusted-admission:\n")==1
+          assert text_value.count("  non-authoritative-selftest:\n")==1
+          assert text_value.count("  workflow_run:\n")==1
+          assert text_value.count("  pull_request:\n")==1
+
+          final_pr=get(f"/pulls/{PR_NUMBER}")
+          final_main=get("/git/ref/heads/main")
+          final_main_branch=get("/branches/main")
+          assert final_pr["number"]==PR_NUMBER
+          assert final_pr["state"]=="open"
+          assert final_pr["merged"] is False
+          assert final_pr["base"]["ref"]==os.environ["EXPECTED_BASE_BRANCH"]
+          assert final_pr["base"]["repo"]["id"]==REPO_ID
+          assert final_pr["base"]["repo"]["full_name"]==REPO
+          assert final_pr["head"]["repo"]["id"]==REPO_ID
+          assert final_pr["head"]["repo"]["full_name"]==REPO
+          assert final_pr["head"]["sha"]==HEAD_SHA
+          final_main_sha=final_main["object"]["sha"]
+          assert final_main["object"]["type"]=="commit"
+          assert final_main_sha==current_main_sha
+          assert final_main_sha==os.environ["GITHUB_SHA"]
+          assert final_main_branch["name"]=="main"
+          assert final_main_branch["protected"] is True
+          assert final_main_branch["commit"]["sha"]==current_main_sha
+          assert final_pr["base"]["sha"]==current_main_sha
+
+          final_main_commit=get(f"/commits/{final_main_sha}")
+          final_main_verification=final_main_commit["commit"]["verification"]
+          assert final_main_verification["verified"] is True
+          assert final_main_verification["reason"]=="valid"
+          assert final_main_verification.get("signature")
+          assert final_main_verification.get("payload")
+          assert final_main_verification.get("verified_at")
+
+          final_candidate=get(f"/contents/{encoded_path}?ref={urllib.parse.quote(HEAD_SHA,safe='')}")
+          assert final_candidate["type"]=="file"
+          assert final_candidate["path"]==CANDIDATE_PATH
+          assert final_candidate["sha"]==EXPECTED_BLOB
+
+          emit_receipt({
+              "decision":"AUDITED_CANDIDATE",
+              "pr_number":PR_NUMBER,
+              "base_sha":pr["base"]["sha"],
+              "head_sha":HEAD_SHA,
+              "ci_run_id":int(os.environ["CI_RUN_ID"]),
+              "ci_run_attempt":int(os.environ["CI_RUN_ATTEMPT"]),
+              "ci_workflow_path":os.environ["EXPECTED_CI_WORKFLOW_PATH"],
+              "ci_workflow_blob":os.environ["EXPECTED_CI_WORKFLOW_BLOB"],
+              "candidate_path":CANDIDATE_PATH,
+              "candidate_blob_sha1":git_blob_sha1,
+              "candidate_content_sha256":content_sha256,
+              "changed_file_count":len(files),
+              "scope_source":"pull_request_files",
+              "scope_ceiling":3000,
+              "main_status_writer_paths":sorted(main_status_writer_paths),
+              "initial_main_sha":current_main_sha,
+              "final_main_sha":final_main_sha,
+              "freshness_recheck":"passed",
+              "main_branch_protected":True,
+              "main_tip_signed_verified":True,
+              "candidate_size_bytes":len(raw),
+              "scope_decision":"IN_SCOPE",
+              "yaml_duplicate_key_check":"passed",
+              "ruby_version":os.environ["EXPECTED_RUBY_VERSION"],
+              "psych_version":os.environ["EXPECTED_PSYCH_VERSION"],
+              "run_blocks_checked":len(run_blocks),
+              "action_pin_check":"passed",
+          })
+          PY
+
+
+      - name: Retain independent audit receipt
+        id: retain-audit-receipt
+        if: always() && steps.audit-candidate-verifier-snapshot.outcome == 'success'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: xen-kani-fv-002-independent-audit-${{ github.event.workflow_run.pull_requests[0].number || github.run_id }}-${{ github.event.workflow_run.head_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/xen-kani-fv-002-independent-audit-receipt.json
+          if-no-files-found: error
+          retention-days: 90
+          overwrite: false
+          include-hidden-files: false
+
+      - name: Publish exact-head audit status
+        id: publish-head-status
+        if: always()
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          AUDIT_RUN_ID: ${{ github.run_id }}
+          AUDIT_RUN_ATTEMPT: ${{ github.run_attempt }}
+          RECEIPT_UPLOAD_OUTCOME: ${{ steps.retain-audit-receipt.outcome }}
+          AUDIT_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+          STATUS_CONTEXT: XEN-KANI-FV-002 / Independent Candidate Audit
+          AUDIT_STEP_OUTCOME: ${{ steps.audit-candidate-verifier-snapshot.outcome }}
+        run: |
+          set -euo pipefail
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
+          [[ "$AUDIT_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$AUDIT_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+
+          STATUS_STATE=failure
+          STATUS_DESCRIPTION="Independent audit failed; no admission evidence produced."
+          if [[ "$AUDIT_STEP_OUTCOME" == "success" && "$RECEIPT_UPLOAD_OUTCOME" == "success" ]]; then
+            STATUS_STATE=success
+            if [[ -f /tmp/xen-kani-fv-002-independent-audit-receipt.json ]]; then
+              decision="$(python3 -c 'import json; print(json.load(open("/tmp/xen-kani-fv-002-independent-audit-receipt.json"))["decision"])')"
+              STATUS_DESCRIPTION="Independent verifier-workflow audit: $decision."
+            else
+              echo "successful audit step produced no receipt" >&2
+              exit 1
+            fi
+          fi
+
+          python3 - "$HEAD_SHA" "$PR_NUMBER" "$STATUS_STATE" "$STATUS_DESCRIPTION" > /tmp/xen-kani-fv-002-final-status.json <<'PY'
+          import json
+          import os
+          import sys
+          import urllib.request
+          repo=os.environ["REPOSITORY"]
+          repo_id=int(os.environ["REPOSITORY_ID"])
+          token=os.environ["GITHUB_TOKEN"]
+          head_sha,pr_number,state,description=sys.argv[1:]
+          api=f"https://api.github.com/repos/{repo}"
+          def get(path):
+              request=urllib.request.Request(
+                  api+path,
+                  headers={
+                      "Authorization":"Bearer "+token,
+                      "Accept":"application/vnd.github+json",
+                      "X-GitHub-Api-Version":"2026-03-10",
+                  },
+              )
+              with urllib.request.urlopen(request,timeout=30) as response:
+                  return json.loads(response.read())
+          if state=="success":
+              pr=get(f"/pulls/{int(pr_number)}")
+              main=get("/branches/main")
+              main_sha=main.get("commit",{}).get("sha")
+              main_commit=get(f"/commits/{main_sha}") if isinstance(main_sha,str) else {}
+              verification=main_commit.get("commit",{}).get("verification",{})
+              valid=(
+                  pr.get("state")=="open"
+                  and pr.get("merged") is False
+                  and pr.get("base",{}).get("ref")=="main"
+                  and pr.get("base",{}).get("repo",{}).get("id")==repo_id
+                  and pr.get("base",{}).get("repo",{}).get("full_name")==repo
+                  and pr.get("head",{}).get("repo",{}).get("id")==repo_id
+                  and pr.get("head",{}).get("repo",{}).get("full_name")==repo
+                  and pr.get("head",{}).get("sha")==head_sha
+                  and pr.get("base",{}).get("sha")==main_sha
+                  and main.get("name")=="main"
+                  and main.get("protected") is True
+                  and verification.get("verified") is True
+                  and verification.get("reason")=="valid"
+                  and verification.get("signature")
+                  and verification.get("payload")
+                  and verification.get("verified_at")
+              )
+              if not valid:
+                  state="failure"
+                  description="status publication blocked: final PR/main governance recheck failed."
+          print(json.dumps({"state":state,"description":description},sort_keys=True))
+          PY
+          STATUS_STATE="$(python3 -c 'import json; print(json.load(open("/tmp/xen-kani-fv-002-final-status.json"))["state"])')"
+          STATUS_DESCRIPTION="$(python3 -c 'import json; print(json.load(open("/tmp/xen-kani-fv-002-final-status.json"))["description"])')"
+
+          python3 - "$HEAD_SHA" "$STATUS_STATE" "$STATUS_DESCRIPTION" "$STATUS_CONTEXT" "$AUDIT_RUN_URL" "$AUDIT_RUN_ID" "$AUDIT_RUN_ATTEMPT" > /tmp/xen-kani-fv-002-status-payload.json <<'PY'
+          import json
+          import re
+          import sys
+          head_sha,state,description,context,target_url,run_id,run_attempt=sys.argv[1:]
+          assert re.fullmatch(r"[0-9a-f]{40}",head_sha)
+          assert state in {"success","failure"}
+          assert len(description)<=140
+          assert context=="XEN-KANI-FV-002 / Independent Candidate Audit"
+          assert re.fullmatch(r"https://github.com/Luminous-Dynamics/xenia-wire/actions/runs/[1-9][0-9]*/attempts/[1-9][0-9]*",target_url)
+          assert re.fullmatch(r"[1-9][0-9]*",run_id)
+          assert re.fullmatch(r"[1-9][0-9]*",run_attempt)
+          print(json.dumps({
+              "state":state,
+              "target_url":target_url,
+              "description":description,
+              "context":context,
+          },sort_keys=True))
+          PY
+
+          status_url="https://api.github.com/repos/Luminous-Dynamics/xenia-wire/statuses/$HEAD_SHA"
+          curl --fail-with-body --silent --show-error \
+            -X POST \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "$status_url" \
+            --data-binary @/tmp/xen-kani-fv-002-status-payload.json \
+            -o /tmp/xen-kani-fv-002-status-response.json
+
+          python3 - "$HEAD_SHA" "$STATUS_STATE" "$STATUS_CONTEXT" "$AUDIT_RUN_URL" "$AUDIT_RUN_ID" "$AUDIT_RUN_ATTEMPT" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          head_sha,state,context,target_url,run_id,run_attempt=sys.argv[1:]
+          d=json.loads(Path("/tmp/xen-kani-fv-002-status-response.json").read_text())
+          assert d.get("sha")==head_sha
+          assert d.get("state")==state
+          assert d.get("context")==context
+          assert d.get("target_url")==target_url
+          assert d.get("id")
+          assert str(d.get("creator",{}).get("login","")).strip()
+          Path("/tmp/xen-kani-fv-002-status-id.txt").write_text(str(d["id"])+"\\n")
+          Path("/tmp/xen-kani-fv-002-status-url.txt").write_text(d["url"]+"\\n")
+
+          PY
+
+          encoded_context="$(python3 -c 'import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))' "$STATUS_CONTEXT")"
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "https://api.github.com/repos/Luminous-Dynamics/xenia-wire/commits/$HEAD_SHA/statuses?context=$encoded_context&per_page=100" \
+            -o /tmp/xen-kani-fv-002-statuses.json
+
+          python3 - "$HEAD_SHA" "$STATUS_STATE" "$STATUS_CONTEXT" "$AUDIT_RUN_URL" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          head_sha,state,context,target_url=sys.argv[1:]
+          data=json.loads(Path("/tmp/xen-kani-fv-002-statuses.json").read_text())
+          assert isinstance(data,list)
+          matching=[x for x in data if isinstance(x,dict) and x.get("context","").lower()==context.lower()]
+          assert matching, f"no persisted status for exact context: {context}"
+          matching.sort(key=lambda item: int(item.get("id",0)),reverse=True)
+          latest=matching[0]
+          assert latest.get("sha")==head_sha
+          assert latest.get("state")==state
+          assert latest.get("target_url")==target_url
+          assert latest.get("context","").lower()==context.lower()
+          Path("/tmp/xen-kani-fv-002-status-verified.json").write_text(
+              json.dumps({
+                  "status_id":latest["id"],
+                  "status_url":latest["url"],
+                  "sha":latest["sha"],
+                  "state":latest["state"],
+                  "context":latest["context"],
+                  "target_url":latest["target_url"],
+                  "creator":latest.get("creator",{}).get("login"),
+              },sort_keys=True,indent=2)+"\\n"
+          )
+          PY
