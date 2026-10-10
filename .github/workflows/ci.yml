@@ -28,6 +28,14 @@ env:
   RUSTDOCFLAGS: -D warnings
 
 jobs:
+  workflow-python:
+    name: Embedded workflow Python syntax
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 tag resolved 2026-10-08
+      - name: Compile embedded Python heredocs in active workflows
+        run: python3 scripts/check-workflow-python.py .
+
   fmt:
     name: Format Check
     runs-on: ubuntu-latest
