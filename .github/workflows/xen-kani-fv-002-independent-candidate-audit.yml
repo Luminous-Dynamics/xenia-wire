@@ -24,7 +24,7 @@ env:
   TRIGGER_WORKFLOW_PATH: .github/workflows/ci.yml
   CONSUMER_WORKFLOW_PATH: .github/workflows/xen-kani-fv-002-certificate-consumer.yml
   AUDIT_STATUS_CONTEXT: XEN-KANI-FV-002 / Independent Candidate Audit
-  EXPECTED_CANDIDATE_BLOB: 273db5c17698c430f14bebb263ab27b3015f2da5
+  EXPECTED_CANDIDATE_BLOB: 0cdf16a538aee3cbcf1b8e3ba40c52a5343eb06d
   EXPECTED_CANDIDATE_WORKFLOW_ID: "373418900"
   EXPECTED_BASE_BRANCH: main
   EXPECTED_CI_WORKFLOW_PATH: .github/workflows/ci.yml
