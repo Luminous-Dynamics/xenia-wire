@@ -28,7 +28,7 @@ def compile_embedded_python(path: Path) -> tuple[int, list[str]]:
             index += 1
             continue
 
-        indent = match.group("indent")
+        command_indent = match.group("indent")
         marker_text = next(
             match.group(group)
             for group in ("single", "double", "bare")
@@ -36,28 +36,47 @@ def compile_embedded_python(path: Path) -> tuple[int, list[str]]:
         )
         marker = marker_text[1:-1] if marker_text.startswith(("'", '"')) else marker_text
         start_line = index + 1
-        body: list[str] = []
+        body_start = index + 1
         index += 1
+        terminator_index = None
+        terminator_indent = ""
 
-        while index < len(lines) and lines[index] != indent + marker:
-            line = lines[index]
-            if line.strip() and not line.startswith(indent):
-                errors.append(
-                    f"{path}:{index + 1}: heredoc body is less-indented than "
-                    f"its command; refusing ambiguous extraction"
-                )
-                body.append(line)
-            else:
-                body.append(line[len(indent):] if line.strip() else "")
+        while index < len(lines):
+            candidate = lines[index]
+            candidate_indent = candidate[:len(candidate) - len(candidate.lstrip(" "))]
+            if candidate == candidate_indent + marker:
+                terminator_index = index
+                terminator_indent = candidate_indent
+                break
             index += 1
 
-        if index >= len(lines):
+        if terminator_index is None:
             errors.append(
                 f"{path}:{start_line}: Python heredoc marker {marker!r} has no terminator"
             )
             break
 
-        index += 1  # consume the terminator
+        # In a nested shell block, the command line may be deeper than the
+        # heredoc body/terminator because YAML strips the run-block base indent.
+        # The terminator's indent is the only correct extraction baseline.
+        if not command_indent.startswith(terminator_indent):
+            errors.append(
+                f"{path}:{terminator_index + 1}: heredoc terminator indentation "
+                f"is not a prefix of its command indentation"
+            )
+
+        body: list[str] = []
+        for body_index in range(body_start, terminator_index):
+            line = lines[body_index]
+            if line.strip() and not line.startswith(terminator_indent):
+                errors.append(
+                    f"{path}:{body_index + 1}: heredoc body is less-indented than "
+                    f"its terminator; refusing ambiguous extraction"
+                )
+                body.append(line)
+            else:
+                body.append(line[len(terminator_indent):] if line.strip() else "")
+        index = terminator_index + 1  # consume the terminator
         source = "\n".join(body) + "\n"
         checked += 1
         try:
