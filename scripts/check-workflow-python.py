@@ -29,11 +29,12 @@ def compile_embedded_python(path: Path) -> tuple[int, list[str]]:
             continue
 
         indent = match.group("indent")
-        marker = next(
+        marker_text = next(
             match.group(group)
             for group in ("single", "double", "bare")
             if match.group(group) is not None
-        ).strip("'\\\"")
+        )
+        marker = marker_text[1:-1] if marker_text.startswith(("'", '"')) else marker_text
         start_line = index + 1
         body: list[str] = []
         index += 1
