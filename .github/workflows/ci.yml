@@ -28,14 +28,6 @@ env:
   RUSTDOCFLAGS: -D warnings
 
 jobs:
-  workflow-python:
-    name: Embedded workflow Python syntax
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 tag resolved 2026-10-08
-      - name: Compile embedded Python heredocs in active workflows
-        run: python3 scripts/check-workflow-python.py .
-
   fmt:
     name: Format Check
     runs-on: ubuntu-latest
@@ -286,11 +278,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 scripts/check-workflow-python.py .
           python3 - <<'PY'
-          import ast
           import re
           import subprocess
-          import textwrap
           from pathlib import Path
 
           ruby_script = r'''
@@ -357,28 +348,5 @@ jobs:
                           f"{path}:{line_number}: third-party uses ref is not a full commit SHA: {action_ref}"
                       )
 
-              lines = text.splitlines()
-              index = 0
-              python_blocks = 0
-              while index < len(lines):
-                  if "python3 - <<'PY'" not in lines[index]:
-                      index += 1
-                      continue
-                  start = index + 1
-                  end = None
-                  for candidate in range(start, len(lines)):
-                      if lines[candidate].strip() == "PY":
-                          end = candidate
-                          break
-                  if end is None:
-                      raise SystemExit(f"{path}: embedded Python heredoc has no closing PY")
-                  source = textwrap.dedent("\n".join(lines[start:end]) + "\n")
-                  try:
-                      ast.parse(source, filename=str(path))
-                  except SyntaxError as exc:
-                      raise SystemExit(f"{path}: embedded Python syntax error: {exc}") from exc
-                  python_blocks += 1
-                  index = end + 1
-
-              print(f"validated {path} yaml python_blocks={python_blocks}")
+              print(f"validated {path}: YAML structure and action refs")
           PY
