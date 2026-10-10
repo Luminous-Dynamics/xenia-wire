@@ -65,7 +65,7 @@ def compile_embedded_python(path: Path) -> tuple[int, list[str]]:
         except (SyntaxError, IndentationError, ValueError) as exc:
             line = getattr(exc, "lineno", None)
             detail = getattr(exc, "msg", str(exc))
-            where = f"{path}:{start_line + line - 1}" if line else f"{path}:{start_line}"
+            where = f"{path}:{start_line + line}" if line else f"{path}:{start_line}"
             errors.append(f"{where}: embedded Python syntax error: {detail}")
 
     return checked, errors
