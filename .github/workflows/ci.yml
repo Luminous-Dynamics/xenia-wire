@@ -4,10 +4,18 @@ on:
   push:
     branches: [main]
   pull_request:
+  merge_group:
+    types: [checks_requested]
+    branches: [main]
   workflow_dispatch:
   schedule:
     # Weekly deep fuzz run (see fuzz-deep job) -- Sundays 06:00 UTC.
     - cron: "0 6 * * 0"
+
+# Explicitly deny inherited GITHUB_TOKEN authority; jobs below only receive
+# the read access they actually need unless a job declares a narrower override.
+permissions:
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -24,9 +32,10 @@ jobs:
     name: Format Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 tag resolved 2026-10-08
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable action ref pinned 2026-10-08
         with:
+          toolchain: stable
           components: rustfmt
       - run: cargo fmt --check
 
@@ -34,11 +43,12 @@ jobs:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 tag resolved 2026-10-08
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable action ref pinned 2026-10-08
         with:
+          toolchain: stable
           components: clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 tag resolved 2026-10-08
       - name: Clippy (default features)
         run: cargo clippy --all-targets -- -D warnings
       - name: Clippy (no default features)
@@ -58,9 +68,11 @@ jobs:
           - "--no-default-features"
           - "--all-features"
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 tag resolved 2026-10-08
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable action ref pinned 2026-10-08
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 tag resolved 2026-10-08
       # Use --tests to exercise unit + integration tests without
       # running doctests. The lib.rs module-level doctest exercises
       # the reference-frame quick-start and fails to compile when
@@ -74,9 +86,11 @@ jobs:
     name: MSRV (Rust 1.94)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.94
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 tag resolved 2026-10-08
+      - uses: dtolnay/rust-toolchain@3f004e7c9fe9026f3384e581eb4a157ada8ef5b8 # 1.94 action ref pinned 2026-10-08
+        with:
+          toolchain: "1.94"
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 tag resolved 2026-10-08
       - name: Build (default features)
         run: cargo build --all-targets
       - name: Build (all features)
@@ -86,20 +100,23 @@ jobs:
     name: Docs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 tag resolved 2026-10-08
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable action ref pinned 2026-10-08
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 tag resolved 2026-10-08
       - run: cargo doc --all-features --no-deps
 
   wasm32:
     name: WebAssembly (wasm32-unknown-unknown)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 tag resolved 2026-10-08
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable action ref pinned 2026-10-08
         with:
+          toolchain: stable
           targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 tag resolved 2026-10-08
       - name: Build (no default features)
         run: cargo build --target wasm32-unknown-unknown --no-default-features
       - name: Build (default features)
@@ -111,15 +128,15 @@ jobs:
     name: PQC Boundary Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 tag resolved 2026-10-08
       - run: scripts/check-pqc-boundary.sh .
 
   conformance:
     name: Cross-implementation conformance (Node)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 tag resolved 2026-10-08
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4 tag resolved 2026-10-08
         with:
           node-version: "22"
       - name: Verify envelope vectors from an independent implementation
@@ -140,9 +157,11 @@ jobs:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 tag resolved 2026-10-08
+      - uses: dtolnay/rust-toolchain@0e28dd9a7764e5f83064112bb1f24025a14c313c # nightly action ref pinned 2026-10-08
+        with:
+          toolchain: nightly
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 tag resolved 2026-10-08
         with:
           workspaces: fuzz -> target
       # Corpus accumulates the inputs libFuzzer found "interesting" across
@@ -150,18 +169,20 @@ jobs:
       # and re-explores the same shallow inputs each time. Keyed on
       # run_id so every run always saves a fresh entry (a fixed key would
       # never update after its first write); restore-keys falls back to
-      # the most recent prior entry. Shared with fuzz-deep below via the
-      # same key prefix, so the weekly deep run's discoveries feed back
-      # into every PR's smoke run and vice versa.
+      # the most recent prior entry in the cache scope, with the default
+      # branch available as a fallback for pull requests. GitHub scopes
+      # pull_request-created caches to the PR merge ref, so the trusted
+      # default-branch fuzz-deep corpus can feed PR smoke runs, but PR
+      # smoke discoveries cannot flow back into default-branch fuzz-deep.
       - name: Cache fuzz corpus
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4 tag resolved 2026-10-08
         with:
           path: fuzz/corpus
           key: fuzz-corpus-${{ runner.os }}-${{ github.run_id }}
           restore-keys: |
             fuzz-corpus-${{ runner.os }}-
       - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz --locked
+        run: cargo install cargo-fuzz --locked --version 0.13.2
       - name: Run every fuzz target briefly
         working-directory: .
         run: |
@@ -176,23 +197,25 @@ jobs:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 tag resolved 2026-10-08
+      - uses: dtolnay/rust-toolchain@0e28dd9a7764e5f83064112bb1f24025a14c313c # nightly action ref pinned 2026-10-08
+        with:
+          toolchain: nightly
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 tag resolved 2026-10-08
         with:
           workspaces: fuzz -> target
       # Same growing-cache pattern as fuzz-smoke, same key prefix -- this
       # is the job most likely to actually find new corpus entries (5m vs
       # 20s per target), so keeping the two in sync matters most here.
       - name: Cache fuzz corpus
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4 tag resolved 2026-10-08
         with:
           path: fuzz/corpus
           key: fuzz-corpus-${{ runner.os }}-${{ github.run_id }}
           restore-keys: |
             fuzz-corpus-${{ runner.os }}-
       - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz --locked
+        run: cargo install cargo-fuzz --locked --version 0.13.2
       - name: Run every fuzz target for 5 minutes
         run: |
           set -euo pipefail
@@ -202,7 +225,7 @@ jobs:
           done
       - name: Upload crash artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4 tag resolved 2026-10-08
         with:
           name: fuzz-crash-artifacts
           path: fuzz/artifacts/
@@ -212,16 +235,18 @@ jobs:
     name: Security Audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 tag resolved 2026-10-08
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable action ref pinned 2026-10-08
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 tag resolved 2026-10-08
       # Library crate: Cargo.lock is gitignored. Generate it for the
       # audit run against the current registry rather than committing a
       # checked-in lockfile that would drift.
       - name: Generate Cargo.lock
         run: cargo generate-lockfile
       - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
+        run: cargo install cargo-audit --locked --version 0.22.2
       - name: Run cargo audit
         # RUSTSEC-2025-0141: bincode v1 flagged as unmaintained (v2 is out).
         # We deliberately pin bincode v1 because SPEC §12.3 specifies
@@ -241,3 +266,88 @@ jobs:
         # where the unsound read doesn't apply. Revisit if dudect-bencher
         # ever updates its own clap dependency.
         run: cargo audit --deny warnings --ignore RUSTSEC-2025-0141 --ignore RUSTSEC-2021-0139 --ignore RUSTSEC-2024-0375 --ignore RUSTSEC-2021-0145
+
+
+
+  workflow-lint:
+    name: Workflow corpus lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 tag resolved 2026-10-08
+      - name: Validate workflow YAML and embedded Python
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object scripts/check-workflow-python.py)" = "7b36c7ef83c082f4fece4207bd32d7fcb492ac54"
+          python3 scripts/check-workflow-python.py .
+          python3 - <<'PY'
+          import re
+          import subprocess
+          from pathlib import Path
+
+          ruby_script = r'''
+          require "yaml"
+          document = Psych.parse(STDIN.read)
+          root = document.root
+          raise "workflow document root must be a mapping" unless root.is_a?(Psych::Nodes::Mapping)
+          root_children = root.children || []
+          raise "odd workflow root mapping child count" if root_children.length.odd?
+          root_keys = root_children.each_slice(2).map(&:first)
+          has_permissions = root_keys.any? do |key|
+            key.is_a?(Psych::Nodes::Scalar) && key.value.to_s == "permissions"
+          end
+          abort "workflow must declare explicit top-level permissions" unless has_permissions
+
+          walk = nil
+          walk = lambda do |node, location|
+            if node.is_a?(Psych::Nodes::Mapping)
+              children = node.children || []
+              abort "odd mapping child count at #{location}" if children.length.odd?
+              seen = {}
+              children.each_slice(2).with_index do |(key, value), index|
+                if key.is_a?(Psych::Nodes::Scalar)
+                  name = key.value.to_s
+                  abort "duplicate YAML mapping key at #{location}: #{name.inspect}" if seen.key?(name)
+                  seen[name] = true
+                end
+                walk.call(key, "#{location}.key#{index}")
+                walk.call(value, "#{location}.value#{index}") if value
+              end
+            elsif node.respond_to?(:children) && node.children
+              node.children.each_with_index do |child, index|
+                walk.call(child, "#{location}[#{index}]")
+              end
+            end
+          end
+          walk.call(document.root, "root")
+          '''
+
+          for path in sorted(Path(".github/workflows").glob("*.y*ml")):
+              text = path.read_text(encoding="utf-8")
+              yaml = subprocess.run(
+                  ["ruby", "-e", ruby_script],
+                  input=text,
+                  capture_output=True,
+                  text=True,
+              )
+              if yaml.returncode != 0:
+                  raise SystemExit(f"{path}: invalid YAML or duplicate mapping key: {yaml.stderr.strip()}")
+
+              use_pattern = re.compile(r"^\s*(?:-\s+)?uses:\s+([^\s#]+)")
+              assert use_pattern.match("      - uses: actions/checkout@" + "a" * 40)
+              assert not use_pattern.match("      - uses: actions/checkout@v4")
+
+              for line_number, line in enumerate(text.splitlines(), 1):
+                  match = use_pattern.match(line)
+                  if not match:
+                      continue
+                  action_ref = match.group(1)
+                  if action_ref.startswith("./"):
+                      continue
+                  if not re.search(r"@[0-9a-fA-F]{40}$", action_ref):
+                      raise SystemExit(
+                          f"{path}:{line_number}: third-party uses ref is not a full commit SHA: {action_ref}"
+                      )
+
+              print(f"validated {path}: YAML structure and action refs")
+          PY
