@@ -153,6 +153,31 @@ def run_self_tests() -> None:
                 "heredoc parser failed to reject a deliberately malformed Python body"
             )
 
+        bad_indent = Path(directory) / "bad-indent.yml"
+        bad_indent.write_text(
+            "\\n".join(
+                [
+                    "jobs:",
+                    "  check:",
+                    "    steps:",
+                    "      - run: |",
+                    "        python3 - <<'INDENT'",
+                    "        def helper():",
+                    "        print('bad indentation')",
+                    "        INDENT",
+                ]
+            )
+            + "\\n",
+            encoding="utf-8",
+        )
+        checked_indent, errors_indent = compile_embedded_python(bad_indent)
+        if checked_indent != 1 or not any(
+            "expected an indented block" in error for error in errors_indent
+        ):
+            raise AssertionError(
+                "heredoc parser failed to reject a deliberately misindented Python body"
+            )
+
 
 def main() -> int:
     try:
