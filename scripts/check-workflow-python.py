@@ -13,7 +13,7 @@ from pathlib import Path
 import tempfile
 
 HEREDOC = re.compile(
-    r"""^(?P<indent> *)(?:if[ \t]+)?(?:(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|[^ \t]+))[ \t]+)*python(?:3)?(?=[ \t])(?:(?!<<).)*?[ \t]-[ \t]+(?:.*?[ \t]+)?<<(?:(?P<single>'[A-Za-z_][A-Za-z0-9_]*')|(?P<double>"[A-Za-z_][A-Za-z0-9_]*")|(?P<bare>[A-Za-z_][A-Za-z0-9_]*))[ \t]*$"""
+    r"""^(?P<indent> *)(?:if[ \t]+)?(?:(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|[^ \t]+)|env(?:[ \t]+-[A-Za-z][A-Za-z0-9-]*)?)[ \t]+)*python(?:3)?(?=[ \t])(?:(?:(?!<<).)*?[ \t]-[ \t]+(?:.*?[ \t]+)?|(?:[ \t]+-[A-Za-z0-9][A-Za-z0-9_-]*(?:=[^ \t]+)?)*[ \t]*)<<(?:(?P<single>'[A-Za-z_][A-Za-z0-9_]*')|(?P<double>"[A-Za-z_][A-Za-z0-9_]*")|(?P<bare>[A-Za-z_][A-Za-z0-9_]*))[ \t]*(?:[ \t]+(?:[0-9]+)?[<>][^ \t]+)*[ \t]*(?:#.*)?$"""
 )
 
 
@@ -119,6 +119,18 @@ def run_self_tests() -> None:
                     "        python3 -I - \"$harness\" <<'PY'",
                     "        print('isolated stdin with argv')",
                     "        PY",
+                    "        python3 <<'PY'",
+                    "        print('stdin without dash')",
+                    "        PY",
+                    "        python3 -I <<'PY'",
+                    "        print('option-only stdin heredoc')",
+                    "        PY",
+                    "        env HARNESS=\"$harness\" python3 - <<'PY'",
+                    "        print('env-prefixed stdin heredoc')",
+                    "        PY",
+                    "        python3 - <<'PY' 2>&1",
+                    "        print('redirect after delimiter')",
+                    "        PY",
                     "        if true; then",
                     "            if HARNESS=\"$harness\" OUT=\"$out\" python3 - <<'PY'",
                     "        print('nested shell heredoc')",
@@ -130,7 +142,7 @@ def run_self_tests() -> None:
             encoding="utf-8",
         )
         checked, errors = compile_embedded_python(fixture)
-        if checked != 6 or errors:
+        if checked != 10 or errors:
             raise AssertionError(
                 f"heredoc parser self-test failed: checked={checked}, errors={errors}"
             )
@@ -157,6 +169,52 @@ def run_self_tests() -> None:
         ):
             raise AssertionError(
                 "heredoc parser failed to reject a deliberately malformed Python body"
+            )
+
+        bare_malformed = Path(directory) / "bare-malformed.yml"
+        bare_malformed.write_text(
+            "\n".join(
+                [
+                    "jobs:",
+                    "  check:",
+                    "    steps:",
+                    "      - run: |",
+                    "        python3 <<'BARE'",
+                    "        if True print('syntax error')",
+                    "        BARE",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        checked_bare, errors_bare = compile_embedded_python(bare_malformed)
+        if checked_bare != 1 or not any(
+            "embedded Python syntax error" in error for error in errors_bare
+        ):
+            raise AssertionError(
+                "heredoc parser failed to reject malformed Python without an explicit '-' argument"
+            )
+
+        script_input = Path(directory) / "script-input.yml"
+        script_input.write_text(
+            "\n".join(
+                [
+                    "jobs:",
+                    "  check:",
+                    "    steps:",
+                    "      - run: |",
+                    "        python3 consumer.py <<'DATA'",
+                    "        this is payload, not valid Python {",
+                    "        DATA",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        checked_script, errors_script = compile_embedded_python(script_input)
+        if checked_script != 0 or errors_script:
+            raise AssertionError(
+                "heredoc parser must not treat stdin payload to a script file as Python source"
             )
 
         bad_indent = Path(directory) / "bad-indent.yml"
