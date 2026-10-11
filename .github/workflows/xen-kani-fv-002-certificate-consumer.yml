@@ -249,7 +249,7 @@ jobs:
                   "b":1,
                   "a":True,
               })
-              assert sample==b'{"a":true,"b":1,"z":["é",null]}'
+              assert sample=='{"a":true,"b":1,"z":["é",null]}'.encode("utf-8")
               duplicate_rejected=False
               try:
                   strict_json(b'{"a":1,"a":2}',"duplicate-vector")
