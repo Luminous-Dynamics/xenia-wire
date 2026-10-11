@@ -12,7 +12,6 @@ on:
       - "src/lib.rs"
       - "Cargo.toml"
       - "docs/formal/xen-kani-fv-002-replay-kernel-v1.json"
-      - ".github/workflows/xen-kani-fv-002-replay-kernel.yml"
   workflow_dispatch:
 
 permissions:
@@ -638,8 +637,7 @@ jobs:
               "mutation":"offset >= window_bits becomes offset > window_bits",
               "structured_export_error":export_error
           }
-          Path("/tmp/hostile-receipt.json").write_text(json.dumps(receipt,indent=2,sort_keys=True)+"
-")
+          Path("/tmp/hostile-receipt.json").write_text(json.dumps(receipt,indent=2,sort_keys=True)+"\n")
           print(Path("/tmp/hostile-receipt.json").read_text())
           PY
 
