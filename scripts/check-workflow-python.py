@@ -13,7 +13,7 @@ from pathlib import Path
 import tempfile
 
 HEREDOC = re.compile(
-    r"""^(?P<indent> *)(?:if[ \t]+)?(?:(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|[^ \t]+))[ \t]+)*python(?:3)?[ \t]+-[ \t]+(?:.*?[ \t]+)?<<(?:(?P<single>'[A-Za-z_][A-Za-z0-9_]*')|(?P<double>"[A-Za-z_][A-Za-z0-9_]*")|(?P<bare>[A-Za-z_][A-Za-z0-9_]*))[ \t]*$"""
+    r"""^(?P<indent> *)(?:if[ \t]+)?(?:(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|[^ \t]+))[ \t]+)*python(?:3)?(?=[ \t])(?:(?!<<).)*?[ \t]-[ \t]+(?:.*?[ \t]+)?<<(?:(?P<single>'[A-Za-z_][A-Za-z0-9_]*')|(?P<double>"[A-Za-z_][A-Za-z0-9_]*")|(?P<bare>[A-Za-z_][A-Za-z0-9_]*))[ \t]*$"""
 )
 
 
@@ -113,6 +113,12 @@ def run_self_tests() -> None:
                     "        python - <<PY",
                     "        print('bare marker')",
                     "        PY",
+                    "        python3 -I - <<'PY'",
+                    "        print('isolated stdin heredoc')",
+                    "        PY",
+                    "        python3 -I - \"$harness\" <<'PY'",
+                    "        print('isolated stdin with argv')",
+                    "        PY",
                     "        if true; then",
                     "            if HARNESS=\"$harness\" OUT=\"$out\" python3 - <<'PY'",
                     "        print('nested shell heredoc')",
@@ -124,7 +130,7 @@ def run_self_tests() -> None:
             encoding="utf-8",
         )
         checked, errors = compile_embedded_python(fixture)
-        if checked != 4 or errors:
+        if checked != 6 or errors:
             raise AssertionError(
                 f"heredoc parser self-test failed: checked={checked}, errors={errors}"
             )
