@@ -13,7 +13,7 @@ from pathlib import Path
 import tempfile
 
 HEREDOC = re.compile(
-    r"""^(?P<indent> *)(?:if[ \t]+)?(?:(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|[^ \t]+)|env(?:[ \t]+-[A-Za-z][A-Za-z0-9-]*)?)[ \t]+)*python(?:3)?(?=[ \t])(?:(?:(?!<<).)*?[ \t]-[ \t]+(?:.*?[ \t]+)?|(?:[ \t]+-[A-Za-z0-9][A-Za-z0-9_-]*(?:=[^ \t]+)?)*[ \t]*)<<(?:(?P<single>'[A-Za-z_][A-Za-z0-9_]*')|(?P<double>"[A-Za-z_][A-Za-z0-9_]*")|(?P<bare>[A-Za-z_][A-Za-z0-9_]*))[ \t]*(?:[ \t]+(?:[0-9]+)?[<>][^ \t]+)*[ \t]*(?:#.*)?$"""
+    r"""^(?P<indent> *)(?:if[ \t]+)?(?:(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|[^ \t]+)|env(?:[ \t]+-[A-Za-z][A-Za-z0-9-]*)?)[ \t]+)*python(?:3)?(?=[ \t])(?:(?:(?!<<).)*?[ \t]-[ \t]+(?:.*?[ \t]+)?|(?:[ \t]+-[A-Za-z0-9][A-Za-z0-9_-]*(?:=[^ \t]+)?)*[ \t]*)<<(?:(?P<single>'[A-Za-z_][A-Za-z0-9_]*')|(?P<double>"[A-Za-z_][A-Za-z0-9_]*")|(?P<bare>[A-Za-z_][A-Za-z0-9_]*))[ \t]*(?:[ \\t]+(?:[0-9]+)?[<>][ \\t]*(?:\"[^\"]*\"|'[^']*'|[^ \\t]+))*[ \t]*(?:#.*)?$"""
 )
 
 
@@ -131,6 +131,9 @@ def run_self_tests() -> None:
                     "        python3 - <<'PY' 2>&1",
                     "        print('redirect after delimiter')",
                     "        PY",
+                    "        python3 - <<'PY' 2> /dev/null",
+                    "        print('spaced redirect after delimiter')",
+                    "        PY",
                     "        if true; then",
                     "            if HARNESS=\"$harness\" OUT=\"$out\" python3 - <<'PY'",
                     "        print('nested shell heredoc')",
@@ -142,7 +145,7 @@ def run_self_tests() -> None:
             encoding="utf-8",
         )
         checked, errors = compile_embedded_python(fixture)
-        if checked != 10 or errors:
+        if checked != 11 or errors:
             raise AssertionError(
                 f"heredoc parser self-test failed: checked={checked}, errors={errors}"
             )
