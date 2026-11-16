@@ -202,10 +202,10 @@ impl Session {
         // nonce counter under the same AEAD key can repeat a (key, nonce)
         // pair, and advancing the internal epoch would also create a fresh
         // replay window for ciphertext that is still valid under that key.
-        if let Some(current_key) = self.session_key.as_ref() {
-            if ct_eq_32(&**current_key, &key) {
-                return;
-            }
+        if let Some(current_key) = self.session_key.as_ref()
+            && ct_eq_32(current_key, &key)
+        {
+            return;
         }
 
         if let Some(old_key) = self.session_key.take() {
