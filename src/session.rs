@@ -198,6 +198,16 @@ impl Session {
     /// the old key's high-water mark. When the previous key expires
     /// in [`Self::tick`], its per-epoch replay state is dropped.
     pub fn install_key(&mut self, key: [u8; 32]) {
+        // Reinstalling the current key is not a rekey. Resetting the sender
+        // nonce counter under the same AEAD key can repeat a (key, nonce)
+        // pair, and advancing the internal epoch would also create a fresh
+        // replay window for ciphertext that is still valid under that key.
+        if let Some(current_key) = self.session_key.as_ref()
+            && ct_eq_32(current_key, &key)
+        {
+            return;
+        }
+
         if let Some(old_key) = self.session_key.take() {
             self.prev_keys.push(PrevKey {
                 key: old_key,
@@ -1047,10 +1057,9 @@ impl Session {
 
 /// Constant-time equality for two 32-byte arrays.
 ///
-/// Avoids a data-dependent early-return in the fingerprint compare path.
-/// Kept inline here rather than reaching for `subtle` — one byte of
-/// dependency surface for a loop we can read in three lines.
-#[cfg(feature = "consent")]
+/// Used both for duplicate-key installation checks and for the optional
+/// consent fingerprint comparison. Avoids a data-dependent early return
+/// without adding a dependency solely for this fixed-width comparison.
 #[inline]
 fn ct_eq_32(a: &[u8; 32], b: &[u8; 32]) -> bool {
     let mut diff: u8 = 0;
@@ -1086,6 +1095,44 @@ mod tests {
         s.install_key([0x11; 32]);
         assert!(s.has_key());
         assert_eq!(s.nonce_counter(), 0);
+    }
+
+    #[test]
+    fn duplicate_key_installation_preserves_nonce_and_replay_state() {
+        let key = [0x44; 32];
+        let mut sender = Session::with_source_id([7; 8], 0xA1);
+        let mut receiver = Session::with_source_id([7; 8], 0xA1);
+        sender.install_key(key);
+        receiver.install_key(key);
+
+        let first = sender.seal(b"first", 0x10).unwrap();
+        assert_eq!(u32::from_le_bytes(first[8..12].try_into().unwrap()), 0);
+        assert_eq!(receiver.open(&first).unwrap(), b"first");
+        assert!(matches!(receiver.open(&first), Err(WireError::OpenFailed)));
+
+        let sender_established_at = sender.key_established_at;
+        let receiver_established_at = receiver.key_established_at;
+
+        // A duplicate install must be a true no-op on both sealing and
+        // receiving peers. In particular, it must not create a new replay
+        // epoch for ciphertext authenticated by the same key.
+        sender.install_key(key);
+        receiver.install_key(key);
+
+        assert_eq!(sender.nonce_counter(), 1);
+        assert_eq!(sender.current_key_epoch, 0);
+        assert!(sender.prev_keys.is_empty());
+        assert_eq!(sender.key_established_at, sender_established_at);
+
+        assert_eq!(receiver.current_key_epoch, 0);
+        assert!(receiver.prev_keys.is_empty());
+        assert_eq!(receiver.key_established_at, receiver_established_at);
+        assert!(matches!(receiver.open(&first), Err(WireError::OpenFailed)));
+
+        let second = sender.seal(b"second", 0x10).unwrap();
+        assert_eq!(u32::from_le_bytes(second[8..12].try_into().unwrap()), 1);
+        assert_ne!(&first[..12], &second[..12]);
+        assert_eq!(receiver.open(&second).unwrap(), b"second");
     }
 
     #[test]
